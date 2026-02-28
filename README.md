@@ -96,7 +96,7 @@ python
            'ENGINE': 'django.db.backends.postgresql',
            'NAME': 'smart_inventory_db',
            'USER': 'postgres',
-           'PASSWORD': 'your_password',//your_actual_password
+           'PASSWORD': 'your_password',# your_actual_password
            'HOST': 'localhost',
            'PORT': '5432',
        }
