@@ -45,6 +45,7 @@ class ItemLedgerPDFUploadView(APIView):
       - OPENING STOCK rows are skipped
       - Multiple bills per day are aggregated into one daily total
       - Unit price is NOT in this file — looked up from Product.unit_price
+      - seen_bills set prevents counting same bill twice across pages
 
     Result: One Item_Sales_Record row per date for this product.
     """
@@ -81,6 +82,7 @@ class ItemLedgerPDFUploadView(APIView):
             errors = []
             product = None
             daily_totals = defaultdict(float)  # {date: total_qty_sold}
+            seen_bills = set()  # (date, bill_no) — prevents double-counting across pages
 
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
                 for page_num, page in enumerate(pdf.pages):
@@ -120,46 +122,55 @@ class ItemLedgerPDFUploadView(APIView):
                                     )
                                 break
 
-                    # ── Extract table rows ────────────────────────────────
-                    tables = page.extract_tables()
-                    for table in tables:
-                        for row in table:
-                            if not row or len(row) < 6:
-                                continue
+                    # ── Extract rows using text lines ─────────────────────
+                    # Each data line looks like:
+                    # 2025/02/04 221.000 0104900 CASH SALE GENARAL 0.000 1.000
+                    # parts[0]=date  parts[1]=balance  parts[2]=bill_no
+                    # parts[3]=CASH  parts[4]=SALE  parts[-1]=OUT qty
+                    for line in text.split('\n'):
+                        parts = line.strip().split()
+                        if len(parts) < 5:
+                            continue
 
-                            date_val  = str(row[0] or '').strip()
-                            bill_type = str(row[3] or '').strip()
-                            out_val   = str(row[5] or '').strip()
+                        # First part must be a date YYYY/MM/DD
+                        date_val = parts[0]
+                        try:
+                            sale_date = datetime.strptime(
+                                date_val, '%Y/%m/%d'
+                            ).date()
+                        except ValueError:
+                            continue  # not a data row — skip silently
 
-                            # Skip header rows
-                            if not date_val or date_val == 'Date':
-                                continue
+                        # Must be a CASH SALE row
+                        if 'CASH' not in line or 'SALE' not in line:
+                            continue
 
-                            # Only process CASH SALE rows
-                            # Skip OPENING STOCK and any other types
-                            if 'CASH SALE' not in bill_type:
-                                continue
+                        # Bill number is 3rd part (index 2)
+                        bill_no = parts[2]
 
-                            # Parse date — format is YYYY/MM/DD
+                        # Skip if we already processed this exact bill
+                        bill_key = (sale_date, bill_no)
+                        if bill_key in seen_bills:
+                            continue
+                        seen_bills.add(bill_key)
+
+                        # Collect all numeric values from this line
+                        numeric_parts = []
+                        for p in parts:
                             try:
-                                sale_date = datetime.strptime(
-                                    date_val, '%Y/%m/%d'
-                                ).date()
+                                numeric_parts.append(float(p))
                             except ValueError:
-                                errors.append(
-                                    f'Page {page_num + 1}: '
-                                    f'Cannot parse date "{date_val}" — skipped'
-                                )
                                 continue
 
-                            # Parse OUT quantity (3 decimal places e.g. 1.000)
-                            try:
-                                qty_out = float(out_val) if out_val else 0.0
-                            except ValueError:
-                                qty_out = 0.0
+                        # Need at least 2 numbers
+                        if len(numeric_parts) < 2:
+                            continue
 
-                            if qty_out > 0:
-                                daily_totals[sale_date] += qty_out
+                        # Last number = OUT quantity sold
+                        qty_out = numeric_parts[-1]
+
+                        if qty_out > 0:
+                            daily_totals[sale_date] += qty_out
 
             # ── Product not found in PDF at all ──────────────────────────
             if product is None:
@@ -315,7 +326,6 @@ class DailyBillsUploadView(APIView):
                                     sale_date=bill_data['Date'],
                                     bill_no=str(bill_data['Bill No']),
                                     customer_name=str(bill_data['Customer'] or ''),
-                                    # Amount = discount, Final Amount = revenue
                                     discount=float(bill_data['Amount'] or 0),
                                     final_amount=float(bill_data['Final Amount'] or 0),
                                     gross_amount=(
