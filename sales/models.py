@@ -21,7 +21,7 @@ class UploadLog(models.Model):
     upload_date = models.DateTimeField(auto_now_add=True)
     upload_type = models.CharField(max_length=30, choices=UPLOAD_TYPES)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES)
-    error_message = models.CharField(max_length=500, blank=True)
+    error_message = models.TextField(blank=True)
     uploaded_by = models.IntegerField(null=True, blank=True)
 
     class Meta:

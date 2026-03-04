@@ -14,7 +14,8 @@ urlpatterns = [
     path('zones/', views.StoreZoneListCreateView.as_view(), name='zone-list'),
     path('zones/<int:pk>/', views.StoreZoneDetailView.as_view(), name='zone-detail'),
 
-    # Products — specific URLs FIRST, generic <int:pk> LAST
+    # Products — specific URLs FIRST, generic <int:pk> LAST (Risk R12)
     path('products/', views.ProductListCreateView.as_view(), name='product-list'),
+    path('products/import/', views.ItemMasterUploadView.as_view(), name='item-master-upload'),
     path('products/<int:pk>/', views.ProductDetailView.as_view(), name='product-detail'),
 ]

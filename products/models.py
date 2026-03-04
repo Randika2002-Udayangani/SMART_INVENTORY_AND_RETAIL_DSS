@@ -49,13 +49,14 @@ class Brand(models.Model):
 class Product(models.Model):
     product_name = models.CharField(max_length=150)
     category = models.ForeignKey(
-        Category, on_delete=models.PROTECT, db_column='category_id'
+        Category, on_delete=models.SET_NULL,
+        null=True, blank=True
     )
     brand = models.ForeignKey(
         Brand, on_delete=models.SET_NULL,
-        null=True, blank=True, db_column='brand_id'
+        null=True, blank=True
     )
-    sku_code = models.CharField(max_length=50, unique=True)
+    sku_code = models.CharField(max_length=50, unique=True, null=True, blank=True)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     cost_price = models.DecimalField(max_digits=10, decimal_places=2)
     avg_cost_price = models.DecimalField(
