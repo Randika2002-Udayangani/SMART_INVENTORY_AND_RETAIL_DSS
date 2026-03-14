@@ -1,4 +1,3 @@
-
 #
 # Query optimization summary:
 #   v1: N+1 problem          — 1 Product query per product inside loop
@@ -7,9 +6,18 @@
 #       Query 1 — grouped annotate: all product totals in one shot
 #       Query 2 — products_map: all product details in one shot
 #       Query 3 — bill_agg: store revenue and discount totals
+#       Exception: if no sales in range → Query 2 and 3 skipped entirely
+
+
+#   Fix 7  — mismatch_flag uses 2% threshold not > 0
+#   Fix 8  — products_map.get() with None guard (KeyError on deleted products)
+#   Fix 9  — early return when no sales (avoids useless Product query)
+#   Fix 10 — LOSS_PRODUCT flag added for negative profit products
+#   Fix 11 — Decimal kept in results dict, float() only at API output layer
+#            removes the Decimal → float → Decimal(str()) round-trip
 
 from decimal import Decimal
-from django.db.models import Sum, F, ExpressionWrapper, DecimalField
+from django.db.models import Sum
 from sales.models import ItemSalesRecord, DailyBillSummary
 from products.models import Product
 
@@ -27,44 +35,55 @@ def calculate_sales_and_profit(start_date, end_date):
     (Documented in project report — client site observation.)
 
     WAC dependency: avg_cost_price must be recalculated after every new
-    PurchaseBatch save. See purchases/services.py → recalculate_wac().
+    PurchaseBatch save. See purchases/serializers.py → Fix 7 (remaining_quantity).
     If WAC is stale, profit figures here will be incorrect.
 
-    Database queries in this function: 3 total (regardless of product count)
+    Database queries: 3 total (regardless of product count)
         Query 1 — grouped annotate on ItemSalesRecord
         Query 2 — Product fetch with brand/category
         Query 3 — DailyBillSummary aggregation
+        Exception: if no sales in range → Query 2 and 3 skipped entirely
+
+    NOTE on results[] data types:
+        total_revenue, total_profit, margin_pct are kept as Decimal
+        throughout this function for full numerical precision.
+        The caller (Randika's view/serializer) is responsible for
+        converting to float/str for JSON serialization.
+        This avoids the Decimal → float → Decimal(str()) round-trip
+        that would occur if we converted here.
 
     Returns:
-        results        — list of per-product profit dictionaries
-        store_revenue  — total store revenue from DailyBillSummary
-        total_discount — total discounts given in the period
+        results        — list of per-product profit dicts (Decimal values)
+        store_revenue  — total store revenue from DailyBillSummary (float)
+        total_discount — total discounts given in the period (float)
         consistency    — mismatch report between two revenue sources
     """
 
     # ── Query 1: ONE grouped query — all product totals at once ───────────────
-    # .values('product_id')         → group by product_id
-    # .annotate(...)                → calculate totals per group
-    # Result: one row per product with total_qty and total_revenue already summed
-    # This replaces the entire loop of N aggregate queries with a single DB call
     aggregated = (
         ItemSalesRecord.objects
         .filter(sale_date__range=(start_date, end_date))
         .values('product_id')
         .annotate(
-            total_qty=Sum('quantity_sold'),
-            total_revenue=Sum('total_amount'),
+            total_qty     = Sum('quantity_sold'),
+            total_revenue = Sum('total_amount'),
         )
     )
-    # aggregated is now like:
-    # [
-    #   {'product_id': 1, 'total_qty': 120, 'total_revenue': 48000.00},
-    #   {'product_id': 2, 'total_qty': 45,  'total_revenue': 22500.00},
-    #   ...
-    # ]
 
-    # Extract product IDs from the aggregated result
     product_ids = [row['product_id'] for row in aggregated]
+
+    # ── Fix 9: Early return when no sales ─────────────────────────
+    # product_ids = [] → Product.objects.filter(id__in=[]) is a useless query
+    # DailyBillSummary query would also return zeros
+    # Return immediately — avoids 2 unnecessary DB queries
+    if not product_ids:
+        return [], 0, 0, {
+            'item_sales_total' : 0,
+            'bill_sales_total' : 0,
+            'mismatch_amount'  : 0,
+            'mismatch_pct'     : 0,
+            'mismatch_flag'    : False,
+        }
 
     # ── Query 2: ONE query — fetch all needed products with brand & category ───
     products_map = {
@@ -81,43 +100,48 @@ def calculate_sales_and_profit(start_date, end_date):
         total_qty     = row['total_qty']     or 0
         total_revenue = row['total_revenue'] or Decimal('0.00')
 
-        # Dictionary lookup — no DB hit
-        product  = products_map[product_id]
+        # Fix 8: KeyError guard — skip if product deleted after sales recorded
+        product = products_map.get(product_id)
+        if not product:
+            continue
 
-        # WAC dependency: this value must be kept current by purchases module
-        avg_cost = product.avg_cost_price or Decimal('0.00')
-
-        # Profit = revenue - (qty * avg_cost)
-        # WAC profit formula: profit per unit = unit_price - avg_cost_price
-        # total_profit = SUM(qty * unit_price) - SUM(qty * avg_cost)
-        #              = total_revenue - (total_qty * avg_cost)
+        # WAC: avg_cost_price maintained by purchases/serializers.py Fix 7
+        avg_cost     = product.avg_cost_price or Decimal('0.00')
         total_profit = total_revenue - (total_qty * avg_cost)
 
-        # Guard: avoid ZeroDivisionError if revenue is zero
+        # Margin — Decimal throughout, quantized for consistent precision
         margin_pct = (
             (total_profit / total_revenue * 100)
             if total_revenue
             else Decimal('0')
-        )
+        ).quantize(Decimal('0.01'))
 
-        # Business insight flags
+        # Fix 10: Business insight flags
+        # LOSS_PRODUCT checked first — highest priority signal
         flags = []
+        if total_profit < 0:
+            flags.append('LOSS_PRODUCT')
         if margin_pct > 25 and total_qty < 50:
             flags.append('HIGH_MARGIN_LOW_VOLUME')
         if margin_pct < 10 and total_qty > 200:
             flags.append('LOW_MARGIN_HIGH_VOLUME')
 
+        # ── Fix 11: Decimal kept in results — NO float() conversion here ──
+        # total_revenue, total_profit, margin_pct stay as Decimal objects
+        # The view/serializer that calls this function converts to float/str
+        # for JSON output. This keeps full precision for any downstream
+        # analytics that reuse results[] (F05-B, F05-C, mismatch calc below)
         results.append({
             'product_id'    : product.id,
             'product_name'  : product.product_name,
-            'brand_id'      : product.brand_id,
-            'brand_name'    : product.brand.brand_name if product.brand else None,
-            'category_id'   : product.category_id,
-            'category_name' : product.category.category_name if product.category else None,
+            'brand_id'      : product.brand_id    or 0,
+            'brand_name'    : product.brand.brand_name       if product.brand     else 'UNBRANDED',
+            'category_id'   : product.category_id or 0,
+            'category_name' : product.category.category_name if product.category  else 'UNCATEGORISED',
             'total_qty'     : total_qty,
-            'total_revenue' : float(total_revenue),
-            'total_profit'  : float(total_profit),
-            'margin_pct'    : round(float(margin_pct), 2),
+            'total_revenue' : total_revenue,   # Decimal — caller converts
+            'total_profit'  : total_profit,    # Decimal — caller converts
+            'margin_pct'    : margin_pct,      # Decimal — caller converts
             'flags'         : flags,
         })
 
@@ -125,25 +149,34 @@ def calculate_sales_and_profit(start_date, end_date):
     bill_agg = DailyBillSummary.objects.filter(
         sale_date__range=(start_date, end_date)
     ).aggregate(
-        total_revenue=Sum('final_amount'),
-        total_discount=Sum('discount')
+        total_revenue  = Sum('final_amount'),
+        total_discount = Sum('discount')
     )
     store_revenue  = float(bill_agg['total_revenue']  or 0)
     total_discount = float(bill_agg['total_discount'] or 0)
 
     # ── Revenue mismatch detection ─────────────────────────────────────────────
     # ItemSalesRecord and DailyBillSummary come from two separate pipelines.
-    # They will not always match due to discounts, returns, rounding,
+    # They will never match exactly due to discounts, returns, rounding,
     # and flagged internal transfers (e.g. BAKERY bills).
-    # Surface mismatch to manager — do not hide it.
-    item_sales_total = sum(r['total_revenue'] for r in results)
+    # Fix 11 benefit: results[] now holds Decimal values so this sum is
+    # clean Decimal arithmetic — no Decimal(str(float)) workaround needed
+    item_sales_total = float(sum(r['total_revenue'] for r in results))
     mismatch_amount  = round(abs(store_revenue - item_sales_total), 2)
 
+    mismatch_pct = (
+        round((mismatch_amount / store_revenue) * 100, 2)
+        if store_revenue > 0
+        else 0.0
+    )
+
+    # Fix 7: 2% threshold — agreed with client, documented in project report
     consistency = {
         'item_sales_total' : round(item_sales_total, 2),
         'bill_sales_total' : round(store_revenue, 2),
         'mismatch_amount'  : mismatch_amount,
-        'mismatch_flag'    : mismatch_amount > 0,
+        'mismatch_pct'     : mismatch_pct,
+        'mismatch_flag'    : mismatch_amount > store_revenue * 0.02,
     }
 
     return results, store_revenue, total_discount, consistency
@@ -158,8 +191,7 @@ def aggregate_by_brand_and_category(start_date, end_date, product_results=None):
     Groups profit totals by brand and category, sorted descending by profit.
 
     Accepts pre-computed product_results to avoid recalculating.
-    If Randika's view already called calculate_sales_and_profit(), she passes
-    the results here — no repeated heavy queries.
+    results[] values are Decimal — converted to float here for output.
 
     Called by: GET /api/analytics/brand-comparison/
     """
@@ -171,33 +203,48 @@ def aggregate_by_brand_and_category(start_date, end_date, product_results=None):
 
     for result in product_results:
 
-        # Brand aggregation
         b_id = result['brand_id']
         if b_id not in brand_map:
             brand_map[b_id] = {
                 'brand_name'    : result['brand_name'],
-                'total_profit'  : 0.0,
-                'total_revenue' : 0.0,
+                'total_profit'  : Decimal('0.00'),
+                'total_revenue' : Decimal('0.00'),
             }
         brand_map[b_id]['total_profit']  += result['total_profit']
         brand_map[b_id]['total_revenue'] += result['total_revenue']
 
-        # Category aggregation
         c_id = result['category_id']
         if c_id not in category_map:
             category_map[c_id] = {
                 'category_name' : result['category_name'],
-                'total_profit'  : 0.0,
-                'total_revenue' : 0.0,
+                'total_profit'  : Decimal('0.00'),
+                'total_revenue' : Decimal('0.00'),
             }
         category_map[c_id]['total_profit']  += result['total_profit']
         category_map[c_id]['total_revenue'] += result['total_revenue']
 
+    # Convert to float at output — safe here, no further arithmetic
     sorted_brands = sorted(
-        brand_map.values(), key=lambda x: x['total_profit'], reverse=True
+        [
+            {
+                'brand_name'    : v['brand_name'],
+                'total_profit'  : float(v['total_profit']),
+                'total_revenue' : float(v['total_revenue']),
+            }
+            for v in brand_map.values()
+        ],
+        key=lambda x: x['total_profit'], reverse=True
     )
     sorted_categories = sorted(
-        category_map.values(), key=lambda x: x['total_profit'], reverse=True
+        [
+            {
+                'category_name' : v['category_name'],
+                'total_profit'  : float(v['total_profit']),
+                'total_revenue' : float(v['total_revenue']),
+            }
+            for v in category_map.values()
+        ],
+        key=lambda x: x['total_profit'], reverse=True
     )
 
     return sorted_brands, sorted_categories
@@ -212,6 +259,7 @@ def get_top_products(start_date, end_date, rank_by='profit', limit=5, product_re
     Returns top N products ranked by profit or quantity sold.
 
     Accepts pre-computed product_results to avoid recalculating.
+    results[] values are Decimal — sorting on Decimal is valid and precise.
 
     rank_by = 'profit' (default) or 'qty'
     limit   = number of products to return (default 5)
