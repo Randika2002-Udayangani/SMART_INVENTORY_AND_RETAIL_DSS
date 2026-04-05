@@ -22,9 +22,11 @@ urlpatterns = [
     path('api/', include('inventory.urls')),
     path('api/', include('orders.urls')),
     path('api/', include('sales.urls')),
-    
     # Lavanya's Dashboard
     path('dashboard/', include('dashboard.urls')),
+    
+    # Analytics URLs
+    path('api/', include('analytics.urls')),
+    
 ]
-
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
