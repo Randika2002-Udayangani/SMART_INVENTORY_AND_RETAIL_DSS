@@ -11,7 +11,8 @@ from suppliers.models import Supplier
 from users.models import SystemConfig
 from .models import (
     StockLedger, StockAdjustment, ProductLifecycle,
-    LossRecord, SupplierReturn
+    LossRecord, SupplierReturn,
+    InventoryHealthScore, CategoryHealthScore
 )
 from .serializers import (
     StockLedgerSerializer, StockAdjustmentSerializer, CurrentStockSerializer
@@ -247,71 +248,13 @@ class OutOfStockView(APIView):
 
 class LifecycleCalculateView(APIView):
     def post(self, request):
-        from sales.models import ItemSalesRecord
-
-        today     = date.today()
-        products  = Product.objects.filter(is_active=True)
-        processed = 0
-
-        for product in products:
-            if product.introduced_date and \
-               product.introduced_date > today - timedelta(days=30):
-                status_val     = 'NEW'
-                recommendation = 'MONITOR'
-                current_vel    = 0.0
-
-            else:
-                current_qty = ItemSalesRecord.objects.filter(
-                    product=product,
-                    sale_date__gte=today - timedelta(days=30)
-                ).aggregate(total=Sum('quantity_sold'))['total'] or 0
-
-                hist_qty = ItemSalesRecord.objects.filter(
-                    product=product,
-                    sale_date__gte=today - timedelta(days=120),
-                    sale_date__lt=today - timedelta(days=30)
-                ).aggregate(total=Sum('quantity_sold'))['total'] or 0
-
-                current_vel = current_qty / 30
-                hist_vel    = hist_qty / 90 if hist_qty else None
-
-                units_60 = ItemSalesRecord.objects.filter(
-                    product=product,
-                    sale_date__gte=today - timedelta(days=60)
-                ).aggregate(total=Sum('quantity_sold'))['total'] or 0
-
-                if units_60 < 5:
-                    status_val     = 'SLOW_MOVING'
-                    recommendation = 'DISCONTINUE'
-                elif hist_vel is None:
-                    status_val     = 'STABLE'
-                    recommendation = 'RETAIN'
-                elif current_vel > hist_vel * 1.15:
-                    status_val     = 'GROWING'
-                    recommendation = 'RETAIN'
-                elif current_vel < hist_vel * 0.85:
-                    status_val     = 'DECLINING'
-                    recommendation = 'DISCOUNT'
-                else:
-                    status_val     = 'STABLE'
-                    recommendation = 'RETAIN'
-
-            ProductLifecycle.objects.update_or_create(
-                product           = product,
-                comparison_period = today.strftime('%Y-%m-%d'),
-                defaults={
-                    'status'        : status_val,
-                    'recommendation': recommendation,
-                    'sales_velocity': round(current_vel, 4),
-                }
-            )
-            processed += 1
-
+        from inventory.services.lifecycle import run_lifecycle_calculation
+        result = run_lifecycle_calculation()
         return Response({
             'message'           : 'Lifecycle calculation complete',
-            'products_processed': processed,
+            'products_processed': len(result['products']),
+            'summary'           : result['summary'],
         }, status=status.HTTP_200_OK)
-
 
 class LifecycleListView(APIView):
     def get(self, request):
@@ -653,15 +596,6 @@ class SupplierReturnSummaryView(APIView):
         return Response(result)
     
 
-    # ═════════════════════════════════════════════════════════════════
-# F08 — Inventory Health Score
-# Paste this block at the BOTTOM of inventory/views.py
-# ═════════════════════════════════════════════════════════════════
-
-from .models import InventoryHealthScore, CategoryHealthScore
-from products.models import Category
-
-
 # ─────────────────────────────────────────────────────────────────
 # POST /api/health-scores/calculate/
 # ─────────────────────────────────────────────────────────────────
@@ -673,7 +607,7 @@ class HealthScoreCalculateView(APIView):
     """
 
     def post(self, request):
-        from .services import calculate_health_scores
+        from inventory.services.health_score import calculate_health_scores
         result = calculate_health_scores()
         return Response({
             'message'           : 'Health score calculation complete',
