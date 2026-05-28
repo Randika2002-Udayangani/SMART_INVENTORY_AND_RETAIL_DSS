@@ -16,7 +16,16 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from django.http import HttpResponse
+from django.urls import path, include
+
+
+def home(request):
+    return HttpResponse("Smart Inventory System is running 🚀")
 
 urlpatterns = [
+    path('', home),   # 👈 this fixes your issue
     path('admin/', admin.site.urls),
+    path('api/status/', home),  # optional reuse
+    path('api/', include('core.urls')),
 ]

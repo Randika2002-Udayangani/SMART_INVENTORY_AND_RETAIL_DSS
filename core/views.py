@@ -1,6 +1,6 @@
 from django.http import JsonResponse
 
-def api_status(request):
+def status(request):
     return JsonResponse({
         "status": "working"
     })
