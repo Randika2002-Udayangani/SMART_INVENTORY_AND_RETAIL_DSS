@@ -1,3 +1,9 @@
 from django.test import TestCase
 
-# Create your tests here.
+
+class APITest(TestCase):
+
+    def test_status_api(self):
+        response = self.client.get('/api/status/')
+
+        self.assertEqual(response.status_code, 200)
