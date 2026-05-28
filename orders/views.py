@@ -1,45 +1,88 @@
-from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
-from rest_framework.authentication import SessionAuthentication
-
-import json
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+
+from core.models import AuditLog
 from .chatbot import detect_intent
 
 
-@api_view(['POST'])
-@authentication_classes([])   # 🔥 disables JWT authentication
-@permission_classes([AllowAny])
-def chatbot_query(request):
-    try:
-        data = request.data
-        message = data.get("message", "").strip()
+# =========================
+# CHATBOT API
+# =========================
 
-        if not message:
-            return JsonResponse({
-                "error": "Message is required"
-            }, status=400)
+@csrf_exempt
+def chatbot(request):
+
+    if request.method == "POST":
+
+        data = json.loads(request.body)
+
+        message = data.get("message", "")
 
         intent = detect_intent(message)
 
-        responses = {
-            "BUDGET_QUERY": "Here are budget-friendly products",
-            "PRICE_QUERY": "Here are product prices",
-            "AVAILABILITY_QUERY": "Checking available stock",
-            "BRAND_QUERY": "Here are products from that brand",
-            "PACK_SIZE_QUERY": "Here are available pack sizes",
-            "UNKNOWN": "Sorry, I didn't understand your request"
-        }
-
-        reply = responses.get(intent, "Unknown request")
-
         return JsonResponse({
             "message": message,
-            "intent": intent,
-            "reply": reply
+            "intent": intent
         })
 
-    except Exception as e:
+    return JsonResponse({
+        "error": "POST method required"
+    }, status=405)
+
+
+# =========================
+# ORDER STATUS UPDATE API
+# =========================
+
+@csrf_exempt
+def update_order_status(request):
+
+    if request.method == "PUT":
+
+        data = json.loads(request.body)
+
+        order_ref = data.get("order_ref")
+
+        status = data.get("status")
+
+        if not order_ref:
+            return JsonResponse({
+                "error": "order_ref required"
+            }, status=400)
+
+        if not status:
+            return JsonResponse({
+                "error": "status required"
+            }, status=400)
+
+        # READY notification
+        if status == "READY":
+
+            AuditLog.objects.create(
+                action=f"Order {order_ref} is ready for pickup"
+            )
+
+        # CANCELLED notification
+        elif status == "CANCELLED":
+
+            AuditLog.objects.create(
+                action=f"Order {order_ref} has been cancelled"
+            )
+
+        # PROCESSING notification
+        elif status == "PROCESSING":
+
+            AuditLog.objects.create(
+                action=f"Order {order_ref} is processing"
+            )
+
         return JsonResponse({
-            "error": str(e)
-        }, status=500)
+            "message": "Order updated successfully",
+            "order_ref": order_ref,
+            "status": status
+        })
+
+    return JsonResponse({
+        "error": "PUT method required"
+    }, status=405)
