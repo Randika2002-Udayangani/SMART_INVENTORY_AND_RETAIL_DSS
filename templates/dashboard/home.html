@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Smart Inventory DSS — Manager Dashboard</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:       #e8f5eb;
+      --card:     #f4faf5;
+      --card2:    #eaf6ed;
+      --border:   #b8dfc2;
+      --txt:      #1a2e1e;
+      --muted:    #5a8266;
+      --sidebar:  #0f3d3e;
+      --green1:   #34d17a;
+      --green2:   #22c55e;
+      --amber:    #f59e0b;
+      --red:      #ef4444;
+      --purple:   #8b5cf6;
+      --orange:   #ea580c;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--txt); min-height: 100vh; }
+
+    /* ── SIDEBAR ─────────────────────────────────────────── */
+    .sidebar {
+      width: 220px; min-height: 100vh; background: var(--sidebar);
+      position: fixed; top: 0; left: 0;
+      display: flex; flex-direction: column; z-index: 100;
+      border-right: 1px solid rgba(255,255,255,0.06);
+    }
+    .sb-logo { padding: 20px 18px 14px; border-bottom: 1px solid rgba(255,255,255,0.15); }
+    .sb-logo .lt { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #d4f7e0; }
+    .sb-logo .ls { font-size: 9.5px; color: rgba(255,255,255,0.5); margin-top: 2px; }
+    .sb-nav { padding: 12px 8px; flex: 1; overflow-y: auto; }
+    .sb-sec { font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 0 10px 6px; margin-top: 10px; }
+    .sb-nav a {
+      display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+      border-radius: 7px; color: rgba(255,255,255,0.72); text-decoration: none;
+      font-size: 13px; font-weight: 500; transition: all 0.14s; margin-bottom: 1px;
+    }
+    .sb-nav a:hover { background: rgba(255,255,255,0.13); color: #fff; }
+    .sb-nav a.active { background: rgba(255,255,255,0.20); color: #fff; font-weight: 600; }
+    .sb-nav a i { font-size: 15px; width: 17px; text-align: center; }
+    .sb-nav a .badge-pill {
+      margin-left: auto; background: rgba(239,68,68,0.85); color: #fff;
+      font-size: 9.5px; font-weight: 700; border-radius: 10px;
+      padding: 1px 7px; line-height: 1.5;
+    }
+    .sb-footer { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.15); font-size: 11.5px; color: rgba(255,255,255,0.5); }
+    .sb-footer .name { color: #fff; font-weight: 600; font-size: 12.5px; }
+
+    /* ── MAIN ────────────────────────────────────────────── */
+    .main { margin-left: 220px; padding: 24px 28px 40px; }
+
+    /* ── TOPBAR ──────────────────────────────────────────── */
+    .topbar { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 22px; }
+    .topbar h1 { font-size: 19px; font-weight: 700; }
+    .topbar .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    .sync-badge {
+      background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+      padding: 7px 14px; font-size: 11.5px; color: var(--muted); font-family: 'DM Mono', monospace;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .sync-badge i { color: var(--green1); font-size: 12px; }
+
+    /* ── ALERT BANNER ────────────────────────────────────── */
+    .alert-banner {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 16px; margin-bottom: 18px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .alert-banner .al-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .alert-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      border-radius: 6px; padding: 4px 11px; font-size: 11.5px; font-weight: 700;
+      cursor: pointer; transition: opacity 0.12s;
+    }
+    .alert-pill:hover { opacity: 0.82; }
+    .ap-critical { background: #fee2e2; color: #b91c1c; }
+    .ap-high     { background: #ffedd5; color: #c2410c; }
+    .ap-medium   { background: #fef9c3; color: #854d0e; }
+    .view-all-btn { font-size: 11.5px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+
+    /* ── KPI GRID — Style 5: progress bar ───────────────── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+    .kpi {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 16px 18px;
+      transition: transform 0.13s, box-shadow 0.13s;
+    }
+    .kpi:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.07); }
+    .kpi-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+    .kpi-left { flex: 1; }
+    .kpi-lbl { font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+    .kpi-val { font-size: 24px; font-weight: 700; font-family: 'DM Mono', monospace; line-height: 1; color: var(--txt); }
+    .kpi-icon { font-size: 20px; margin-left: 10px; margin-top: 2px; }
+    .kpi-bar-track { height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; margin-bottom: 6px; }
+    .kpi-bar-fill  { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+    .kpi-footer { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+    .kpi-footer .chg { font-weight: 700; }
+    .up   { color: #16a34a; } .down { color: #dc2626; }
+
+    /* ── TWO-COL LAYOUT ──────────────────────────────────── */
+    .two-col { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 20px; }
+    .one-col { margin-bottom: 20px; }
+
+    /* ── CARD ────────────────────────────────────────────── */
+    .card-box {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    }
+    .card-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px; border-bottom: 1px solid var(--border);
+    }
+    .card-head .cht { font-size: 13.5px; font-weight: 700; }
+    .card-head .chs { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+    .card-badge {
+      background: var(--card2); border: 1px solid var(--border); border-radius: 5px;
+      padding: 3px 9px; font-size: 10.5px; color: var(--muted);
+    }
+    .card-body { padding: 16px 18px; }
+
+    /* ── CHARTS ──────────────────────────────────────────── */
+    canvas { width: 100% !important; }
+
+    /* ── EXPIRY RISK ─────────────────────────────────────── */
+    .expiry-buckets { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 14px; }
+    .exp-bucket { border-radius: 8px; padding: 12px 14px; text-align: center; }
+    .eb-7  { background: #fee2e2; border: 1px solid #fca5a5; }
+    .eb-14 { background: #ffedd5; border: 1px solid #fdba74; }
+    .eb-30 { background: #fef9c3; border: 1px solid #fde047; }
+    .eb-num { font-size: 26px; font-weight: 700; font-family: 'DM Mono', monospace; line-height: 1; }
+    .eb-7  .eb-num { color: #dc2626; }
+    .eb-14 .eb-num { color: #ea580c; }
+    .eb-30 .eb-num { color: #ca8a04; }
+    .eb-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 3px; }
+    .eb-7  .eb-lbl { color: #b91c1c; }
+    .eb-14 .eb-lbl { color: #c2410c; }
+    .eb-30 .eb-lbl { color: #854d0e; }
+    .eb-loss { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+    .expiry-list { list-style: none; }
+    .expiry-list li {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12.5px;
+    }
+    .expiry-list li:last-child { border-bottom: none; }
+    .exp-name { font-weight: 600; }
+    .exp-batch { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+    .exp-days { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 12px; }
+    .d7  { background: #fee2e2; color: #b91c1c; }
+    .d14 { background: #ffedd5; color: #c2410c; }
+    .d30 { background: #fef9c3; color: #854d0e; }
+
+    /* ── NOTIFICATIONS PANEL ─────────────────────────────── */
+    .notif-list { list-style: none; }
+    .notif-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 0; border-bottom: 1px solid var(--border); cursor: pointer;
+    }
+    .notif-item:last-child { border-bottom: none; }
+    .notif-item:hover { opacity: 0.85; }
+    .notif-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px;
+    }
+    .nd-critical { background: #dc2626; }
+    .nd-high     { background: #ea580c; }
+    .nd-medium   { background: #ca8a04; }
+    .notif-pri {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+      padding: 1px 6px; border-radius: 4px; flex-shrink: 0; margin-top: 2px;
+    }
+    .np-critical { background: #fee2e2; color: #b91c1c; }
+    .np-high     { background: #ffedd5; color: #c2410c; }
+    .np-medium   { background: #fef9c3; color: #854d0e; }
+    .notif-txt { font-size: 12px; font-weight: 600; color: var(--txt); line-height: 1.35; }
+    .notif-meta { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+    .notif-time { font-size: 10px; color: var(--muted); margin-left: auto; white-space: nowrap; font-family: 'DM Mono', monospace; }
+
+    /* ── HEALTH SCORE ────────────────────────────────────── */
+    .health-bands { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 16px; }
+    .hband { border-radius: 10px; padding: 14px 16px; border: 1.5px solid; }
+    .hb-h { background: #f0faf3; border-color: #86efac; }
+    .hb-w { background: #fefce8; border-color: #fde047; }
+    .hb-a { background: #fff7ed; border-color: #fdba74; }
+    .hb-c { background: #fef2f2; border-color: #fca5a5; }
+    .hband .bl { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 5px; }
+    .hb-h .bl { color: #15803d; } .hb-w .bl { color: #854d0e; } .hb-a .bl { color: #c2410c; } .hb-c .bl { color: #b91c1c; }
+    .hband .bv { font-size: 30px; font-weight: 700; font-family: 'DM Mono', monospace; line-height: 1; }
+    .hb-h .bv { color: #16a34a; } .hb-w .bv { color: #ca8a04; } .hb-a .bv { color: #ea580c; } .hb-c .bv { color: #dc2626; }
+    .hband .bs { font-size: 10px; margin-top: 3px; opacity: 0.6; }
+    .hb-h .bs { color: #15803d; } .hb-w .bs { color: #854d0e; } .hb-a .bs { color: #c2410c; } .hb-c .bs { color: #b91c1c; }
+
+    .hs-controls { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .hf-wrap { display: flex; gap: 5px; }
+    .hf-btn {
+      padding: 3px 11px; border-radius: 16px; font-size: 10.5px; font-weight: 600;
+      border: 1.5px solid; cursor: pointer; background: transparent; transition: all 0.13s;
+    }
+    .hf-all    { border-color: var(--muted); color: var(--muted); }
+    .hf-h   { border-color: #16a34a; color: #16a34a; }
+    .hf-w   { border-color: #ca8a04; color: #ca8a04; }
+    .hf-a   { border-color: #ea580c; color: #ea580c; }
+    .hf-c   { border-color: #dc2626; color: #dc2626; }
+    .hf-btn.on, .hf-btn:hover { color: #fff; }
+    .hf-all.on, .hf-all:hover  { background: var(--muted); border-color: var(--muted); }
+    .hf-h.on,  .hf-h:hover  { background: #16a34a; border-color: #16a34a; }
+    .hf-w.on,  .hf-w:hover  { background: #ca8a04; border-color: #ca8a04; }
+    .hf-a.on,  .hf-a:hover  { background: #ea580c; border-color: #ea580c; }
+    .hf-c.on,  .hf-c:hover  { background: #dc2626; border-color: #dc2626; }
+    .calc-btn {
+      padding: 6px 16px; border-radius: 7px; font-size: 12px; font-weight: 600;
+      background: var(--sidebar); color: #fff; border: none; cursor: pointer; transition: opacity 0.13s;
+    }
+    .calc-btn:hover { opacity: 0.87; }
+
+    table.hs-tbl { width: 100%; border-collapse: collapse; }
+    table.hs-tbl thead th {
+      padding: 9px 14px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--muted); text-align: left;
+      border-bottom: 1px solid var(--border); background: var(--card2);
+    }
+    table.hs-tbl tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    table.hs-tbl tbody tr:hover { background: var(--card2); }
+    table.hs-tbl tbody tr:last-child { border-bottom: none; }
+    table.hs-tbl td { padding: 10px 14px; font-size: 12.5px; }
+
+    .bar-wrap { display: flex; align-items: center; gap: 8px; }
+    .bar-track { flex: 1; height: 7px; border-radius: 3px; background: var(--border); overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; }
+    .bar-num { font-size: 12.5px; font-weight: 700; min-width: 28px; text-align: right; font-family: 'DM Mono', monospace; }
+
+    .sp { display: inline-block; padding: 2px 9px; border-radius: 16px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+    .sp-h { background: #dcfce7; color: #15803d; }
+    .sp-w { background: #fef9c3; color: #854d0e; }
+    .sp-a { background: #ffedd5; color: #c2410c; }
+    .sp-c { background: #fee2e2; color: #b91c1c; }
+    .action-txt { font-size: 11px; color: var(--muted); font-style: italic; }
+
+    /* ── SECTION HEADER ──────────────────────────────────── */
+    .sec-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .sec-hdr .sh { font-size: 15px; font-weight: 700; }
+    .sec-hdr .ss { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+    /* ── RESPONSIVE ──────────────────────────────────────── */
+    @media (max-width: 1200px) { .kpi-grid { grid-template-columns: repeat(2,1fr); } }
+    @media (max-width: 960px) {
+      .sidebar { display: none; } .main { margin-left: 0; padding: 16px; }
+      .kpi-grid { grid-template-columns: repeat(2,1fr); }
+      .two-col { grid-template-columns: 1fr; }
+      .health-bands { grid-template-columns: repeat(2,1fr); }
+    }
+    @media (max-width: 560px) { .kpi-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ───────────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="lt">Smart Inventory</div>
+    <div class="ls">Decision Support System — Samanala Super Mart</div>
+  </div>
+  <nav class="sb-nav">
+    <div class="sb-sec">Overview</div>
+    <a href="#" class="active"><i class="bi bi-grid-1x2"></i> Dashboard <span class="badge-pill">3</span></a>
+    <a href="#"><i class="bi bi-bar-chart-line"></i> Analytics</a>
+
+    <div class="sb-sec">Inventory</div>
+    <a href="#"><i class="bi bi-box-seam"></i> Products</a>
+    <a href="#"><i class="bi bi-layers"></i> Batches</a>
+    <a href="#"><i class="bi bi-calendar-x"></i> Expiry Alerts</a>
+    <a href="#"><i class="bi bi-upload"></i> Sales Upload</a>
+
+    <div class="sb-sec">Decision Support</div>
+    <a href="#"><i class="bi bi-heart-pulse"></i> Health Score</a>
+    <a href="#"><i class="bi bi-tag"></i> Discount Engine</a>
+    <a href="#"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
+    <a href="#"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
+
+    <div class="sb-sec">Operations</div>
+    <a href="#"><i class="bi bi-receipt"></i> Order Management</a>
+    <a href="#"><i class="bi bi-truck"></i> Suppliers</a>
+
+    <div class="sb-sec">Reports</div>
+    <a href="#"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
+    <a href="#"><i class="bi bi-bell"></i> Notifications <span class="badge-pill">5</span></a>
+  </nav>
+  <div class="sb-footer">
+    <div class="name">Manager</div>
+    <div>Samanala Super Mart</div>
+  </div>
+</aside>
+
+<!-- ── MAIN CONTENT ──────────────────────────────────────── -->
+<main class="main">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div>
+      <h1>Manager Dashboard</h1>
+      <div class="sub" id="dateStr">Loading...</div>
+    </div>
+    <div class="sync-badge">
+      <i class="bi bi-check-circle-fill"></i>
+      Last Sync: <strong>25 Jan 2026</strong>&nbsp;·&nbsp;Stock data is snapshot-based
+    </div>
+  </div>
+
+  <!-- ALERT BANNER -->
+  <div class="alert-banner">
+    <div class="al-left">
+      <span style="font-size:12.5px;font-weight:600;color:var(--txt);">Active Alerts:</span>
+      <span class="alert-pill ap-critical"><i class="bi bi-exclamation-octagon-fill" style="font-size:11px"></i> 2 CRITICAL — Stock-out risk</span>
+      <span class="alert-pill ap-high"><i class="bi bi-exclamation-triangle-fill" style="font-size:11px"></i> 2 HIGH — Near expiry</span>
+      <span class="alert-pill ap-medium"><i class="bi bi-info-circle-fill" style="font-size:11px"></i> 1 MEDIUM — Health decline</span>
+    </div>
+    <a href="#notif" class="view-all-btn">View all &rarr;</a>
+  </div>
+
+  <!-- KPI CARDS — from /api/dashboard/summary/ -->
+  <div class="kpi-grid">
+
+    <!-- Sales Today -->
+    <div class="kpi">
+      <div class="kpi-top">
+        <div class="kpi-left">
+          <div class="kpi-lbl">Total Sales Today</div>
+          <div class="kpi-val">Rs 84,250</div>
+        </div>
+        <span class="kpi-icon" style="color:var(--green1);"><i class="bi bi-currency-dollar"></i></span>
+      </div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:74%;background:var(--green1);"></div></div>
+      <div class="kpi-footer">
+        <span class="chg up">↑ +12.4% vs yesterday</span>
+        <span>74% of daily target</span>
+      </div>
+    </div>
+
+    <!-- Profit Today -->
+    <div class="kpi">
+      <div class="kpi-top">
+        <div class="kpi-left">
+          <div class="kpi-lbl">Total Profit Today</div>
+          <div class="kpi-val">Rs 18,930</div>
+        </div>
+        <span class="kpi-icon" style="color:var(--green2);"><i class="bi bi-graph-up-arrow"></i></span>
+      </div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:63%;background:var(--green2);"></div></div>
+      <div class="kpi-footer">
+        <span class="chg up">↑ +8.1% vs yesterday</span>
+        <span>63% of profit target</span>
+      </div>
+    </div>
+
+    <!-- Pending Orders -->
+    <div class="kpi">
+      <div class="kpi-top">
+        <div class="kpi-left">
+          <div class="kpi-lbl">Pending Orders</div>
+          <div class="kpi-val">7</div>
+        </div>
+        <span class="kpi-icon" style="color:var(--amber);"><i class="bi bi-clock-history"></i></span>
+      </div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:58%;background:var(--amber);"></div></div>
+      <div class="kpi-footer">
+        <span>3 awaiting verification</span>
+        <span>7 of 12 today</span>
+      </div>
+    </div>
+
+    <!-- Low Stock -->
+    <div class="kpi">
+      <div class="kpi-top">
+        <div class="kpi-left">
+          <div class="kpi-lbl">Low Stock Products</div>
+          <div class="kpi-val">14</div>
+        </div>
+        <span class="kpi-icon" style="color:var(--red);"><i class="bi bi-exclamation-circle"></i></span>
+      </div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:82%;background:var(--red);"></div></div>
+      <div class="kpi-footer">
+        <span class="chg down">Below reorder threshold</span>
+        <span>14 of 17 tracked</span>
+      </div>
+    </div>
+
+    <!-- Expiring -->
+    <div class="kpi">
+      <div class="kpi-top">
+        <div class="kpi-left">
+          <div class="kpi-lbl">Expiring (7 days)</div>
+          <div class="kpi-val">3</div>
+        </div>
+        <span class="kpi-icon" style="color:var(--purple);"><i class="bi bi-calendar-x"></i></span>
+      </div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:33%;background:var(--purple);"></div></div>
+      <div class="kpi-footer">
+        <span class="chg down">Needs urgent action</span>
+        <span>3 of 9 expiring batches</span>
+      </div>
+    </div>
+
+    <!-- Active Alerts -->
+    <div class="kpi">
+      <div class="kpi-top">
+        <div class="kpi-left">
+          <div class="kpi-lbl">Active Alerts</div>
+          <div class="kpi-val">5</div>
+        </div>
+        <span class="kpi-icon" style="color:var(--orange);"><i class="bi bi-bell-fill"></i></span>
+      </div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:50%;background:var(--orange);"></div></div>
+      <div class="kpi-footer">
+        <span class="chg down">2 critical · 2 high · 1 medium</span>
+        <span>5 unread</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- CHARTS ROW -->
+  <div class="two-col">
+    <div class="card-box">
+      <div class="card-head">
+        <div><div class="cht">Monthly Sales &amp; Profit Trend</div><div class="chs">Revenue vs profit — last 6 months · from /api/dashboard/monthly-trend/</div></div>
+        <span class="card-badge">Last 6 Months</span>
+      </div>
+      <div class="card-body">
+        <canvas id="trendChart" height="200"></canvas>
+      </div>
+    </div>
+    <div class="card-box">
+      <div class="card-head">
+        <div><div class="cht">Top 5 Products</div><div class="chs">By units sold this month · from /api/dashboard/top-products/</div></div>
+        <span class="card-badge">This Month</span>
+      </div>
+      <div class="card-body">
+        <canvas id="topChart" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPIRY RISK + NOTIFICATIONS -->
+  <div class="two-col">
+
+    <!-- EXPIRY RISK — /api/dashboard/expiry-risk/ -->
+    <div class="card-box">
+      <div class="card-head">
+        <div><div class="cht">Expiry Risk</div><div class="chs">Batches by expiry window · estimated loss value</div></div>
+      </div>
+      <div class="card-body">
+        <div class="expiry-buckets">
+          <div class="exp-bucket eb-7">
+            <div class="eb-num">3</div>
+            <div class="eb-lbl">Within 7 Days</div>
+            <div class="eb-loss">Est. loss Rs 12,400</div>
+          </div>
+          <div class="exp-bucket eb-14">
+            <div class="eb-num">6</div>
+            <div class="eb-lbl">Within 14 Days</div>
+            <div class="eb-loss">Est. loss Rs 28,700</div>
+          </div>
+          <div class="exp-bucket eb-30">
+            <div class="eb-num">9</div>
+            <div class="eb-lbl">Within 30 Days</div>
+            <div class="eb-loss">Est. loss Rs 51,200</div>
+          </div>
+        </div>
+        <ul class="expiry-list">
+          <li>
+            <div>
+              <div class="exp-name">Anchor Butter 200g</div>
+              <div class="exp-batch">Batch #1024 · 45 units · Rs 8,550</div>
+            </div>
+            <span class="exp-days d7">5 days</span>
+          </li>
+          <li>
+            <div>
+              <div class="exp-name">Cheese Block 200g</div>
+              <div class="exp-batch">Batch #1031 · 20 units · Rs 3,850</div>
+            </div>
+            <span class="exp-days d7">6 days</span>
+          </li>
+          <li>
+            <div>
+              <div class="exp-name">Tiara Coconut Oil</div>
+              <div class="exp-batch">Batch #1018 · 30 units · Rs 5,400</div>
+            </div>
+            <span class="exp-days d14">11 days</span>
+          </li>
+          <li>
+            <div>
+              <div class="exp-name">Maliban Cream Cracker</div>
+              <div class="exp-batch">Batch #1009 · 60 units · Rs 7,200</div>
+            </div>
+            <span class="exp-days d30">24 days</span>
+          </li>
+          <li>
+            <div>
+              <div class="exp-name">Nescafe Gold 200g</div>
+              <div class="exp-batch">Batch #1027 · 12 units · Rs 7,800</div>
+            </div>
+            <span class="exp-days d30">28 days</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- NOTIFICATIONS PANEL — /api/notifications/ -->
+    <div class="card-box" id="notif">
+      <div class="card-head">
+        <div><div class="cht">Notifications &amp; Alerts</div><div class="chs">CRITICAL → HIGH → MEDIUM · auto-checked on login</div></div>
+        <span class="card-badge">5 Unread</span>
+      </div>
+      <div class="card-body" style="padding:0 18px;">
+        <ul class="notif-list">
+          <li class="notif-item">
+            <div class="notif-dot nd-critical"></div>
+            <span class="notif-pri np-critical">Critical</span>
+            <div style="flex:1">
+              <div class="notif-txt">Stock-out risk: Anchor Milk 1L — 2 days of stock</div>
+              <div class="notif-meta">STOCK_OUT_RISK · Click to open reorder page</div>
+            </div>
+            <div class="notif-time">09:12</div>
+          </li>
+          <li class="notif-item">
+            <div class="notif-dot nd-critical"></div>
+            <span class="notif-pri np-critical">Critical</span>
+            <div style="flex:1">
+              <div class="notif-txt">Stock-out risk: Astra Butter 200g — 1 day of stock</div>
+              <div class="notif-meta">STOCK_OUT_RISK · Click to open reorder page</div>
+            </div>
+            <div class="notif-time">09:12</div>
+          </li>
+          <li class="notif-item">
+            <div class="notif-dot nd-high"></div>
+            <span class="notif-pri np-high">High</span>
+            <div style="flex:1">
+              <div class="notif-txt">Near expiry: Anchor Butter 200g — Batch #1024, 5 days, 45 units</div>
+              <div class="notif-meta">NEAR_EXPIRY · Click to open discount recommendation</div>
+            </div>
+            <div class="notif-time">09:12</div>
+          </li>
+          <li class="notif-item">
+            <div class="notif-dot nd-high"></div>
+            <span class="notif-pri np-high">High</span>
+            <div style="flex:1">
+              <div class="notif-txt">New online order: ORD-2026-00234 — Rs 18,500</div>
+              <div class="notif-meta">ONLINE_ORDER_NEW · Click to open order</div>
+            </div>
+            <div class="notif-time">08:47</div>
+          </li>
+          <li class="notif-item">
+            <div class="notif-dot nd-medium"></div>
+            <span class="notif-pri np-medium">Medium</span>
+            <div style="flex:1">
+              <div class="notif-txt">Health decline: Cheese Block 200g — score dropped 18 pts</div>
+              <div class="notif-meta">HEALTH_DECLINE · Click to view health score</div>
+            </div>
+            <div class="notif-time">Yesterday</div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- INVENTORY HEALTH SCORE -->
+  <div class="one-col">
+    <div class="sec-hdr">
+      <div>
+        <div class="sh">Inventory Health Score</div>
+        <div class="ss">Composite 0–100 score · 4-band classification · triggered on-demand · from /api/health-scores/</div>
+      </div>
+      <button class="calc-btn" onclick="this.innerHTML='&#x23F3; Calculating...'">&#9654; Run Health Calculation</button>
+    </div>
+
+    <!-- Band summary -->
+    <div class="health-bands" style="margin-bottom:16px;">
+      <div class="hband hb-h">
+        <div class="bl">Healthy · 80–100</div>
+        <div class="bv">42</div>
+        <div class="bs">Monitor normally</div>
+      </div>
+      <div class="hband hb-w">
+        <div class="bl">Watch · 60–79</div>
+        <div class="bv">18</div>
+        <div class="bs">Keep an eye on these</div>
+      </div>
+      <div class="hband hb-a">
+        <div class="bl">At Risk · 40–59</div>
+        <div class="bv">11</div>
+        <div class="bs">Needs attention soon</div>
+      </div>
+      <div class="hband hb-c">
+        <div class="bl">Critical · 0–39</div>
+        <div class="bv">5</div>
+        <div class="bs">Immediate action required</div>
+      </div>
+    </div>
+
+    <div class="card-box">
+      <div class="card-head">
+        <div><div class="cht">Product Health Scores</div><div class="chs">velocity · margin · expiry risk · stock duration · rating (if ≥10 ratings)</div></div>
+        <div class="hf-wrap">
+          <button class="hf-btn hf-all on" onclick="fhs('all',this)">All</button>
+          <button class="hf-btn hf-h" onclick="fhs('HEALTHY',this)">Healthy</button>
+          <button class="hf-btn hf-w" onclick="fhs('WATCH',this)">Watch</button>
+          <button class="hf-btn hf-a" onclick="fhs('AT RISK',this)">At Risk</button>
+          <button class="hf-btn hf-c" onclick="fhs('CRITICAL',this)">Critical</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="hs-tbl">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Category</th>
+              <th>Velocity</th>
+              <th>Margin</th>
+              <th>Expiry Risk</th>
+              <th>Overall Score</th>
+              <th>Status</th>
+              <th>Recommended Action</th>
+            </tr>
+          </thead>
+          <tbody id="hsTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── SCRIPTS ───────────────────────────────────────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+<script>
+  // Date
+  document.getElementById('dateStr').textContent =
+    new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+  // Chart defaults
+  Chart.defaults.color = '#5a8266';
+  Chart.defaults.font.family = "'DM Sans', sans-serif";
+  Chart.defaults.font.size = 11.5;
+
+  // ── Monthly Trend Chart ──────────────────────────────
+  const tCtx = document.getElementById('trendChart').getContext('2d');
+  const revGrad = tCtx.createLinearGradient(0,0,0,280);
+  revGrad.addColorStop(0,'rgba(52,209,122,0.22)');
+  revGrad.addColorStop(1,'rgba(52,209,122,0)');
+  const profGrad = tCtx.createLinearGradient(0,0,0,280);
+  profGrad.addColorStop(0,'rgba(245,158,11,0.18)');
+  profGrad.addColorStop(1,'rgba(245,158,11,0)');
+
+  new Chart(tCtx, {
+    type: 'line',
+    data: {
+      labels: ['Sep','Oct','Nov','Dec','Jan','Feb'],
+      datasets: [
+        {
+          label: 'Revenue (Rs)',
+          data: [1820000,2150000,1980000,2600000,2340000,2480000],
+          borderColor: '#34d17a', backgroundColor: revGrad,
+          borderWidth: 2.5, pointBackgroundColor: '#34d17a',
+          pointRadius: 4, pointHoverRadius: 7, tension: 0.4, fill: true
+        },
+        {
+          label: 'Profit (Rs)',
+          data: [390000,472000,418000,595000,510000,548000],
+          borderColor: '#f59e0b', backgroundColor: profGrad,
+          borderWidth: 2.5, pointBackgroundColor: '#f59e0b',
+          pointRadius: 4, pointHoverRadius: 7, tension: 0.4, fill: true
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { position:'top', align:'end', labels:{ boxWidth:10, usePointStyle:true, pointStyle:'circle', padding:16 } },
+        tooltip: {
+          backgroundColor:'#f4faf5', borderColor:'#b8dfc2', borderWidth:1, padding:10,
+          bodyColor:'#1a2e1e', titleColor:'#1a2e1e',
+          callbacks: { label: c => ` ${c.dataset.label}: Rs ${c.parsed.y.toLocaleString()}` }
+        }
+      },
+      scales: {
+        x: { grid:{ color:'#c8e8d0' }, ticks:{ color:'#5a8266' } },
+        y: { grid:{ color:'#c8e8d0' }, ticks:{ color:'#5a8266', callback: v => 'Rs '+(v>=1000000?(v/1000000).toFixed(1)+'M':(v/1000).toFixed(0)+'K') } }
+      }
+    }
+  });
+
+  // ── Top Products Chart ───────────────────────────────
+  new Chart(document.getElementById('topChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: ['Anchor Milk 1L','Milo 400g','Kiri Hatti','Maliban Cream','Astra Butter'],
+      datasets: [{
+        label: 'Units Sold',
+        data: [320,285,240,198,176],
+        backgroundColor: ['rgba(34,139,87,0.80)','rgba(59,130,246,0.80)','rgba(249,115,22,0.80)','rgba(168,85,247,0.80)','rgba(234,179,8,0.80)'],
+        borderColor: ['#22623a','#1d5bbf','#c2580a','#7e22ce','#a16207'],
+        borderWidth: 1.5, borderRadius: 5
+      }]
+    },
+    options: {
+      indexAxis: 'y', responsive: true,
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          backgroundColor:'#f4faf5', borderColor:'#b8dfc2', borderWidth:1, padding:9,
+          bodyColor:'#1a2e1e', titleColor:'#1a2e1e',
+          callbacks: { label: c => ` ${c.parsed.x} units` }
+        }
+      },
+      scales: {
+        x: { grid:{ color:'#c8e8d0' }, ticks:{ color:'#5a8266' } },
+        y: { grid:{ display:false }, ticks:{ color:'#5a8266' } }
+      }
+    }
+  });
+
+  // ── Health Score Table ───────────────────────────────
+  const hsData = [
+    { name:'Anchor Milk 1L',        cat:'Dairy',     vel:95, mar:80, exp:90, score:88, status:'HEALTHY',  action:'Monitor normally' },
+    { name:'Milo 400g',             cat:'Beverages', vel:88, mar:75, exp:85, score:83, status:'HEALTHY',  action:'Monitor normally' },
+    { name:'Kiri Hatti 200g',       cat:'Dairy',     vel:72, mar:65, exp:78, score:74, status:'WATCH',    action:'Review stock levels' },
+    { name:'Maliban Cream Cracker', cat:'Biscuits',  vel:65, mar:60, exp:55, score:68, status:'WATCH',    action:'Check expiry batches' },
+    { name:'Astra Butter 200g',     cat:'Dairy',     vel:50, mar:45, exp:40, score:55, status:'AT RISK',  action:'Consider reorder & discount' },
+    { name:'Nescafe Gold 200g',     cat:'Beverages', vel:42, mar:38, exp:35, score:48, status:'AT RISK',  action:'Apply discount promotion' },
+    { name:'Cheese Block 200g',     cat:'Dairy',     vel:28, mar:22, exp:18, score:31, status:'CRITICAL', action:'Immediate discount or supplier return' },
+    { name:'Tiara Coconut Oil',     cat:'Cooking',   vel:25, mar:18, exp:20, score:29, status:'CRITICAL', action:'Immediate discount or supplier return' },
+  ];
+
+  function scoreCol(s) {
+    return s>=80?'#16a34a':s>=60?'#ca8a04':s>=40?'#ea580c':'#dc2626';
+  }
+  function spPill(st) {
+    const m = {HEALTHY:'sp-h',WATCH:'sp-w','AT RISK':'sp-a',CRITICAL:'sp-c'};
+    return `<span class="sp ${m[st]}">${st}</span>`;
+  }
+  function miniBar(v, col) {
+    return `<div class="bar-wrap"><div class="bar-track"><div class="bar-fill" style="width:${v}%;background:${col}"></div></div><span class="bar-num" style="color:${col}">${v}</span></div>`;
+  }
+
+  function renderHS(filter) {
+    const rows = filter==='all' ? hsData : hsData.filter(r=>r.status===filter);
+    document.getElementById('hsTbody').innerHTML = rows.map(r=>`
+      <tr>
+        <td style="font-weight:600">${r.name}</td>
+        <td style="color:var(--muted)">${r.cat}</td>
+        <td>${miniBar(r.vel,'#34d17a')}</td>
+        <td>${miniBar(r.mar,'#22c55e')}</td>
+        <td>${miniBar(r.exp,'#f59e0b')}</td>
+        <td>${miniBar(r.score, scoreCol(r.score))}</td>
+        <td>${spPill(r.status)}</td>
+        <td><span class="action-txt">${r.action}</span></td>
+      </tr>`).join('');
+  }
+
+  function fhs(filter, btn) {
+    document.querySelectorAll('.hf-btn').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    renderHS(filter);
+  }
+
+  renderHS('all');
+</script>
+</body>
+</html>
