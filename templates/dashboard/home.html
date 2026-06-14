@@ -290,6 +290,7 @@
 
     <div class="sb-sec">Reports</div>
     <a href="#"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
+    <a href="/dashboard/sales-report/" class="bi bi-bar-chart"></i> Sales Report</a>
     <a href="#"><i class="bi bi-bell"></i> Notifications <span class="badge-pill">5</span></a>
   </nav>
   <div class="sb-footer">
@@ -332,7 +333,7 @@
       <div class="kpi-top">
         <div class="kpi-left">
           <div class="kpi-lbl">Total Sales Today</div>
-          <div class="kpi-val">Rs 84,250</div>
+          <div class="kpi-val" id="totalSales">Rs 84,250</div>
         </div>
         <span class="kpi-icon" style="color:var(--green1);"><i class="bi bi-currency-dollar"></i></span>
       </div>
@@ -348,7 +349,7 @@
       <div class="kpi-top">
         <div class="kpi-left">
           <div class="kpi-lbl">Total Profit Today</div>
-          <div class="kpi-val">Rs 18,930</div>
+         <div class="kpi-val" id="totalProfit">Rs 18,930</div>
         </div>
         <span class="kpi-icon" style="color:var(--green2);"><i class="bi bi-graph-up-arrow"></i></span>
       </div>
@@ -364,7 +365,7 @@
       <div class="kpi-top">
         <div class="kpi-left">
           <div class="kpi-lbl">Pending Orders</div>
-          <div class="kpi-val">7</div>
+          <div class="kpi-val" id="pendingOrders">7</div>
         </div>
         <span class="kpi-icon" style="color:var(--amber);"><i class="bi bi-clock-history"></i></span>
       </div>
@@ -380,7 +381,7 @@
       <div class="kpi-top">
         <div class="kpi-left">
           <div class="kpi-lbl">Low Stock Products</div>
-          <div class="kpi-val">14</div>
+          <div class="kpi-val" id="lowStock">14</div>
         </div>
         <span class="kpi-icon" style="color:var(--red);"><i class="bi bi-exclamation-circle"></i></span>
       </div>
@@ -396,7 +397,7 @@
       <div class="kpi-top">
         <div class="kpi-left">
           <div class="kpi-lbl">Expiring (7 days)</div>
-          <div class="kpi-val">3</div>
+          <div class="kpi-val" id="expiringSoon">3</div>
         </div>
         <span class="kpi-icon" style="color:var(--purple);"><i class="bi bi-calendar-x"></i></span>
       </div>
@@ -773,6 +774,77 @@
   }
 
   renderHS('all');
+  // JWT CHECK
+function checkAuth() {
+    const token = localStorage.getItem('access_token');
+    if (!token) { window.location.href = '/dashboard/login/'; }
+}
+checkAuth();
+
+// Logout
+function doLogout() {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    window.location.href = '/dashboard/login/';
+}
+
+// FETCH 1 — Total Profit
+async function fetchProfitSummary() {
+    const token = localStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/analytics/profit-summary/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        if (data.total_profit !== undefined)
+            document.getElementById('totalProfit').innerText = 'Rs ' + Number(data.total_profit).toLocaleString();
+    } catch(e) {}
+}
+
+// FETCH 2 — Pending Orders
+async function fetchPendingOrders() {
+    const token = localStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/orders/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        const count = Array.isArray(data) ? data.filter(o => o.status === 'PENDING').length : 0;
+        document.getElementById('pendingOrders').innerText = count;
+    } catch(e) {}
+}
+
+// FETCH 3 — Low Stock
+async function fetchLowStockCount() {
+    const token = localStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/inventory/low-stock/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        const count = Array.isArray(data) ? data.length : 0;
+        document.getElementById('lowStock').innerText = count;
+    } catch(e) {}
+}
+
+// FETCH 4 — Expiring Soon
+async function fetchExpiringCount() {
+    const token = localStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/batches/expiring-soon/?days=30', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        const count = Array.isArray(data) ? data.length : 0;
+        document.getElementById('expiringSoon').innerText = count;
+    } catch(e) {}
+}
+
+// Run all fetches
+fetchProfitSummary();
+fetchPendingOrders();
+fetchLowStockCount();
+fetchExpiringCount();
 </script>
 </body>
 </html>
