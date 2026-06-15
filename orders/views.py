@@ -1,42 +1,52 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+
 from django.contrib.auth.hashers import make_password, check_password
 from django.utils import timezone
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+
+import json
+
+from core.models import AuditLog
 from .models import Customer
 from .tokens import get_tokens_for_customer
+from .chatbot import detect_intent
 
+
+# =========================================================
+# CUSTOMER AUTH APIs
+# =========================================================
 
 class CustomerRegisterView(APIView):
     """
     POST /api/customer-auth/register/
     Public — no token needed.
-    Customer self-registration.
     """
-    permission_classes = []  # public
+
+    permission_classes = []
 
     def post(self, request):
+
         name = request.data.get('name')
         email = request.data.get('email')
         password = request.data.get('password')
         contact_number = request.data.get('contact_number', '')
         address = request.data.get('address', '')
 
-        # Validate required fields
         if not name or not email or not password:
             return Response(
                 {'error': 'name, email, and password are required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Check email uniqueness
         if Customer.objects.filter(email=email).exists():
             return Response(
                 {'error': 'An account with this email already exists'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Create customer with hashed password
         customer = Customer.objects.create(
             name=name,
             email=email,
@@ -46,7 +56,6 @@ class CustomerRegisterView(APIView):
             is_active=True,
         )
 
-        # Return tokens immediately so customer is logged in after registration
         tokens = get_tokens_for_customer(customer)
 
         return Response({
@@ -61,12 +70,12 @@ class CustomerRegisterView(APIView):
 class CustomerLoginView(APIView):
     """
     POST /api/customer-auth/login/
-    Public — no token needed.
-    Returns same JWT format as staff login.
     """
-    permission_classes = []  # public
+
+    permission_classes = []
 
     def post(self, request):
+
         email = request.data.get('email')
         password = request.data.get('password')
 
@@ -77,7 +86,11 @@ class CustomerLoginView(APIView):
             )
 
         try:
-            customer = Customer.objects.get(email=email, is_active=True)
+            customer = Customer.objects.get(
+                email=email,
+                is_active=True
+            )
+
         except Customer.DoesNotExist:
             return Response(
                 {'error': 'Invalid email or password'},
@@ -90,7 +103,6 @@ class CustomerLoginView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
-        # Update last login
         customer.last_login = timezone.now()
         customer.save()
 
@@ -108,10 +120,88 @@ class CustomerLoginView(APIView):
 class CustomerProfileView(APIView):
     """
     GET /api/customer-auth/profile/
-    Requires customer token.
     """
 
     def get(self, request):
-        # For now return a simple response
-        # Full customer token validation added in Week 4
-        return Response({'message': 'Profile endpoint — token validation coming Week 4'})
+
+        return Response({
+            'message': 'Profile endpoint — token validation coming Week 4'
+        })
+
+
+# =========================================================
+# CHATBOT API
+# =========================================================
+
+@csrf_exempt
+def chatbot(request):
+
+    if request.method == "POST":
+
+        data = json.loads(request.body)
+
+        message = data.get("message", "")
+
+        intent = detect_intent(message)
+
+        return JsonResponse({
+            "message": message,
+            "intent": intent
+        })
+
+    return JsonResponse({
+        "error": "POST method required"
+    }, status=405)
+
+
+# =========================================================
+# ORDER STATUS UPDATE API
+# =========================================================
+
+@csrf_exempt
+def update_order_status(request):
+
+    if request.method == "PUT":
+
+        data = json.loads(request.body)
+
+        order_ref = data.get("order_ref")
+        order_status = data.get("status")
+
+        if not order_ref:
+            return JsonResponse({
+                "error": "order_ref required"
+            }, status=400)
+
+        if not order_status:
+            return JsonResponse({
+                "error": "status required"
+            }, status=400)
+
+        if order_status == "READY":
+
+            AuditLog.objects.create(
+                action=f"Order {order_ref} is ready for pickup"
+            )
+
+        elif order_status == "CANCELLED":
+
+            AuditLog.objects.create(
+                action=f"Order {order_ref} has been cancelled"
+            )
+
+        elif order_status == "PROCESSING":
+
+            AuditLog.objects.create(
+                action=f"Order {order_ref} is processing"
+            )
+
+        return JsonResponse({
+            "message": "Order updated successfully",
+            "order_ref": order_ref,
+            "status": order_status
+        })
+
+    return JsonResponse({
+        "error": "PUT method required"
+    }, status=405)

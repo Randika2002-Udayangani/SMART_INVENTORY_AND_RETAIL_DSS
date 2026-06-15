@@ -698,3 +698,9 @@ class HealthScoreDetailView(APIView):
             'rating_sufficient', 'weighting_mode', 'calculated_date'
         )
         return Response(list(data))
+from django.http import JsonResponse
+
+def api_status(request):
+    return JsonResponse({
+        "status": "working"
+    })
