@@ -11,3 +11,12 @@ def chatbot(request):
 
 def customer_home(request):
     return render(request, 'customer/home.html') 
+
+def login_page(request):
+    return render(request, 'customer/login.html')
+
+def register_page(request):
+    return render(request, 'customer/register.html')
+
+def order_form(request):
+    return render(request, 'customer/order_form.html')

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #f0f4f8;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .card {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 420px;
+        }
+        .card h2 { text-align: center; color: #1a73e8; margin-bottom: 6px; }
+        .card p.subtitle { text-align: center; color: #888; margin-bottom: 24px; font-size: 0.9rem; }
+        label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 5px; color: #444; }
+        input {
+            width: 100%; padding: 11px 14px; border: 1px solid #ddd;
+            border-radius: 6px; font-size: 1rem; margin-bottom: 16px; outline: none;
+        }
+        input:focus { border-color: #1a73e8; }
+        .btn {
+            width: 100%; padding: 12px; background: #1a73e8; color: white;
+            border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; font-weight: bold;
+        }
+        .btn:hover { background: #1558b0; }
+        .btn:disabled { background: #aaa; cursor: not-allowed; }
+        .error-msg { color: #d32f2f; font-size: 0.88rem; margin-bottom: 12px; text-align: center; display: none; }
+        .success-msg { color: #2e7d32; font-size: 0.88rem; margin-bottom: 12px; text-align: center; display: none; }
+        .login-link { text-align: center; margin-top: 18px; font-size: 0.9rem; color: #666; }
+        .login-link a { color: #1a73e8; text-decoration: none; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h2>🛒 SmartDeals</h2>
+    <p class="subtitle">Create your account</p>
+
+    <div class="error-msg" id="errorMsg"></div>
+    <div class="success-msg" id="successMsg"></div>
+
+    <label>Full Name</label>
+    <input type="text" id="name" placeholder="Your full name">
+
+    <label>Email</label>
+    <input type="email" id="email" placeholder="you@email.com">
+
+    <label>Phone Number</label>
+    <input type="tel" id="phone" placeholder="07XXXXXXXX">
+
+    <label>Password</label>
+    <input type="password" id="password" placeholder="Min 8 characters">
+
+    <label>Confirm Password</label>
+    <input type="password" id="confirmPassword" placeholder="Repeat your password">
+
+    <button class="btn" id="registerBtn" onclick="doRegister()">Create Account</button>
+
+    <div class="login-link">Already have an account? <a href="/customer/login/">Login here</a></div>
+</div>
+
+<script>
+    async function doRegister() {
+        const name            = document.getElementById('name').value.trim();
+        const email           = document.getElementById('email').value.trim();
+        const phone           = document.getElementById('phone').value.trim();
+        const password        = document.getElementById('password').value;
+        const confirmPassword = document.getElementById('confirmPassword').value;
+        const btn             = document.getElementById('registerBtn');
+
+        hideMessages();
+
+        // Validation
+        if (!name || !email || !phone || !password || !confirmPassword) {
+            showError('Please fill in all fields.'); return;
+        }
+        if (password !== confirmPassword) {
+            showError('Passwords do not match.'); return;
+        }
+        if (password.length < 8) {
+            showError('Password must be at least 8 characters.'); return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Creating account...';
+
+        try {
+            const res = await fetch('/api/customer-auth/register/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, email, phone, password })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                sessionStorage.setItem('jwt', data.access);
+                sessionStorage.setItem('customerName', name);
+                showSuccess('Account created! Redirecting...');
+                setTimeout(() => window.location.href = '/customer/products/', 1500);
+            } else {
+                showError(data.detail || data.email?.[0] || 'Registration failed. Please try again.');
+            }
+
+        } catch (err) {
+            showError('Connection error. Please try again.');
+        }
+
+        btn.disabled = false;
+        btn.textContent = 'Create Account';
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('errorMsg');
+        el.textContent = msg; el.style.display = 'block';
+    }
+    function showSuccess(msg) {
+        const el = document.getElementById('successMsg');
+        el.textContent = msg; el.style.display = 'block';
+    }
+    function hideMessages() {
+        document.getElementById('errorMsg').style.display = 'none';
+        document.getElementById('successMsg').style.display = 'none';
+    }
+</script>
+</body>
+</html>

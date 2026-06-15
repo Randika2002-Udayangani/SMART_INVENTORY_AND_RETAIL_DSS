@@ -1,15 +1,245 @@
-{% extends 'customer/base.html' %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Near-Expiry Deals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
-{% block content %}
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #f0f4f8;
+            color: #333;
+        }
 
-<h2>Product Catalog</h2>
+        /* ── Nav Bar ── */
+        nav {
+            background: #1a73e8;
+            padding: 14px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; }
+        nav .nav-links a {
+            color: white;
+            text-decoration: none;
+            margin-left: 20px;
+            font-size: 0.95rem;
+        }
+        nav .nav-links a:hover { text-decoration: underline; }
 
-<input type="text" placeholder="Search products...">
+        /* ── Search Bar ── */
+        .search-bar {
+            background: white;
+            padding: 16px 24px;
+            display: flex;
+            gap: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .search-bar input {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+        .search-bar button {
+            padding: 10px 20px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
 
-<button>Filter</button>
+        /* ── Product Grid ── */
+        .container { padding: 24px; }
 
-<div>
-    <!-- Product Cards Will Go Here -->
+        .section-title {
+            font-size: 1.3rem;
+            font-weight: bold;
+            margin-bottom: 16px;
+            color: #1a73e8;
+        }
+
+        .product-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 20px;
+        }
+
+        .product-card {
+            background: white;
+            border-radius: 10px;
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: transform 0.2s;
+        }
+        .product-card:hover { transform: translateY(-4px); }
+
+        .product-card .badge {
+            background: #ff4444;
+            color: white;
+            font-size: 0.75rem;
+            padding: 3px 8px;
+            border-radius: 12px;
+            display: inline-block;
+            margin-bottom: 8px;
+        }
+
+        .product-card h3 {
+            font-size: 1rem;
+            margin-bottom: 6px;
+        }
+
+        .product-card .expiry {
+            font-size: 0.82rem;
+            color: #e65100;
+            margin-bottom: 8px;
+        }
+
+        .product-card .price-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .product-card .original-price {
+            text-decoration: line-through;
+            color: #999;
+            font-size: 0.9rem;
+        }
+        .product-card .discount-price {
+            color: #1a73e8;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        .product-card .order-btn {
+            width: 100%;
+            padding: 9px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+        .product-card .order-btn:hover { background: #1558b0; }
+
+        /* ── Loading / Empty ── */
+        .loading { text-align: center; padding: 40px; color: #888; }
+        .empty { text-align: center; padding: 40px; color: #888; }
+
+        /* ── Mobile ── */
+        @media (max-width: 480px) {
+            .product-grid { grid-template-columns: 1fr 1fr; }
+            nav .nav-links a { margin-left: 10px; font-size: 0.85rem; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Nav Bar -->
+<nav>
+    <div class="brand">🛒 SmartDeals</div>
+    <div class="nav-links">
+        <a href="/customer/products/">Products</a>
+        <a href="/customer/order-form/">Place Order</a>
+        <a href="/customer/chatbot/">Chat</a>
+        <a href="/customer/my-orders/">My Orders</a>
+        <a href="#" onclick="logout()">Logout</a>
+    </div>
+</nav>
+
+<!-- Search -->
+<div class="search-bar">
+    <input type="text" id="searchInput" placeholder="Search products...">
+    <button onclick="searchProducts()">Search</button>
 </div>
 
-{% endblock %}
+<!-- Products -->
+<div class="container">
+    <div class="section-title">🔥 Near-Expiry Deals</div>
+    <div class="product-grid" id="productGrid">
+        <div class="loading">Loading products...</div>
+    </div>
+</div>
+
+<script>
+    // ── Auth check ──
+    const token = sessionStorage.getItem('jwt');
+    if (!token) window.location.href = '/customer/login/';
+
+    // ── Load products on page load ──
+    async function loadProducts(search = '') {
+        const grid = document.getElementById('productGrid');
+        grid.innerHTML = '<div class="loading">Loading...</div>';
+
+        try {
+            let url = '/api/products/';
+            if (search) url += `?search=${encodeURIComponent(search)}`;
+
+            const res = await fetch(url, {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            if (res.status === 401) {
+                sessionStorage.clear();
+                window.location.href = '/customer/login/';
+                return;
+            }
+
+            const data = await res.json();
+            const products = Array.isArray(data) ? data : (data.results || []);
+
+            if (products.length === 0) {
+                grid.innerHTML = '<div class="empty">No products found.</div>';
+                return;
+            }
+
+            grid.innerHTML = products.map(p => `
+                <div class="product-card">
+                    <span class="badge">NEAR EXPIRY</span>
+                    <h3>${p.product_name}</h3>
+                    <div class="expiry">Expires: ${p.expiry_date || 'Soon'}</div>
+                    <div class="price-row">
+                        <span class="original-price">Rs ${p.unit_price}</span>
+                        <span class="discount-price">Rs ${p.discounted_price || p.unit_price}</span>
+                    </div>
+                    <button class="order-btn"
+                        onclick="window.location.href='/customer/order/?product=${p.id}'">
+                        Order Now
+                    </button>
+                </div>
+            `).join('');
+
+        } catch (err) {
+            grid.innerHTML = '<div class="empty">Could not load products. Please try again.</div>';
+        }
+    }
+
+    function searchProducts() {
+        const query = document.getElementById('searchInput').value.trim();
+        loadProducts(query);
+    }
+
+    // Search on Enter key
+    document.getElementById('searchInput').addEventListener('keypress', e => {
+        if (e.key === 'Enter') searchProducts();
+    });
+
+    function logout() {
+        sessionStorage.clear();
+        window.location.href = '/customer/login/';
+    }
+
+    // Load on start
+    loadProducts();
+</script>
+
+</body>
+</html>

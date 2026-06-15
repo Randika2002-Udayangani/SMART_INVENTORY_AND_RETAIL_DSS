@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Place Order</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 500px; margin: 40px auto; padding: 0 15px; }
+    label { display: block; margin-top: 15px; font-weight: bold; }
+    input, select { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+    button { margin-top: 20px; padding: 10px 20px; background: #2c7a4b; color: white; border: none; cursor: pointer; }
+    #errorMessage { color: red; margin-top: 10px; display: none; }
+    #successMessage { color: green; margin-top: 10px; display: none; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <h2>Place an Order</h2>
+
+  <form id="orderForm">
+    <label for="productId">Product</label>
+    <select id="productId" required>
+      <option value="">Select a product</option>
+      <!-- Options will be filled in by JS using products from /api/products/ -->
+    </select>
+
+    <label for="quantity">Quantity</label>
+    <input type="number" id="quantity" min="1" value="1" required>
+
+    <label for="pickupDate">Pickup Date</label>
+    <input type="date" id="pickupDate" required>
+
+    <label for="timeSlot">Pickup Time Slot</label>
+    <select id="timeSlot" required>
+      <option value="">Select a time slot</option>
+      <option value="MORNING">Morning</option>
+      <option value="AFTERNOON">Afternoon</option>
+      <option value="EVENING">Evening</option>
+    </select>
+
+    <button type="submit">Place Order</button>
+  </form>
+
+  <div id="errorMessage"></div>
+  <div id="successMessage"></div>
+
+  <script src="/static/js/main.js"></script>
+  <script>
+    requireAuth(); // redirect to login.html if not logged in
+
+    // ---- Load products into the dropdown ----
+    async function loadProducts() {
+      try {
+        const response = await fetch(`${API_BASE}/products/`);
+        const data = await response.json();
+        const select = document.getElementById("productId");
+
+        const products = Array.isArray(data) ? data : data.results;
+        products.forEach(function (product) {
+          const option = document.createElement("option");
+          option.value = product.id;
+          option.textContent = product.name + " - Rs." + product.selling_price;
+          select.appendChild(option);
+        });
+      } catch (err) {
+        console.error("Could not load products", err);
+      }
+    }
+    loadProducts();
+
+    // ---- Handle order submission ----
+    document.getElementById("orderForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+
+      const errorBox = document.getElementById("errorMessage");
+      const successBox = document.getElementById("successMessage");
+      errorBox.style.display = "none";
+      successBox.style.display = "none";
+
+      const orderData = {
+        product_id: document.getElementById("productId").value,
+        quantity: parseInt(document.getElementById("quantity").value),
+        pickup_date: document.getElementById("pickupDate").value,
+        time_slot: document.getElementById("timeSlot").value
+      };
+
+      try {
+        const response = await fetch(`${API_BASE}/orders/`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${getToken()}`
+          },
+          body: JSON.stringify(orderData)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          successBox.textContent = "Order placed successfully! Your reference number: " + (data.reference || data.order_reference || data.reference_number);
+          successBox.style.display = "block";
+          document.getElementById("orderForm").reset();
+        } else {
+          errorBox.textContent = data.detail || JSON.stringify(data);
+          errorBox.style.display = "block";
+        }
+      } catch (err) {
+        errorBox.textContent = "Could not connect to server. Please try again.";
+        errorBox.style.display = "block";
+      }
+    });
+  </script>
+
+</body>
+</html>
