@@ -2,9 +2,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # POST /api/customer-auth/register/  — create new user
-    path('customer-auth/register/', views.RegisterView.as_view(), name='auth-register'),
-
-    # POST /api/customer-auth/login/     — login and get tokens
-    path('customer-auth/login/', views.LoginView.as_view(), name='auth-login'),
+    # POST /api/users/  — admin/staff creates a new staff account (ADMIN/MANAGER/STAFF)
+    # Moved off customer-auth/register/ — that URL belongs to orders.urls (real Customer model)
+    path('users/', views.RegisterView.as_view(), name='user-register'),
 ]

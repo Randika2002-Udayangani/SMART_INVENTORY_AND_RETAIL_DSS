@@ -1,5 +1,6 @@
 from datetime import date, timedelta    
 from decimal import Decimal
+from users.audit import log_action
 
 from django.db.models import Sum
 from rest_framework import generics, status
@@ -162,7 +163,8 @@ class StockAdjustmentView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        new_qty = batch.remaining_quantity + int(quantity_change)
+        old_qty = batch.remaining_quantity
+        new_qty = old_qty + int(quantity_change)
         if new_qty < 0:
             return Response(
                 {'error': f'Adjustment would make stock negative. '
@@ -189,6 +191,16 @@ class StockAdjustmentView(APIView):
             reason=reason,
         )
 
+        log_action(
+            user=request.user,
+            action='STOCK_ADJUSTMENT',
+            table_name='purchase_batch',
+            record_id=batch.id,
+            old_value={'remaining_quantity': old_qty},
+            new_value={'remaining_quantity': new_qty, 'reason': reason},
+            request=request,
+        )
+
         return Response({
             'message'               : 'Stock adjusted successfully',
             'product'               : product.product_name,
@@ -198,7 +210,6 @@ class StockAdjustmentView(APIView):
             'batch_status'          : batch.status,
             'adjustment_id'         : adjustment.id
         }, status=status.HTTP_201_CREATED)
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

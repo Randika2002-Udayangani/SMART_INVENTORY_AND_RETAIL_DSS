@@ -1,6 +1,5 @@
+from django.conf import settings
 from django.db import models
-
-# Create your models here.
 
 
 class Role(models.Model):
@@ -54,8 +53,10 @@ class UserSession(models.Model):
 
 
 class AuditLog(models.Model):
+    # CHANGED: now points to the real auth table (where staff actually log in from),
+    # not the orphaned AppUser table.
     user = models.ForeignKey(
-        AppUser, on_delete=models.SET_NULL,
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, db_column='user_id'
     )
     action = models.CharField(max_length=100)
