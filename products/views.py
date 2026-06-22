@@ -6,10 +6,10 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.utils import timezone
 import pandas as pd
 
-from .models import Brand, Category, StoreZone, Product
+from .models import Brand, Category, StoreZone, Product, ZoneRecommendation
 from .serializers import (
     BrandSerializer, CategorySerializer,
-    StoreZoneSerializer, ProductSerializer, ProductPublicSerializer
+    StoreZoneSerializer, ProductSerializer, ProductPublicSerializer, ZoneRecommendationSerializer
 )
 from sales.models import UploadLog
 
@@ -367,3 +367,90 @@ class ItemMasterUploadView(APIView):
             'upload_log_id' : upload_log.id,
             'notes'         : errors[:20],
         }, status=status.HTTP_201_CREATED)
+    
+# ============================================================
+# APPEND to products/views.py.
+# Also add this import near the top, with the other .serializers import:
+#   ZoneRecommendationSerializer
+# and this with the other .models import:
+#   ZoneRecommendation
+# ============================================================
+
+
+class ZoneRecommendationListView(generics.ListAPIView):
+    """
+    GET /api/zones/recommendations/
+
+    Zone placement recommendations per product.
+
+    IMPORTANT — read-only for now: this serves whatever rows already
+    exist in ZoneRecommendation. It does NOT calculate new
+    recommendations on the fly. Per the API doc, the actual scoring
+    logic (velocity_score + margin_score -> high-traffic zone;
+    expiry_risk_score high -> end-of-aisle promo zone) depends on
+    Nipuni's health-score/lifecycle engines for velocity and margin
+    data. Until something populates this table (either a future
+    'calculate' endpoint or a management command), this will just
+    return an empty list — that's expected, not a bug.
+    """
+    queryset = ZoneRecommendation.objects.select_related(
+        'product', 'current_zone', 'suggested_zone'
+    ).order_by('-recommendation_date')
+    serializer_class = ZoneRecommendationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+# ============================================================
+# APPEND to products/views.py
+# ============================================================
+
+
+class RecalculateWACView(APIView):
+    """
+    POST /api/products/{id}/recalculate-wac/
+
+    Recalculates avg_cost_price using the WAC formula:
+        avg_cost_price = total_purchase_cost / total_units_received
+
+    Computed across ALL purchase batches ever received for this product
+    (not just ACTIVE ones) — WAC is a historical weighted average of
+    cost, not a current-stock snapshot. This is the same formula
+    purchases/views.py already runs automatically when a new batch is
+    created (per API doc: "M1 — called automatically on batch creation").
+    This endpoint is just the manual re-trigger version.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        # Local import to avoid any risk of circular import between
+        # products and purchases apps.
+        from purchases.models import PurchaseBatch
+
+        try:
+            product = Product.objects.get(pk=pk)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        batches = PurchaseBatch.objects.filter(product=product)
+        total_units = sum(b.quantity_received for b in batches)
+
+        if total_units == 0:
+            return Response(
+                {'error': 'No purchase batches found for this product — cannot calculate WAC'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        total_cost = sum(b.quantity_received * b.cost_price for b in batches)
+        old_wac = product.avg_cost_price
+        new_wac = total_cost / total_units
+
+        product.avg_cost_price = new_wac
+        product.save(update_fields=['avg_cost_price'])
+
+        return Response({
+            'product_id': product.id,
+            'product_name': product.product_name,
+            'old_avg_cost_price': old_wac,
+            'new_avg_cost_price': round(new_wac, 2),
+            'total_units_received': total_units,
+            'batches_used': batches.count(),
+        })

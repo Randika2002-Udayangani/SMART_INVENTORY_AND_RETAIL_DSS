@@ -124,3 +124,24 @@ class ProductSerializer(serializers.ModelSerializer):
             'category', 'category_name',
             'brand', 'brand_name',
         ]
+
+# ============================================================
+# APPEND to the bottom of products/serializers.py
+# ============================================================
+
+from .models import ZoneRecommendation
+
+
+class ZoneRecommendationSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='product.product_name', read_only=True)
+    current_zone_name = serializers.CharField(source='current_zone.zone_name', read_only=True)
+    suggested_zone_name = serializers.CharField(source='suggested_zone.zone_name', read_only=True)
+
+    class Meta:
+        model = ZoneRecommendation
+        fields = [
+            'id', 'product', 'product_name',
+            'current_zone', 'current_zone_name',
+            'suggested_zone', 'suggested_zone_name',
+            'reason', 'performance_score', 'recommendation_date',
+        ]
