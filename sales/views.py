@@ -607,7 +607,7 @@ def expiry_summary(request):
             float(batch.remaining_quantity) * float(batch.cost_price or 0), 2
         )
         return {
-            'batch_id':          batch.batch.id,
+            'batch_id':          batch.id,
             'product_id':        batch.product.id,
             'product_name':      batch.product.product_name,
             'sku_code':          batch.product.sku_code or '',
