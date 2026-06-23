@@ -1,3 +1,8 @@
+# ============================================================
+# REPLACE sales/urls.py with this — adds one new line for
+# GET /api/sales/daily-bills/
+# ============================================================
+
 from django.urls import path
 from . import views
 
@@ -8,8 +13,7 @@ urlpatterns = [
     path('sales/upload-log/', views.UploadLogListView.as_view(), name='upload-log-list'),
     path('sales/upload-log/<int:pk>/', views.UploadLogDetailView.as_view(), name='upload-log-detail'),
     path('sales/item-sales/', views.ItemSalesListView.as_view(), name='item-sales-list'),
-    path('reports/sales-summary/', views.sales_summary, name='sales-summary'),     
-    path('reports/expiry-summary/', views.expiry_summary, name='expiry-summary'), 
-    
-
+    path('sales/daily-bills/', views.DailyBillsListView.as_view(), name='daily-bills-list'),
+    path('reports/sales-summary/', views.sales_summary, name='sales-summary'),
+    path('reports/expiry-summary/', views.expiry_summary, name='expiry-summary'),
 ]
