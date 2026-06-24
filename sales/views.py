@@ -628,3 +628,25 @@ def expiry_summary(request):
         'batches_7_to_14_days': [_serialize_batch(b) for b in batches_7_14.order_by('expiry_date')],
         'batches_14_to_30_days': [_serialize_batch(b) for b in batches_14_30.order_by('expiry_date')],
     })
+class DailyBillsListView(generics.ListAPIView):
+    """
+    GET /api/sales/daily-bills/
+ 
+    Get Daily_Bill_Summary data — store-level totals from the
+    Daily Bills PDF pipeline (NOT item-level, that's item-sales/).
+ 
+    Query params (optional):
+        ?date_from=YYYY-MM-DD
+        ?date_to=YYYY-MM-DD
+    """
+    serializer_class = DailyBillSerializer
+ 
+    def get_queryset(self):
+        queryset = DailyBillSummary.objects.all().order_by('-sale_date')
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        if date_from:
+            queryset = queryset.filter(sale_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(sale_date__lte=date_to)
+        return queryset

@@ -16,14 +16,27 @@ from users.models import SystemConfig
 from .models import (
     StockLedger, StockAdjustment, ProductLifecycle,
     LossRecord, SupplierReturn,
-    InventoryHealthScore, CategoryHealthScore
+    InventoryHealthScore, CategoryHealthScore,
+    DiscountRule, DiscountRecommendation, 
+    ReorderRecommendation,
 )
 from .serializers import (
-    StockLedgerSerializer, StockAdjustmentSerializer, CurrentStockSerializer
+    StockLedgerSerializer, StockAdjustmentSerializer, CurrentStockSerializer, 
+    DiscountRuleSerializer, DiscountRecommendationSerializer, 
+    ReorderRecommendationSerializer,
 )
 from sales.models import ItemSalesRecord
 from inventory.services.reorder_logic import get_urgency
 
+from inventory.services.reorder_logic import check_reorder_needs
+
+from orders.models import Notification
+
+from datetime import date
+#   from inventory.services.reorder_logic import check_reorder_needs
+
+
+from django.utils import timezone as dj_timezone
 
 def get_last_sync_date():
     """Helper — reads last_item_ledger_sync from SystemConfig."""
@@ -989,3 +1002,360 @@ def lifecycle_analytics(request):
             'To recalculate, call POST /api/lifecycle/calculate/ first.'
         ),
     })
+
+ 
+ 
+# ═════════════════════════════════════════════════════════════════
+# F09 — Discount Rules (config CRUD only — NOT the calculation
+# engine. discount_engine.py / POST /api/discounts/calculate/ stay
+# blocked until the project lead confirms tier values.)
+# ═════════════════════════════════════════════════════════════════
+ 
+class DiscountRuleListCreateView(APIView):
+    """
+    GET  /api/discount-rules/   — all tiered discount rules
+    POST /api/discount-rules/   — create a new rule tier. Admin/Manager.
+    """
+ 
+    def get(self, request):
+        rules = DiscountRule.objects.all().order_by('days_from_expiry_min')
+        return Response(DiscountRuleSerializer(rules, many=True).data)
+ 
+    def post(self, request):
+        serializer = DiscountRuleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        # created_by is a legacy AppUser FK, not the real auth_user table —
+        # left null here, same gap as everywhere else in this codebase that
+        # still references AppUser instead of settings.AUTH_USER_MODEL.
+        rule = serializer.save(created_by=None)
+ 
+        log_action(
+            user=request.user, action='CREATE', table_name='discount_rule',
+            record_id=rule.id, old_value=None,
+            new_value=DiscountRuleSerializer(rule).data, request=request,
+        )
+        return Response(DiscountRuleSerializer(rule).data, status=status.HTTP_201_CREATED)
+ 
+ 
+class DiscountRuleDetailView(APIView):
+    """
+    PUT   /api/discount-rules/{id}/  — full update
+    PATCH /api/discount-rules/{id}/  — partial update. Used for soft
+          deactivation: body {"is_active": false}. Per API doc v3.1:
+          hard DELETE would break FK integrity on historical
+          DiscountRecommendation rows, so deactivation is PATCH-only,
+          there is no DELETE.
+    """
+ 
+    def get_object(self, pk):
+        try:
+            return DiscountRule.objects.get(pk=pk)
+        except DiscountRule.DoesNotExist:
+            return None
+ 
+    def put(self, request, pk):
+        rule = self.get_object(pk)
+        if rule is None:
+            return Response({'error': 'Discount rule not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        old_value = DiscountRuleSerializer(rule).data
+        serializer = DiscountRuleSerializer(rule, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+ 
+        log_action(
+            user=request.user, action='UPDATE', table_name='discount_rule',
+            record_id=rule.id, old_value=old_value,
+            new_value=serializer.data, request=request,
+        )
+        return Response(serializer.data)
+ 
+    def patch(self, request, pk):
+        rule = self.get_object(pk)
+        if rule is None:
+            return Response({'error': 'Discount rule not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        old_value = DiscountRuleSerializer(rule).data
+        serializer = DiscountRuleSerializer(rule, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+ 
+        log_action(
+            user=request.user, action='UPDATE', table_name='discount_rule',
+            record_id=rule.id, old_value=old_value,
+            new_value=serializer.data, request=request,
+        )
+        return Response(serializer.data)
+ 
+ 
+# ═════════════════════════════════════════════════════════════════
+# F09 — Discount Recommendations (read + review only).
+# POST /api/discounts/calculate/ is NOT built here — that's the
+# blocked calculation engine. This just serves whatever rows exist
+# (empty list until calculate/ is built) and lets a manager mark
+# a recommendation APPLIED/IGNORED.
+# ═════════════════════════════════════════════════════════════════
+ 
+class DiscountRecommendationListView(generics.ListAPIView):
+    """
+    GET /api/discounts/recommendations/
+    Filter by ?status=PENDING/APPLIED/IGNORED/EXPIRED or ?urgency=
+    ('urgency' here maps to days_until_expiry ranges, kept simple
+    as a direct status filter per the API doc wording.)
+    """
+    serializer_class = DiscountRecommendationSerializer
+ 
+    def get_queryset(self):
+        queryset = DiscountRecommendation.objects.select_related('product').order_by('days_until_expiry')
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        return queryset
+ 
+ 
+class DiscountRecommendationDetailView(APIView):
+    """
+    PATCH /api/discounts/recommendations/{id}/
+    Manager marks a recommendation APPLIED or IGNORED.
+    Body: {"status": "APPLIED"}  or  {"status": "IGNORED"}
+    """
+ 
+    def patch(self, request, pk):
+        try:
+            rec = DiscountRecommendation.objects.get(pk=pk)
+        except DiscountRecommendation.DoesNotExist:
+            return Response({'error': 'Discount recommendation not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        new_status = request.data.get('status')
+        if new_status not in ['APPLIED', 'IGNORED']:
+            return Response(
+                {'error': 'status must be APPLIED or IGNORED'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        old_value = {'status': rec.status}
+        rec.status = new_status
+        rec.reviewed_by = None  # AppUser FK — left null, same gap as elsewhere
+        rec.reviewed_at = dj_timezone.now()
+        rec.save()
+ 
+        log_action(
+            user=request.user, action='UPDATE', table_name='discount_recommendation',
+            record_id=rec.id, old_value=old_value,
+            new_value={'status': rec.status}, request=request,
+        )
+ 
+        return Response(DiscountRecommendationSerializer(rec).data)
+    
+class SyncDateView(APIView):
+    """
+    GET /api/inventory/sync-date/
+    Returns the last_item_ledger_sync value from SystemConfig.
+    """
+
+    def get(self, request):
+        return Response({'last_sync_date': get_last_sync_date()})
+    
+
+class ReorderCalculateView(APIView):
+    """
+    POST /api/reorder/calculate/
+ 
+    Triggers reorder calculation for all products via
+    check_reorder_needs(). Saves a ReorderRecommendation row per
+    product that needs reordering. CRITICAL urgency creates a
+    Notification (manager-facing).
+ 
+    Optional body: {"as_of": "2026-02-14"} — for testing against
+    frozen sample data only. Production calls should omit this and
+    let it default to today.
+    """
+ 
+    def post(self, request):
+        as_of_str = request.data.get('as_of')
+        as_of = None
+        if as_of_str:
+            try:
+                as_of = date.fromisoformat(as_of_str)
+            except ValueError:
+                return Response({'error': 'as_of must be YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
+ 
+        results = check_reorder_needs(as_of=as_of)
+ 
+        created = []
+        for r in results:
+            rec = ReorderRecommendation.objects.create(
+                product_id=r['product_id'],
+                supplier_id=r['supplier_id'],
+                current_stock=r['current_stock'],
+                avg_daily_sales=r['avg_daily_sales'],
+                days_of_stock=r['days_of_stock'],
+                safety_stock=r['safety_stock'],
+                suggested_quantity=r['suggested_quantity'],
+                estimated_cost=r['estimated_cost'],
+                urgency=r['urgency'],
+                status='PENDING',
+            )
+            created.append(rec)
+ 
+            if r['urgency'] == 'CRITICAL':
+                # Local import to avoid any cross-app circular import risk.
+                from orders.models import Notification
+                Notification.objects.create(
+                    user=None,  # AppUser FK gap — same issue flagged elsewhere
+                    customer=None,
+                    type='REORDER',
+                    priority='CRITICAL',
+                    title='Critical reorder needed',
+                    message=f"{r['product_name']} is at {r['days_of_stock']} days of stock — reorder now.",
+                    reference_table='reorder_recommendation',
+                    reference_id=rec.id,
+                )
+ 
+        log_action(
+            user=request.user, action='CALCULATE', table_name='reorder_recommendation',
+            record_id=None, old_value=None,
+            new_value={'recommendations_created': len(created)}, request=request,
+        )
+ 
+        return Response({
+            'message': f'Reorder calculation complete — {len(created)} recommendation(s) created.',
+            'recommendations': ReorderRecommendationSerializer(created, many=True).data,
+        }, status=status.HTTP_201_CREATED)
+ 
+ 
+class ReorderRecommendationListView(generics.ListAPIView):
+    """
+    GET /api/reorder/recommendations/
+    Filter by ?urgency=CRITICAL/HIGH/MEDIUM/LOW and ?status=PENDING/ORDERED/IGNORED
+    """
+    serializer_class = ReorderRecommendationSerializer
+ 
+    def get_queryset(self):
+        queryset = ReorderRecommendation.objects.select_related(
+            'product', 'supplier'
+        ).order_by('-calculation_date')
+        urgency = self.request.query_params.get('urgency')
+        status_filter = self.request.query_params.get('status')
+        if urgency:
+            queryset = queryset.filter(urgency=urgency)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        return queryset
+ 
+ 
+class ReorderRecommendationDetailView(APIView):
+    """
+    PATCH /api/reorder/recommendations/{id}/
+    Staff/Manager marks recommendation ORDERED or IGNORED.
+    Body: {"status": "ORDERED"} or {"status": "IGNORED"}
+    """
+ 
+    def patch(self, request, pk):
+        try:
+            rec = ReorderRecommendation.objects.get(pk=pk)
+        except ReorderRecommendation.DoesNotExist:
+            return Response({'error': 'Reorder recommendation not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        new_status = request.data.get('status')
+        if new_status not in ['ORDERED', 'IGNORED']:
+            return Response({'error': 'status must be ORDERED or IGNORED'}, status=status.HTTP_400_BAD_REQUEST)
+ 
+        old_value = {'status': rec.status}
+        rec.status = new_status
+        rec.actioned_by = None  # AppUser FK gap — same issue flagged elsewhere
+        rec.save()
+ 
+        log_action(
+            user=request.user, action='UPDATE', table_name='reorder_recommendation',
+            record_id=rec.id, old_value=old_value,
+            new_value={'status': rec.status}, request=request,
+        )
+ 
+        return Response(ReorderRecommendationSerializer(rec).data)
+ 
+
+
+class NotificationListView(APIView):
+    """
+    GET /api/notifications/
+    Unread notifications, staff-facing (customer is null).
+    NOTE: Notification.user is still a legacy AppUser FK (same gap
+    flagged elsewhere in this project — it's never reliably
+    populated), so this currently returns ALL unread staff
+    notifications rather than filtering to "my" notifications.
+    Revisit once the AppUser → auth_user bridge is resolved.
+    """
+ 
+    def get(self, request):
+        notifications = Notification.objects.filter(
+            is_read=False, customer__isnull=True
+        ).order_by('-created_at')
+ 
+        data = [{
+            'id': n.id,
+            'type': n.type,
+            'priority': n.priority,
+            'title': n.title,
+            'message': n.message,
+            'reference_table': n.reference_table,
+            'reference_id': n.reference_id,
+            'is_read': n.is_read,
+            'created_at': n.created_at,
+        } for n in notifications]
+ 
+        return Response(data)
+ 
+ 
+class NotificationDetailView(APIView):
+    """
+    GET    /api/notifications/{id}/   — full detail with reference_table/id
+    PATCH  /api/notifications/{id}/read/  — mark as read (separate route, see urls.py)
+    DELETE /api/notifications/{id}/   — dismiss
+    """
+ 
+    def get(self, request, pk):
+        try:
+            n = Notification.objects.get(pk=pk)
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        return Response({
+            'id': n.id,
+            'type': n.type,
+            'priority': n.priority,
+            'title': n.title,
+            'message': n.message,
+            'reference_table': n.reference_table,
+            'reference_id': n.reference_id,
+            'is_read': n.is_read,
+            'created_at': n.created_at,
+            'read_at': n.read_at,
+            'expires_at': n.expires_at,
+        })
+ 
+    def delete(self, request, pk):
+        try:
+            n = Notification.objects.get(pk=pk)
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+        n.delete()
+        return Response({'message': 'Notification dismissed'}, status=status.HTTP_204_NO_CONTENT)
+ 
+ 
+class NotificationMarkReadView(APIView):
+    """PATCH /api/notifications/{id}/read/ — sets is_read=True, read_at=now."""
+ 
+    def patch(self, request, pk):
+        try:
+            n = Notification.objects.get(pk=pk)
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        n.is_read = True
+        n.read_at = dj_timezone.now()
+        n.save()
+ 
+        return Response({
+            'id': n.id, 'is_read': n.is_read, 'read_at': n.read_at,
+        })
