@@ -30,6 +30,8 @@ from inventory.services.reorder_logic import get_urgency
 
 from inventory.services.reorder_logic import check_reorder_needs
 
+from orders.models import Notification
+
 from datetime import date
 #   from inventory.services.reorder_logic import check_reorder_needs
 
@@ -1272,3 +1274,88 @@ class ReorderRecommendationDetailView(APIView):
  
         return Response(ReorderRecommendationSerializer(rec).data)
  
+
+
+class NotificationListView(APIView):
+    """
+    GET /api/notifications/
+    Unread notifications, staff-facing (customer is null).
+    NOTE: Notification.user is still a legacy AppUser FK (same gap
+    flagged elsewhere in this project — it's never reliably
+    populated), so this currently returns ALL unread staff
+    notifications rather than filtering to "my" notifications.
+    Revisit once the AppUser → auth_user bridge is resolved.
+    """
+ 
+    def get(self, request):
+        notifications = Notification.objects.filter(
+            is_read=False, customer__isnull=True
+        ).order_by('-created_at')
+ 
+        data = [{
+            'id': n.id,
+            'type': n.type,
+            'priority': n.priority,
+            'title': n.title,
+            'message': n.message,
+            'reference_table': n.reference_table,
+            'reference_id': n.reference_id,
+            'is_read': n.is_read,
+            'created_at': n.created_at,
+        } for n in notifications]
+ 
+        return Response(data)
+ 
+ 
+class NotificationDetailView(APIView):
+    """
+    GET    /api/notifications/{id}/   — full detail with reference_table/id
+    PATCH  /api/notifications/{id}/read/  — mark as read (separate route, see urls.py)
+    DELETE /api/notifications/{id}/   — dismiss
+    """
+ 
+    def get(self, request, pk):
+        try:
+            n = Notification.objects.get(pk=pk)
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        return Response({
+            'id': n.id,
+            'type': n.type,
+            'priority': n.priority,
+            'title': n.title,
+            'message': n.message,
+            'reference_table': n.reference_table,
+            'reference_id': n.reference_id,
+            'is_read': n.is_read,
+            'created_at': n.created_at,
+            'read_at': n.read_at,
+            'expires_at': n.expires_at,
+        })
+ 
+    def delete(self, request, pk):
+        try:
+            n = Notification.objects.get(pk=pk)
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+        n.delete()
+        return Response({'message': 'Notification dismissed'}, status=status.HTTP_204_NO_CONTENT)
+ 
+ 
+class NotificationMarkReadView(APIView):
+    """PATCH /api/notifications/{id}/read/ — sets is_read=True, read_at=now."""
+ 
+    def patch(self, request, pk):
+        try:
+            n = Notification.objects.get(pk=pk)
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        n.is_read = True
+        n.read_at = dj_timezone.now()
+        n.save()
+ 
+        return Response({
+            'id': n.id, 'is_read': n.is_read, 'read_at': n.read_at,
+        })
