@@ -650,3 +650,65 @@ class DailyBillsListView(generics.ListAPIView):
         if date_to:
             queryset = queryset.filter(sale_date__lte=date_to)
         return queryset
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def profit_summary(request):
+    """
+    GET /api/analytics/profit-summary/
+
+    Single summary object for the dashboard profit KPI card.
+    Default: last 30 days.
+
+    Response:
+        total_revenue           float
+        total_cost              float  (WAC-based)
+        total_profit            float
+        overall_margin_percent  float
+        period                  {date_from, date_to}
+    """
+    date_to   = date.today()
+    date_from = date_to - timedelta(days=30)
+
+    records = ItemSalesRecord.objects.filter(
+        sale_date__gte=date_from,
+        sale_date__lte=date_to,
+    )
+
+    store_totals = records.aggregate(
+        total_revenue=Sum('total_amount'),
+    )
+    total_revenue = float(store_totals['total_revenue'] or 0)
+
+    # WAC cost calculation
+    per_product = records.values('product_id').annotate(
+        units=Sum('quantity_sold')
+    )
+    product_ids  = [r['product_id'] for r in per_product]
+    products_map = {
+        p.id: p for p in Product.objects.filter(id__in=product_ids)
+    }
+
+    total_cost = 0.0
+    for row in per_product:
+        product = products_map.get(row['product_id'])
+        if not product:
+            continue
+        wac = float(product.avg_cost_price or product.cost_price or 0)
+        total_cost += row['units'] * wac
+
+    total_profit = total_revenue - total_cost
+    margin_pct   = round((total_profit / total_revenue * 100), 2) if total_revenue > 0 else 0.0
+
+    return Response({
+        'total_revenue':          round(total_revenue, 2),
+        'total_cost':             round(total_cost, 2),
+        'total_profit':           round(total_profit, 2),
+        'overall_margin_percent': margin_pct,
+        'period': {
+            'date_from': str(date_from),
+            'date_to':   str(date_to),
+        }
+    })
