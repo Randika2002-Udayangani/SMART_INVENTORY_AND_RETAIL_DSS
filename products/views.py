@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.utils import timezone
-import pandas as pd
+
 
 from .models import Brand, Category, StoreZone, Product, ZoneRecommendation
 from .serializers import (
@@ -12,7 +12,7 @@ from .serializers import (
     StoreZoneSerializer, ProductSerializer, ProductPublicSerializer, ZoneRecommendationSerializer
 )
 from sales.models import UploadLog
-
+from sales.services.excel_parser import parse_item_master
 
 # ─────────────────────────────────────────────
 # Brand
@@ -170,25 +170,19 @@ class ItemMasterUploadView(APIView):
             error_message=''
         )
 
-        # ── Read Excel ────────────────────────────────────────────────────
-        try:
-            df = pd.read_excel(file, header=None)
-        except Exception as e:
+        # ── Parse Excel via extracted service function ────────────────────
+        parsed = parse_item_master(file)
+
+        if parsed['read_error']:
             upload_log.status = 'FAILED'
-            upload_log.error_message = f'Could not read Excel file: {str(e)}'
+            upload_log.error_message = parsed['read_error']
             upload_log.save()
             return Response(
-                {'error': f'Could not read file: {str(e)}'},
+                {'error': parsed['read_error']},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ── Point 5 fix: Preload all products into memory ─────────────────
-        # Before: Product.objects.filter() inside loop = ~1000 queries for 495 rows
-        # After: 2 queries total — one for SKU map, one for name map
-        # All lookups are pure Python dict access — O(1) per row
-        #
-        # products_by_sku  — keyed by sku_code (exact, only ~10 products)
-        # products_by_name — keyed by lowercase name (case-insensitive match)
+        # ── Preload all products into memory ──────────────────────────────
         products_by_sku  = {
             p.sku_code: p
             for p in Product.objects.exclude(sku_code__isnull=True)
@@ -202,102 +196,17 @@ class ItemMasterUploadView(APIView):
         # ── Processing counters ───────────────────────────────────────────
         inserted = 0
         updated  = 0
-        skipped  = 0
+        skipped  = parsed['skipped']
         flagged  = 0
-        errors   = []
+        errors   = parsed['errors'][:]
 
-        # Duplicate tracking within THIS file (R4, R5)
-        # seen_names uses lowercase key — case-insensitive within-file dedup
-        seen_skus  = {}
-        seen_names = {}
+        # ── Process parsed rows ───────────────────────────────────────────
+        for item in parsed['rows']:
+            product_name = item['product_name']
+            sku_code     = item['sku_code']
+            unit_price   = item['unit_price']
+            row_num      = item['row_num']
 
-        # ── Row-by-row processing ─────────────────────────────────────────
-        for index, row in df.iterrows():
-            row_num = index + 1
-
-            # ── Point 8 fix: column count guard ──────────────────────────
-            # Wrong file (fewer than 6 columns) → iloc[5] crashes with IndexError
-            # Guard catches it per row so rest of file still processes
-            if len(row) < 6:
-                skipped += 1
-                errors.append(
-                    f'Row {row_num}: Only {len(row)} columns found — '
-                    f'expected at least 6. Row skipped.'
-                )
-                continue
-
-            # ── Col B — product_name ──────────────────────────────────────
-            # Point 9 fix: use pd.isna() instead of string 'nan' check
-            raw_name     = row.iloc[1] if not pd.isna(row.iloc[1]) else ''
-            product_name = str(raw_name).strip()
-
-            # R1 — skip DEFAULT ITEM placeholder silently
-            if product_name == 'DEFAULT ITEM':
-                skipped += 1
-                continue
-
-            # R2 — skip blank name
-            if not product_name:
-                skipped += 1
-                errors.append(f'Row {row_num}: Empty product name — skipped')
-                continue
-
-            # ── Col D — sku_code (sparse) ─────────────────────────────────
-            # Point 9 fix: pd.isna() instead of string comparison
-            raw_sku  = row.iloc[3] if not pd.isna(row.iloc[3]) else None
-            sku_code = str(raw_sku).strip() if raw_sku is not None else None
-            if not sku_code or sku_code.lower() in ('nan', 'none', ''):
-                sku_code = None
-
-            # ── Col F — unit_price ────────────────────────────────────────
-            try:
-                unit_price = float(row.iloc[5]) if not pd.isna(row.iloc[5]) else 0.0
-            except (ValueError, TypeError):
-                unit_price = 0.0
-
-            # R3 — skip invalid price
-            if unit_price <= 0:
-                skipped += 1
-                errors.append(
-                    f'Row {row_num}: "{product_name}" price={unit_price} — skipped'
-                )
-                continue
-
-            # R4 — duplicate SKU within this file
-            if sku_code:
-                if sku_code in seen_skus:
-                    skipped += 1
-                    errors.append(
-                        f'Row {row_num}: Duplicate SKU "{sku_code}" '
-                        f'(first seen row {seen_skus[sku_code]}) — skipped'
-                    )
-                    continue
-                seen_skus[sku_code] = row_num
-
-            # R5 — duplicate name within this file (only when no SKU)
-            # Point 3 fix: case-insensitive comparison
-            # Before: if product_name in seen_names
-            #         "Milk" and "MILK" treated as different → duplicate slips through
-            # After:  normalize to lowercase for comparison only
-            #         original product_name casing preserved for storage
-            if not sku_code:
-                normalized_name = product_name.lower()
-                if normalized_name in seen_names:
-                    skipped += 1
-                    errors.append(
-                        f'Row {row_num}: Duplicate name "{product_name}" '
-                        f'(first seen row {seen_names[normalized_name]}) — skipped'
-                    )
-                    continue
-                seen_names[normalized_name] = row_num
-
-            # ── Match existing product in memory ──────────────────────────
-            # Point 5 fix: dict lookup instead of DB query
-            # Point 4 fix: name lookup uses lowercase key (__iexact equivalent)
-            #   Before: Product.objects.filter(product_name=product_name)
-            #           Case sensitive in PostgreSQL — "MILK" ≠ "Milk" in DB
-            #   After:  products_by_name[product_name.lower()]
-            #           Matches regardless of casing stored in DB
             existing = None
             if sku_code:
                 existing = products_by_sku.get(sku_code)
@@ -305,20 +214,16 @@ class ItemMasterUploadView(APIView):
                 existing = products_by_name.get(product_name.lower())
 
             if existing:
-                # ── R7: update_fields restricts SQL UPDATE to price only ───
-                # is_active is physically excluded from the UPDATE statement
                 existing.unit_price = unit_price
                 if sku_code and not existing.sku_code:
                     existing.sku_code = sku_code
                     existing.save(update_fields=['unit_price', 'sku_code'])
-                    # Update preload map so later rows in same file see the new SKU
                     products_by_sku[sku_code] = existing
                 else:
                     existing.save(update_fields=['unit_price'])
                 updated += 1
 
             else:
-                # ── R8: new product — insert with category=None ───────────
                 new_product = Product.objects.create(
                     product_name      = product_name,
                     sku_code          = sku_code,
@@ -333,7 +238,6 @@ class ItemMasterUploadView(APIView):
                 )
                 inserted += 1
                 flagged  += 1
-                # Add to preload maps so later rows in same file can find it
                 products_by_name[product_name.lower()] = new_product
                 if sku_code:
                     products_by_sku[sku_code] = new_product
@@ -359,7 +263,7 @@ class ItemMasterUploadView(APIView):
         return Response({
             'message'       : 'Item Master upload complete',
             'file'          : file.name,
-            'total_rows'    : len(df),
+            'total_rows'    : len(parsed['rows']) + parsed['skipped'],
             'inserted'      : inserted,
             'updated'       : updated,
             'skipped'       : skipped,

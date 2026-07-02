@@ -1162,6 +1162,31 @@ class DiscountRecommendationDetailView(APIView):
  
         return Response(DiscountRecommendationSerializer(rec).data)
     
+
+
+class DiscountCalculateView(APIView):
+
+    def post(self, request):
+        from inventory.services.discount_engine import calculate_discounts
+        result = calculate_discounts()
+
+        log_action(
+            user=request.user, action='CALCULATE', table_name='discount_recommendation',
+            record_id=None, old_value=None,
+            new_value=result, request=request,
+        )
+
+        return Response({
+            'message': (
+                f"Discount calculation complete — "
+                f"{result['recommendations_created']} created, "
+                f"{result['recommendations_updated']} updated."
+            ),
+            **result,
+        }, status=status.HTTP_200_OK)
+    
+    
+    
 class SyncDateView(APIView):
     """
     GET /api/inventory/sync-date/
