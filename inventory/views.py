@@ -792,10 +792,27 @@ class HealthScoreCalculateView(APIView):
 class HealthScoreListView(APIView):
 
     def get(self, request):
+        queryset = InventoryHealthScore.objects.all().order_by(
+            '-calculated_date', 'overall_score'
+        )
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        data = queryset.values(
+            'id', 'product', 'velocity_score', 'margin_score',
+            'expiry_risk_score', 'stock_duration_score', 'rating_score',
+            'overall_score', 'status', 'recommended_action',
+            'rating_sufficient', 'weighting_mode', 'calculated_date'
+        )
+        return Response(list(data))
+
+
+class HealthScoreSummaryView(APIView):
+
+    def get(self, request):
         from django.db.models import Count
 
-        # Week 6 fix: return count summary per status band
-        # Lavanya uses this for the 4 band cards on the dashboard
         counts = InventoryHealthScore.objects.values('status').annotate(
             count=Count('id')
         )
@@ -815,11 +832,9 @@ class HealthScoreListView(APIView):
             'total':   sum(summary.values()),
             'note': (
                 'Call POST /api/health-scores/calculate/ first if all counts '
-                'are 0. For the full product list use GET '
-                '/api/health-scores/critical/ or /api/health-scores/categories/'
+                'are 0. For the full product list use GET /api/health-scores/.'
             )
         })
-
 
 # ─────────────────────────────────────────────────────────────────
 # GET /api/health-scores/categories/

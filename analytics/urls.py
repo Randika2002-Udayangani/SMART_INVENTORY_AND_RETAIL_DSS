@@ -7,6 +7,7 @@ from inventory.views import (
     LifecycleDecliningView,
     LossSummaryView,
     lifecycle_analytics,
+    HealthScoreSummaryView,
 )
 
 from sales.views import ItemSalesListView
@@ -24,7 +25,7 @@ urlpatterns = [
     path('analytics/loss-summary/', LossSummaryView.as_view(), name='analytics-loss-summary'),
 
     # ── F08 Health Scores ─────────────────────────────────
-    path('analytics/health-scores/', HealthScoreListView.as_view(), name='analytics-health-scores'),
+    path('analytics/health-scores/', HealthScoreSummaryView.as_view(), name='analytics-health-scores'),
     path('analytics/health-scores/critical/', HealthScoreCriticalView.as_view(), name='analytics-health-critical'),
     path('analytics/health-scores/categories/', CategoryHealthScoreView.as_view(), name='analytics-health-categories'),
 
