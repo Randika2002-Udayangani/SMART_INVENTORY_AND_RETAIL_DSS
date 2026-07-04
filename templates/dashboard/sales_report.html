@@ -127,8 +127,8 @@ async function loadReport() {
 
         document.getElementById('totalUnits').innerText = data.total_units_sold ?? '—';
         document.getElementById('totalRevenue').innerText = 'Rs ' + Number(data.total_sales_revenue ?? 0).toLocaleString();
-        document.getElementById('bestProduct').innerText = data.best_selling_product ?? '—';
-        document.getElementById('worstProduct').innerText = data.worst_selling_product ?? '—';
+        document.getElementById('bestProduct').innerText = data.best_selling_product?.product_name ?? '—';
+        document.getElementById('worstProduct').innerText = data.worst_selling_product?.product_name ?? '—';
 
         document.getElementById('summarySection').style.display = 'flex';
         document.getElementById('tableSection').style.display = 'block';

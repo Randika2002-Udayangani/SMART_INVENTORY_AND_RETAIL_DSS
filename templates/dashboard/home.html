@@ -462,22 +462,22 @@
       <div class="card-body">
         <div class="expiry-buckets">
           <div class="exp-bucket eb-7">
-            <div class="eb-num">3</div>
+            <div class="eb-num" id="exp7">3</div>
             <div class="eb-lbl">Within 7 Days</div>
             <div class="eb-loss">Est. loss Rs 12,400</div>
           </div>
           <div class="exp-bucket eb-14">
-            <div class="eb-num">6</div>
+            <div class="eb-num" id="exp14">6</div>
             <div class="eb-lbl">Within 14 Days</div>
             <div class="eb-loss">Est. loss Rs 28,700</div>
           </div>
           <div class="exp-bucket eb-30">
-            <div class="eb-num">9</div>
+            <div class="eb-num" id="exp30">9</div>
             <div class="eb-lbl">Within 30 Days</div>
             <div class="eb-loss">Est. loss Rs 51,200</div>
           </div>
         </div>
-        <ul class="expiry-list">
+        <ul class="expiry-list" id="expiryList">
           <li>
             <div>
               <div class="exp-name">Anchor Butter 200g</div>
@@ -779,21 +779,21 @@
   renderHS('all');
   // JWT CHECK
 function checkAuth() {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token');
     if (!token) { window.location.href = '/dashboard/login/'; }
 }
 checkAuth();
 
 // Logout
 function doLogout() {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
     window.location.href = '/dashboard/login/';
 }
 
 // FETCH 1 — Total Profit
 async function fetchProfitSummary() {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token')
     try {
         const res = await fetch('/api/analytics/profit-summary/', {
             headers: { 'Authorization': 'Bearer ' + token }
@@ -803,10 +803,22 @@ async function fetchProfitSummary() {
             document.getElementById('totalProfit').innerText = 'Rs ' + Number(data.total_profit).toLocaleString();
     } catch(e) {}
 }
+// FETCH — Total Sales
+async function fetchTotalSales() {
+    const token = sessionStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/reports/sales-summary/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        if (data.total_sales_revenue !== undefined)
+            document.getElementById('totalSales').innerText = 'Rs ' + Number(data.total_sales_revenue).toLocaleString();
+    } catch(e) {}
+}
 
 // FETCH 2 — Pending Orders
 async function fetchPendingOrders() {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token');
     try {
         const res = await fetch('/api/orders/', {
             headers: { 'Authorization': 'Bearer ' + token }
@@ -819,7 +831,7 @@ async function fetchPendingOrders() {
 
 // FETCH 3 — Low Stock
 async function fetchLowStockCount() {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token');
     try {
         const res = await fetch('/api/inventory/low-stock/', {
             headers: { 'Authorization': 'Bearer ' + token }
@@ -832,7 +844,7 @@ async function fetchLowStockCount() {
 
 // FETCH 4 — Expiring Soon
 async function fetchExpiringCount() {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token');
     try {
         const res = await fetch('/api/batches/expiring-soon/?days=30', {
             headers: { 'Authorization': 'Bearer ' + token }
@@ -842,9 +854,37 @@ async function fetchExpiringCount() {
         document.getElementById('expiringSoon').innerText = count;
     } catch(e) {}
 }
-
+// FETCH — Expiry Risk Widget
+async function fetchExpirySummary() {
+    const token = sessionStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/reports/expiry-summary/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        if (data.expiring_in_7_days !== undefined)
+            document.getElementById('exp7').innerText = data.expiring_in_7_days;
+        if (data.expiring_in_7_to_14_days !== undefined)
+            document.getElementById('exp14').innerText = data.expiring_in_7_to_14_days;
+        if (data.expiring_in_14_to_30_days !== undefined)
+            document.getElementById('exp30').innerText = data.expiring_in_14_to_30_days;
+        if (data.batches && Array.isArray(data.batches)) {
+            const list = document.getElementById('expiryList');
+            list.innerHTML = data.batches.map(b => `
+                <li>
+                    <div>
+                        <div class="exp-name">${b.product_name}</div>
+                        <div class="exp-batch">Batch #${b.batch_id} · ${b.remaining_quantity} units · Rs ${b.estimated_loss}</div>
+                    </div>
+                    <span class="exp-days">${b.days_until_expiry} days</span>
+                </li>
+            `).join('');
+        }
+    } catch(e) {}
+}
 // Run all fetches
 fetchProfitSummary();
+fetchTotalSales();
 fetchPendingOrders();
 fetchLowStockCount();
 fetchExpiringCount();
