@@ -319,7 +319,7 @@ def parse_item_master(file):
     try:
         df = pd.read_excel(file, header=None)
     except Exception as e:
-        return {'rows': [], 'skipped': 0, 'errors': [f'Could not read Excel file: {str(e)}']}
+        return {'rows': [], 'skipped': 0, 'errors': [], 'read_error': f'Could not read Excel file: {str(e)}'}
 
     rows   = []
     errors = []
@@ -386,7 +386,8 @@ def parse_item_master(file):
         })
 
     return {
-        'rows':    rows,
-        'skipped': skipped,
-        'errors':  errors,
+        'rows':       rows,
+        'skipped':    skipped,
+        'errors':     errors,
+        'read_error': None,
     }

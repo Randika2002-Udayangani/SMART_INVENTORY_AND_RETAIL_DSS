@@ -28,4 +28,7 @@ urlpatterns = [
     path('products/import/', views.ItemMasterUploadView.as_view(), name='item-master-upload'),
     path('products/<int:pk>/recalculate-wac/', views.RecalculateWACView.as_view(), name='product-recalculate-wac'),
     path('products/<int:pk>/', views.ProductDetailView.as_view(), name='product-detail'),
+
+
+    path('products/reclassify/', views.ReclassifyProductsView.as_view(), name='products-reclassify'),
 ]
