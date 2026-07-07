@@ -1,5 +1,5 @@
 import os
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from django.db import transaction
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -669,8 +669,21 @@ def profit_summary(request):
         overall_margin_percent  float
         period                  {date_from, date_to}
     """
-    date_to   = date.today()
-    date_from = date_to - timedelta(days=30)
+    raw_to   = request.query_params.get('date_to')
+    raw_from = request.query_params.get('date_from')
+
+    try:
+        date_to = datetime.strptime(raw_to, '%Y-%m-%d').date() if raw_to else date.today()
+    except ValueError:
+        return Response({'error': 'Invalid date_to format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from = datetime.strptime(raw_from, '%Y-%m-%d').date() if raw_from else date_to - timedelta(days=30)
+    except ValueError:
+        return Response({'error': 'Invalid date_from format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if date_from > date_to:
+        return Response({'error': 'date_from must be before date_to.'}, status=status.HTTP_400_BAD_REQUEST)
 
     records = ItemSalesRecord.objects.filter(
         sale_date__gte=date_from,
