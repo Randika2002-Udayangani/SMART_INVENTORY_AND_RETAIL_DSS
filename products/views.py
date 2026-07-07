@@ -13,6 +13,7 @@ from .serializers import (
 )
 from sales.models import UploadLog
 from sales.services.excel_parser import parse_item_master
+from inventory.services.auto_categorise import classify_product
 
 # ─────────────────────────────────────────────
 # Brand
@@ -224,6 +225,20 @@ class ItemMasterUploadView(APIView):
                 updated += 1
 
             else:
+                detected_category_name, detected_brand_name = classify_product(product_name)
+
+                category_obj, _ = Category.objects.get_or_create(
+                    category_name=detected_category_name,
+                    defaults={'default_zone': None}
+                )
+
+                brand_obj = None
+                if detected_brand_name != 'Unbranded':
+                    brand_obj, _ = Brand.objects.get_or_create(
+                        brand_name=detected_brand_name,
+                        defaults={'manufacturer': ''}
+                    )
+
                 new_product = Product.objects.create(
                     product_name      = product_name,
                     sku_code          = sku_code,
@@ -231,20 +246,27 @@ class ItemMasterUploadView(APIView):
                     cost_price        = 0,
                     avg_cost_price    = 0,
                     is_active         = True,
-                    category          = None,
-                    brand             = None,
+                    category          = category_obj,
+                    brand             = brand_obj,
                     reorder_threshold = 0,
                     introduced_date   = timezone.now().date(),
                 )
                 inserted += 1
-                flagged  += 1
                 products_by_name[product_name.lower()] = new_product
                 if sku_code:
                     products_by_sku[sku_code] = new_product
-                errors.append(
-                    f'Row {row_num}: NEW product "{product_name}" inserted — '
-                    f'needs category assignment'
-                )
+
+                if detected_category_name == 'General':
+                    flagged += 1
+                    errors.append(
+                        f'Row {row_num}: NEW product "{product_name}" inserted — '
+                        f'category could not be auto-detected, manual assignment needed'
+                    )
+                else:
+                    errors.append(
+                        f'Row {row_num}: NEW product "{product_name}" inserted — '
+                        f'auto-assigned to {detected_category_name} / {detected_brand_name}'
+                    )
 
         # ── Finalise upload log ───────────────────────────────────────────
         if inserted == 0 and updated == 0:
@@ -358,3 +380,27 @@ class RecalculateWACView(APIView):
             'total_units_received': total_units,
             'batches_used': batches.count(),
         })
+
+
+class ReclassifyProductsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from inventory.services.auto_categorise import classify_all_products
+        from django.db import models as django_models
+
+        products_to_classify = Product.objects.filter(
+            is_active=True
+        ).filter(
+            django_models.Q(category__isnull=True) | django_models.Q(brand__isnull=True)
+        )
+
+        result = classify_all_products(products_to_classify)
+
+        return Response({
+            'message':              'Reclassification complete',
+            'classified':           result['classified'],
+            'already_had_category': result['already_had_category'],
+            'errors':               result['errors'],
+            'total_processed':      result['total_processed'],
+        }, status=status.HTTP_200_OK)
