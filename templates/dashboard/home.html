@@ -578,11 +578,11 @@
   <!-- INVENTORY HEALTH SCORE -->
   <div class="one-col">
     <div class="sec-hdr">
-      <div>
+      <div>w
         <div class="sh">Inventory Health Score</div>
         <div class="ss">Composite 0–100 score · 4-band classification · triggered on-demand · from /api/health-scores/</div>
       </div>
-      <button class="calc-btn" onclick="this.innerHTML='&#x23F3; Calculating...'">&#9654; Run Health Calculation</button>
+      <button class="calc-btn" onclick="runHealthCalculation(this)">&#9654; Run Health Calculation</button>
     </div>
 
     <!-- Band summary -->
@@ -881,6 +881,26 @@ async function fetchExpirySummary() {
             `).join('');
         }
     } catch(e) {}
+}
+// Run Health Calculation
+async function runHealthCalculation(btn) {
+    btn.innerHTML = '&#x23F3; Calculating...';
+    btn.disabled = true;
+    const token = sessionStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/health-scores/calculate/', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+            btn.innerHTML = '&#9654; Run Health Calculation';
+            btn.disabled = false;
+            renderHS('all');
+        }
+    } catch(e) {
+        btn.innerHTML = '&#9654; Run Health Calculation';
+        btn.disabled = false;
+    }
 }
 // Run all fetches
 fetchProfitSummary();
