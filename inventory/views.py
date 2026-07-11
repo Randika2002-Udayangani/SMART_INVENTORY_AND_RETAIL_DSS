@@ -1,6 +1,3 @@
-from django.http import JsonResponse
+from django.shortcuts import render
 
-def api_status(request):
-    return JsonResponse({
-        "status": "working"
-    })
+# Create your views here.
