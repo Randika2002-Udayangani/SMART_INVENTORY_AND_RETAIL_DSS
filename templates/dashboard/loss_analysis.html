@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loss Analysis — Smart Inventory DSS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
+        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
+        .kpi-card { background:white; border-radius:12px; padding:20px; border:1px solid #e2e8f0; text-align:center; }
+        .kpi-val { font-size:28px; font-weight:700; color:#1a2e1e; }
+        .kpi-lbl { font-size:12px; color:#64748b; text-transform:uppercase; }
+        .btn-primary { background:#2d6a4f; border:none; }
+        .btn-primary:hover { background:#1b4332; }
+        .btn-danger-soft { background:#fee2e2; color:#dc2626; border:none; padding:4px 10px; border-radius:6px; font-size:12px; }
+        .btn-success-soft { background:#dcfce7; color:#16a34a; border:none; padding:4px 10px; border-radius:6px; font-size:12px; }
+    </style>
+</head>
+<body>
+
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-0 fw-bold">Loss Analysis</h4>
+        <small class="text-muted">Samanala Super Mart — Decision Support System</small>
+    </div>
+    <div>
+        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+    </div>
+</div>
+
+<div class="container-fluid px-4">
+
+    <!-- KPI Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="kpi-card">
+                <div class="kpi-lbl">Gross Expiry Loss</div>
+                <div class="kpi-val text-danger" id="grossLoss">—</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="kpi-card">
+                <div class="kpi-lbl">Recovered Amount</div>
+                <div class="kpi-val text-success" id="recovered">—</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="kpi-card">
+                <div class="kpi-lbl">Total Net Loss</div>
+                <div class="kpi-val text-warning" id="netLoss">—</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loss Records Table -->
+    <div class="card p-4 mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="fw-bold mb-0">Loss Records</h6>
+            <div class="d-flex gap-2">
+                <select id="lossTypeFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadLosses()">
+                    <option value="">All Types</option>
+                    <option value="EXPIRY">EXPIRY</option>
+                    <option value="SLOW_MOVING">SLOW_MOVING</option>
+                    <option value="DAMAGE">DAMAGE</option>
+                    <option value="OTHER">OTHER</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="showDamageForm()">+ Record Damage</button>
+            </div>
+        </div>
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr><th>Product</th><th>Loss Type</th><th>Quantity</th><th>Loss Value</th><th>Date</th></tr>
+            </thead>
+            <tbody id="lossTableBody">
+                <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Record Damage Form -->
+    <div class="card p-4 mb-4" id="damageForm" style="display:none;">
+        <h6 class="fw-bold mb-3">Record Damage</h6>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Product ID</label>
+                <input type="number" id="dmgProduct" class="form-control" placeholder="Enter product ID">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Loss Type</label>
+                <select id="dmgType" class="form-select">
+                    <option value="DAMAGE">DAMAGE</option>
+                    <option value="EXPIRY">EXPIRY</option>
+                    <option value="SLOW_MOVING">SLOW_MOVING</option>
+                    <option value="OTHER">OTHER</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Quantity</label>
+                <input type="number" id="dmgQty" class="form-control" placeholder="Qty">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Notes</label>
+                <input type="text" id="dmgNotes" class="form-control" placeholder="Notes">
+            </div>
+        </div>
+        <div class="mt-3">
+            <button class="btn btn-primary btn-sm" onclick="submitDamage()">Submit</button>
+            <button class="btn btn-outline-secondary btn-sm ms-2" onclick="hideDamageForm()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Supplier Returns -->
+    <div class="card p-4 mb-4">
+        <h6 class="fw-bold mb-3">Supplier Returns</h6>
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr><th>Supplier</th><th>Product</th><th>Quantity</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="returnsTableBody">
+                <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+const token = sessionStorage.getItem('access_token');
+if (!token) { window.location.href = '/dashboard/login/'; }
+
+function doLogout() {
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
+    window.location.href = '/dashboard/login/';
+}
+
+// Load KPI summary
+async function loadSummary() {
+    try {
+        const res = await fetch('/api/losses/summary/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        document.getElementById('grossLoss').innerText = 'Rs ' + Number(data.gross_expiry_loss ?? 0).toLocaleString();
+        document.getElementById('recovered').innerText = 'Rs ' + Number(data.recovered_amount ?? 0).toLocaleString();
+        document.getElementById('netLoss').innerText = 'Rs ' + Number(data.total_net_loss ?? 0).toLocaleString();
+    } catch(e) {}
+}
+
+// Auto-detect losses
+async function autoDetect() {
+    try {
+        await fetch('/api/losses/auto-detect/', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+    } catch(e) {}
+}
+
+// Load loss records
+async function loadLosses() {
+    const filter = document.getElementById('lossTypeFilter').value;
+    const url = filter ? `/api/losses/?loss_type=${filter}` : '/api/losses/';
+    try {
+        const res = await fetch(url, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        const tbody = document.getElementById('lossTableBody');
+        const rows = Array.isArray(data) ? data : (data.results ?? []);
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No loss records found.</td></tr>';
+        } else {
+            tbody.innerHTML = rows.map(r => `
+                <tr>
+                    <td>${r.product_name ?? r.product ?? '—'}</td>
+                    <td><span class="badge bg-secondary">${r.loss_type}</span></td>
+                    <td>${r.loss_quantity ?? r.quantity ?? '—'}</td>
+                    <td>Rs ${Number(r.loss_value ?? 0).toLocaleString()}</td>
+                    <td>${r.date ?? r.created_at ?? '—'}</td>
+                </tr>
+            `).join('');
+        }
+    } catch(e) {
+        document.getElementById('lossTableBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted">Could not load data.</td></tr>';
+    }
+}
+
+// Load supplier returns
+async function loadReturns() {
+    try {
+        const res = await fetch('/api/supplier-returns/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        const tbody = document.getElementById('returnsTableBody');
+        const rows = Array.isArray(data) ? data : (data.results ?? []);
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No supplier returns found.</td></tr>';
+        } else {
+            tbody.innerHTML = rows.map(r => `
+                <tr>
+                    <td>${r.supplier_name ?? r.supplier ?? '—'}</td>
+                    <td>${r.product_name ?? r.product ?? '—'}</td>
+                    <td>${r.quantity_returned ?? '—'}</td>
+                    <td><span class="badge ${r.status==='CONFIRMED'?'bg-success':r.status==='REJECTED'?'bg-danger':'bg-warning'}">${r.status}</span></td>
+                    <td>
+                        <button class="btn-success-soft me-1" onclick="updateReturn(${r.id},'CONFIRMED')">Confirm</button>
+                        <button class="btn-danger-soft" onclick="updateReturn(${r.id},'REJECTED')">Reject</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+    } catch(e) {
+        document.getElementById('returnsTableBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted">Could not load data.</td></tr>';
+    }
+}
+
+async function updateReturn(id, status) {
+    try {
+        await fetch(`/api/supplier-returns/${id}/status/`, {
+            method: 'PATCH',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+        loadReturns();
+        loadSummary();
+    } catch(e) {}
+}
+
+function showDamageForm() { document.getElementById('damageForm').style.display = 'block'; }
+function hideDamageForm() { document.getElementById('damageForm').style.display = 'none'; }
+
+async function submitDamage() {
+    const body = {
+        product_id: document.getElementById('dmgProduct').value,
+        loss_type: document.getElementById('dmgType').value,
+        loss_quantity: document.getElementById('dmgQty').value,
+        notes: document.getElementById('dmgNotes').value
+    };
+    try {
+        const res = await fetch('/api/losses/', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (res.ok) {
+            hideDamageForm();
+            loadLosses();
+            loadSummary();
+        } else {
+            alert('Error submitting damage record.');
+        }
+    } catch(e) { alert('Error submitting.'); }
+}
+
+// Run on page load
+autoDetect();
+loadSummary();
+loadLosses();
+loadReturns();
+</script>
+</body>
+</html>

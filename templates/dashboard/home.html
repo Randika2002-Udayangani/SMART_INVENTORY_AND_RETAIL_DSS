@@ -26,10 +26,11 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--txt); min-height: 100vh; }
+ 
 
     /* ── SIDEBAR ─────────────────────────────────────────── */
-    .sidebar {
-      width: 220px; min-height: 100vh; background: var(--sidebar);
+    .sidebar { overflow-y: auto;
+      width: 220px; height: 100vh; background: var(--sidebar);
       position: fixed; top: 0; left: 0;
       display: flex; flex-direction: column; z-index: 100;
       border-right: 1px solid rgba(255,255,255,0.06);
@@ -37,7 +38,7 @@
     .sb-logo { padding: 20px 18px 14px; border-bottom: 1px solid rgba(255,255,255,0.15); }
     .sb-logo .lt { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #d4f7e0; }
     .sb-logo .ls { font-size: 9.5px; color: rgba(255,255,255,0.5); margin-top: 2px; }
-    .sb-nav { padding: 12px 8px; flex: 1; overflow-y: auto; }
+    .sb-nav { padding: 12px 8px; flex: 1; overflow-y: auto; max-height: calc(100vh - 80px); }
     .sb-sec { font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 0 10px 6px; margin-top: 10px; }
     .sb-nav a {
       display: flex; align-items: center; gap: 9px; padding: 8px 10px;
@@ -251,7 +252,7 @@
     /* ── RESPONSIVE ──────────────────────────────────────── */
     @media (max-width: 1200px) { .kpi-grid { grid-template-columns: repeat(2,1fr); } }
     @media (max-width: 960px) {
-      .sidebar { display: none; } .main { margin-left: 0; padding: 16px; }
+      .sidebar { overflow-y: auto; display: none; } .main { margin-left: 0; padding: 16px; }
       .kpi-grid { grid-template-columns: repeat(2,1fr); }
       .two-col { grid-template-columns: 1fr; }
       .health-bands { grid-template-columns: repeat(2,1fr); }
@@ -279,17 +280,18 @@
     <a href="#"><i class="bi bi-upload"></i> Sales Upload</a>
 
     <div class="sb-sec">Decision Support</div>
-    <a href="#"><i class="bi bi-heart-pulse"></i> Health Score</a>
-    <a href="#"><i class="bi bi-tag"></i> Discount Engine</a>
-    <a href="#"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
-    <a href="#"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
+    <<a href="#" onclick="alert('Coming soon')"><i class="bi bi-heart-pulse"></i> Health Score</a>
+    <a href="#" onclick="alert('Coming soon')"><i class="bi bi-tag"></i> Discount Engine</a>
+    <a href="#" onclick="alert('Coming soon')"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
+    <a href="/dashboard/loss-analysis/"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
+    <a href="/dashboard/lifecycle/"><i class="bi bi-activity"></i> Lifecycle</a>
 
     <div class="sb-sec">Operations</div>
     <a href="#"><i class="bi bi-receipt"></i> Order Management</a>
     <a href="#"><i class="bi bi-truck"></i> Suppliers</a>
 
     <div class="sb-sec">Reports</div>
-    <a href="#"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
+    <a href="#" onclick="alert('Coming soon')"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
     <a href="/dashboard/sales-report/" class="bi bi-bar-chart"></i> Sales Report</a>
     <a href="#"><i class="bi bi-bell"></i> Notifications <span class="badge-pill">5</span></a>
   </nav>
@@ -756,7 +758,7 @@
   }
 
   function renderHS(filter) {
-    const rows = filter==='all' ? hsData : hsData.filter(r=>r.status===filter);
+    const rows = filter==='all' ? hsData.filter(r=>r.status==='AT RISK'||r.status==='CRITICAL') : hsData.filter(r=>r.status===filter);
     document.getElementById('hsTbody').innerHTML = rows.map(r=>`
       <tr>
         <td style="font-weight:600">${r.name}</td>
@@ -769,6 +771,7 @@
         <td><span class="action-txt">${r.action}</span></td>
       </tr>`).join('');
   }
+  
 
   function fhs(filter, btn) {
     document.querySelectorAll('.hf-btn').forEach(b=>b.classList.remove('on'));
@@ -776,7 +779,7 @@
     renderHS(filter);
   }
 
-  renderHS('all');
+  renderHS('AT RISK')
   // JWT CHECK
 function checkAuth() {
     const token = sessionStorage.getItem('access_token');

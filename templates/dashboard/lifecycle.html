@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Lifecycle — Smart Inventory DSS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
+        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
+        .kpi-card { background:white; border-radius:12px; padding:20px; border:1px solid #e2e8f0; text-align:center; }
+        .kpi-val { font-size:28px; font-weight:700; }
+        .kpi-lbl { font-size:12px; color:#64748b; text-transform:uppercase; }
+        .btn-primary { background:#2d6a4f; border:none; }
+        .pill { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    </style>
+</head>
+<body>
+
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-0 fw-bold">Product Lifecycle</h4>
+        <small class="text-muted">Samanala Super Mart — Decision Support System</small>
+    </div>
+    <div>
+        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+    </div>
+</div>
+
+<div class="container-fluid px-4">
+
+    <div class="row g-3 mb-4">
+        <div class="col"><div class="kpi-card"><div class="kpi-lbl">NEW</div><div class="kpi-val text-primary" id="countNew">—</div></div></div>
+        <div class="col"><div class="kpi-card"><div class="kpi-lbl">GROWING</div><div class="kpi-val text-success" id="countGrowing">—</div></div></div>
+        <div class="col"><div class="kpi-card"><div class="kpi-lbl">STABLE</div><div class="kpi-val text-secondary" id="countStable">—</div></div></div>
+        <div class="col"><div class="kpi-card"><div class="kpi-lbl">DECLINING</div><div class="kpi-val text-warning" id="countDeclining">—</div></div></div>
+        <div class="col"><div class="kpi-card"><div class="kpi-lbl">SLOW MOVING</div><div class="kpi-val text-danger" id="countSlow">—</div></div></div>
+    </div>
+
+    <div class="mb-3">
+        <button class="btn btn-primary" id="calcBtn" onclick="runCalculate()">▶ Calculate Lifecycle</button>
+    </div>
+
+    <div id="emptyState" style="display:none;" class="text-center py-5 text-muted">
+        <p id="emptyMsg">No lifecycle data yet. Click Calculate to run.</p>
+        <button class="btn btn-primary" onclick="runCalculate()">▶ Calculate Now</button>
+    </div>
+
+    <div class="card p-4" id="tableSection" style="display:none;">
+        <h6 class="fw-bold mb-3">Product Lifecycle Status</h6>
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr><th>Product</th><th>Status</th><th>Recommendation</th><th>Sales Velocity</th><th>Date</th></tr>
+            </thead>
+            <tbody id="lifecycleBody"></tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+const token = sessionStorage.getItem('access_token');
+if (!token) { window.location.href = '/dashboard/login/'; }
+
+function doLogout() {
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
+    window.location.href = '/dashboard/login/';
+}
+
+function statusBadge(s) {
+    const map = { 'NEW':'#dbeafe;color:#1d4ed8', 'GROWING':'#dcfce7;color:#16a34a', 'STABLE':'#f3f4f6;color:#374151', 'DECLINING':'#fed7aa;color:#c2410c', 'SLOW_MOVING':'#fee2e2;color:#dc2626' };
+    const style = map[s] || '#f3f4f6;color:#374151';
+    return `<span class="pill" style="background:${style}">${s}</span>`;
+}
+
+function recPill(r) {
+    const map = { 'RETAIN':'#dcfce7;color:#16a34a', 'MONITOR':'#dbeafe;color:#1d4ed8', 'DISCOUNT':'#fef9c3;color:#854d0e', 'DISCONTINUE':'#fee2e2;color:#dc2626' };
+    const style = map[r] || '#f3f4f6;color:#374151';
+    return `<span class="pill" style="background:${style}">${r||'—'}</span>`;
+}
+
+async function loadLifecycle() {
+    try {
+        const res = await fetch('/api/analytics/lifecycle/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        const summary = data.summary || {};
+        document.getElementById('countNew').innerText = summary.NEW ?? '0';
+        document.getElementById('countGrowing').innerText = summary.GROWING ?? '0';
+        document.getElementById('countStable').innerText = summary.STABLE ?? '0';
+        document.getElementById('countDeclining').innerText = summary.DECLINING ?? '0';
+        document.getElementById('countSlow').innerText = summary.SLOW_MOVING ?? '0';
+        const results = data.results ?? [];
+        if (results.length === 0) {
+            document.getElementById('emptyState').style.display = 'block';
+            document.getElementById('tableSection').style.display = 'none';
+            document.getElementById('emptyMsg').innerText = data.note || 'No lifecycle data yet. Click Calculate to run.';
+        } else {
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('tableSection').style.display = 'block';
+            document.getElementById('lifecycleBody').innerHTML = results.map(r => `
+                <tr>
+                    <td>${r.product_name ?? '—'}</td>
+                    <td>${statusBadge(r.lifecycle_status ?? r.status)}</td>
+                    <td>${recPill(r.recommendation)}</td>
+                    <td>${r.sales_velocity ?? '—'}</td>
+                    <td>${r.calculated_date ?? '—'}</td>
+                </tr>
+            `).join('');
+        }
+    } catch(e) {
+        document.getElementById('emptyState').style.display = 'block';
+    }
+}
+
+async function runCalculate() {
+    const btn = document.getElementById('calcBtn');
+    btn.innerHTML = '⏳ Calculating...';
+    btn.disabled = true;
+    try {
+        await fetch('/api/lifecycle/calculate/', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        await loadLifecycle();
+    } catch(e) {}
+    btn.innerHTML = '▶ Calculate Lifecycle';
+    btn.disabled = false;
+}
+
+loadLifecycle();
+</script>
+</body>
+</html>
