@@ -1,29 +1,60 @@
 from django.urls import path
-from . import views
-
-urlpatterns = [
-    path('customer-auth/register/', views.CustomerRegisterView.as_view(), name='customer-register'),
-    path('customer-auth/login/', views.CustomerLoginView.as_view(), name='customer-login'),
-    path('customer-auth/profile/', views.CustomerProfileView.as_view(), name='customer-profile'),
-]
-
 
 from .views import (
+    CustomerRegisterView,
+    CustomerLoginView,
+    CustomerProfileView,
+    OrderCreateView,
+    OrderListView,
+    OrderStatusUpdateView,
     chatbot,
-    update_order_status
 )
+
 
 urlpatterns = [
 
-    # Chatbot API
     path(
-        'chatbot/',
-        chatbot
+        "customer-auth/register/",
+        CustomerRegisterView.as_view(),
+        name="customer-register"
     ),
 
-    # Order Status Update API
     path(
-        'orders/update-status/',
-        update_order_status
+        "customer-auth/login/",
+        CustomerLoginView.as_view(),
+        name="customer-login"
     ),
+
+    path(
+        "customer-auth/profile/",
+        CustomerProfileView.as_view(),
+        name="customer-profile"
+    ),
+
+
+    path(
+        "orders/",
+        OrderCreateView.as_view(),
+        name="order-create"
+    ),
+
+    path(
+        "orders/list/",
+        OrderListView.as_view(),
+        name="order-list"
+    ),
+
+    path(
+        "orders/<int:pk>/status/",
+        OrderStatusUpdateView.as_view(),
+        name="order-status"
+    ),
+
+
+    path(
+        "chatbot/query/",
+        chatbot,
+        name="chatbot"
+    ),
+
 ]

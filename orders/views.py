@@ -1,207 +1,789 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
+import json
 
 from django.contrib.auth.hashers import make_password, check_password
-from django.utils import timezone
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-import json
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import AllowAny
 
 from core.models import AuditLog
-from .models import Customer
+from products.models import Product
+
+from inventory.services.stock import get_available_stock
+from inventory.models import StockLedger
+
+from .models import Customer, OnlineOrder, OnlineOrderItem
 from .tokens import get_tokens_for_customer
 from .chatbot import detect_intent
+from .jwt_authentication import CustomerJWTAuthentication
 
-
-# =========================================================
-# CUSTOMER AUTH APIs
-# =========================================================
 
 class CustomerRegisterView(APIView):
-    """
-    POST /api/customer-auth/register/
-    Public — no token needed.
-    """
 
-    permission_classes = []
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
 
     def post(self, request):
 
-        name = request.data.get('name')
-        email = request.data.get('email')
-        password = request.data.get('password')
-        contact_number = request.data.get('contact_number', '')
-        address = request.data.get('address', '')
+        name = request.data.get("name")
+        email = request.data.get("email")
+        password = request.data.get("password")
 
-        if not name or not email or not password:
+
+        if not all([name, email, password]):
+
             return Response(
-                {'error': 'name, email, and password are required'},
+                {
+                    "error":
+                    "name, email and password are required"
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
+
 
         if Customer.objects.filter(email=email).exists():
+
             return Response(
-                {'error': 'An account with this email already exists'},
+                {
+                    "error":
+                    "Email already exists"
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+
         customer = Customer.objects.create(
+
             name=name,
+
             email=email,
+
             password_hash=make_password(password),
-            contact_number=contact_number,
-            address=address,
-            is_active=True,
+
+            is_active=True
+
         )
+
 
         tokens = get_tokens_for_customer(customer)
 
-        return Response({
-            'message': 'Registration successful',
-            'customer_id': customer.id,
-            'name': customer.name,
-            'email': customer.email,
-            **tokens
-        }, status=status.HTTP_201_CREATED)
+
+        return Response(
+
+            {
+                "message":
+                "Customer registered successfully",
+
+                "customer_id":
+                customer.id,
+
+                "name":
+                customer.name,
+
+                "email":
+                customer.email,
+
+                "refresh":
+                tokens["refresh"],
+
+                "access":
+                tokens["access"]
+
+            },
+
+            status=status.HTTP_201_CREATED
+
+        )
+
 
 
 class CustomerLoginView(APIView):
-    """
-    POST /api/customer-auth/login/
-    """
 
-    permission_classes = []
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
 
     def post(self, request):
 
-        email = request.data.get('email')
-        password = request.data.get('password')
+        email = request.data.get("email")
+        password = request.data.get("password")
 
-        if not email or not password:
+
+        if not all([email, password]):
+
             return Response(
-                {'error': 'email and password are required'},
+
+                {
+                    "error":
+                    "email and password required"
+                },
+
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+
         try:
+
             customer = Customer.objects.get(
+
                 email=email,
+
                 is_active=True
+
             )
+
 
         except Customer.DoesNotExist:
+
+
             return Response(
-                {'error': 'Invalid email or password'},
+
+                {
+                    "error":
+                    "Invalid credentials"
+                },
+
                 status=status.HTTP_401_UNAUTHORIZED
+
             )
 
-        if not check_password(password, customer.password_hash):
+
+
+        if not check_password(
+
+            password,
+
+            customer.password_hash
+
+        ):
+
+
             return Response(
-                {'error': 'Invalid email or password'},
+
+                {
+                    "error":
+                    "Invalid credentials"
+                },
+
                 status=status.HTTP_401_UNAUTHORIZED
+
             )
 
-        customer.last_login = timezone.now()
-        customer.save()
+
 
         tokens = get_tokens_for_customer(customer)
 
-        return Response({
-            'message': 'Login successful',
-            'customer_id': customer.id,
-            'name': customer.name,
-            'email': customer.email,
-            **tokens
-        })
+
+
+        return Response(
+
+            {
+                "message":
+                "Login successful",
+
+                "customer_id":
+                customer.id,
+
+                "name":
+                customer.name,
+
+                "email":
+                customer.email,
+
+                "refresh":
+                tokens["refresh"],
+
+                "access":
+                tokens["access"]
+
+            }
+
+        )
 
 
 class CustomerProfileView(APIView):
-    """
-    GET /api/customer-auth/profile/
-    """
+
+    authentication_classes = [
+
+        CustomerJWTAuthentication
+
+    ]
+
 
     def get(self, request):
 
-        return Response({
-            'message': 'Profile endpoint — token validation coming Week 4'
-        })
+        customer = request.user
 
 
-# =========================================================
-# CHATBOT API
-# =========================================================
+        return Response(
+
+            {
+                "id":
+                customer.id,
+
+                "name":
+                customer.name,
+
+                "email":
+                customer.email,
+
+                "contact_number":
+                customer.contact_number,
+
+                "address":
+                customer.address
+
+            }
+
+        )
+
+
+class OrderCreateView(APIView):
+
+    authentication_classes = [
+
+        CustomerJWTAuthentication
+
+    ]
+
+
+    def post(self, request):
+
+        customer = request.user
+
+
+        pickup_date = request.data.get(
+            "pickup_date"
+        )
+
+        time_slot = request.data.get(
+            "time_slot"
+        )
+
+        items = request.data.get(
+            "items"
+        )
+
+
+
+        if not all(
+
+            [
+                pickup_date,
+                time_slot,
+                items
+
+            ]
+
+        ):
+
+
+            return Response(
+
+                {
+                    "error":
+                    "Missing required fields"
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+
+            )
+
+
+
+        if time_slot not in [
+
+            "MORNING",
+            "AFTERNOON",
+            "EVENING"
+
+        ]:
+
+
+            return Response(
+
+                {
+                    "error":
+                    "Invalid pickup time"
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+
+            )
+
+
+
+        order_reference = (
+
+            f"ORD-2026-"
+            f"{str(OnlineOrder.objects.count()+1).zfill(5)}"
+
+        )
+
+
+
+        order = OnlineOrder.objects.create(
+
+            customer=customer,
+
+            pickup_date=pickup_date,
+
+            pickup_time_slot=time_slot,
+
+            order_reference=order_reference,
+
+            status="PENDING"
+
+        )
+
+
+
+        total = 0
+
+
+
+        for item in items:
+
+
+            product_id = item.get(
+                "product_id"
+            )
+
+
+            quantity = int(
+
+                item.get("quantity")
+
+            )
+
+
+
+            try:
+
+                product = Product.objects.get(
+
+                    id=product_id
+
+                )
+
+
+            except Product.DoesNotExist:
+
+
+                return Response(
+
+                    {
+                        "error":
+                        f"Product {product_id} not found"
+                    },
+
+                    status=status.HTTP_404_NOT_FOUND
+
+                )
+
+
+            available_stock = get_available_stock(
+
+                product_id
+
+            )
+
+
+            if quantity > available_stock:
+
+
+                return Response(
+
+                    {
+                        "error":
+                        f"Insufficient stock for {product.name}",
+
+                        "requested_quantity":
+                        quantity,
+
+                        "available_stock":
+                        available_stock
+
+                    },
+
+                    status=status.HTTP_400_BAD_REQUEST
+
+                )
+
+
+
+            price = product.selling_price
+
+
+            OnlineOrderItem.objects.create(
+
+                order=order,
+
+                product=product,
+
+                quantity=quantity,
+
+                unit_price=price
+
+            )
+
+
+            StockLedger.objects.create(
+
+                product=product,
+
+                transaction_type="SALE_SYNC",
+
+                source="ONLINE_ORDER",
+
+                quantity_change=-quantity,
+
+                reference_id=order.id
+
+            )
+
+
+
+            total += price * quantity
+
+
+
+        order.total_amount = total
+
+        order.save()
+
+
+
+        return Response(
+
+            {
+                "message":
+                "Order created successfully",
+
+                "order_reference":
+                order.order_reference,
+
+                "status":
+                order.status,
+
+                "total_amount":
+                float(order.total_amount)
+
+            },
+
+            status=status.HTTP_201_CREATED
+
+        )
+
+
+class OrderListView(APIView):
+
+    authentication_classes = [
+
+        CustomerJWTAuthentication
+
+    ]
+
+
+    def get(self, request):
+
+        customer = request.user
+
+
+        orders = OnlineOrder.objects.filter(
+
+            customer=customer
+
+        ).order_by("-id")
+
+
+
+        response = []
+
+
+
+        for order in orders:
+
+
+            items = OnlineOrderItem.objects.filter(
+
+                order=order
+
+            )
+
+
+            item_list = []
+
+
+
+            for item in items:
+
+
+                item_list.append(
+
+                    {
+
+                        "product":
+                        item.product.name,
+
+                        "quantity":
+                        item.quantity,
+
+                        "unit_price":
+                        float(item.unit_price)
+
+                    }
+
+                )
+
+
+
+            response.append(
+
+                {
+
+                    "order_reference":
+                    order.order_reference,
+
+                    "pickup_date":
+                    order.pickup_date,
+
+                    "pickup_time_slot":
+                    order.pickup_time_slot,
+
+                    "status":
+                    order.status,
+
+                    "payment_status":
+                    order.payment_status,
+
+                    "total_amount":
+                    float(order.total_amount),
+
+                    "items":
+                    item_list
+
+                }
+
+            )
+
+
+        return Response(response)
+
+
+class OrderStatusUpdateView(APIView):
+
+
+    def put(self, request, pk):
+
+        try:
+
+            order = OnlineOrder.objects.get(
+
+                id=pk
+
+            )
+
+
+        except OnlineOrder.DoesNotExist:
+
+
+            return Response(
+
+                {
+                    "error":
+                    "Order not found"
+                },
+
+                status=status.HTTP_404_NOT_FOUND
+
+            )
+
+
+
+        new_status = request.data.get(
+
+            "status"
+
+        )
+
+
+        if not new_status:
+
+
+            return Response(
+
+                {
+                    "error":
+                    "Status required"
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+
+            )
+
+
+
+        new_status = new_status.upper()
+
+
+
+        allowed = {
+
+            "PENDING":
+            [
+                "CONFIRMED",
+                "CANCELLED"
+            ],
+
+            "CONFIRMED":
+            [
+                "READY",
+                "CANCELLED"
+            ],
+
+            "READY":
+            [
+                "COMPLETED",
+                "CANCELLED"
+            ],
+
+            "COMPLETED":
+            [],
+
+            "CANCELLED":
+            []
+
+        }
+
+
+
+        if new_status not in allowed.get(
+
+            order.status,
+
+            []
+
+        ):
+
+
+            return Response(
+
+                {
+                    "error":
+                    "Invalid status transition"
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+
+            )
+
+
+
+        order.status = new_status
+
+        order.save()
+
+
+
+        AuditLog.objects.create(
+
+            action=
+
+            f"{order.order_reference} changed to {new_status}"
+
+        )
+
+
+
+        return Response(
+
+            {
+                "message":
+                "Order updated successfully",
+
+                "status":
+                order.status
+
+            }
+
+        )
+
 
 @csrf_exempt
 def chatbot(request):
 
-    if request.method == "POST":
 
-        data = json.loads(request.body)
+    if request.method != "POST":
 
-        message = data.get("message", "")
+        return JsonResponse(
 
-        intent = detect_intent(message)
+            {
+                "error":
+                "POST required"
+            },
 
-        return JsonResponse({
-            "message": message,
-            "intent": intent
-        })
+            status=405
 
-    return JsonResponse({
-        "error": "POST method required"
-    }, status=405)
+        )
 
 
-# =========================================================
-# ORDER STATUS UPDATE API
-# =========================================================
 
-@csrf_exempt
-def update_order_status(request):
+    try:
 
-    if request.method == "PUT":
+        body = json.loads(
 
-        data = json.loads(request.body)
+            request.body
 
-        order_ref = data.get("order_ref")
-        order_status = data.get("status")
+        )
 
-        if not order_ref:
-            return JsonResponse({
-                "error": "order_ref required"
-            }, status=400)
 
-        if not order_status:
-            return JsonResponse({
-                "error": "status required"
-            }, status=400)
+    except json.JSONDecodeError:
 
-        if order_status == "READY":
 
-            AuditLog.objects.create(
-                action=f"Order {order_ref} is ready for pickup"
-            )
+        return JsonResponse(
 
-        elif order_status == "CANCELLED":
+            {
+                "error":
+                "Invalid JSON"
+            },
 
-            AuditLog.objects.create(
-                action=f"Order {order_ref} has been cancelled"
-            )
+            status=400
 
-        elif order_status == "PROCESSING":
+        )
 
-            AuditLog.objects.create(
-                action=f"Order {order_ref} is processing"
-            )
 
-        return JsonResponse({
-            "message": "Order updated successfully",
-            "order_ref": order_ref,
-            "status": order_status
-        })
 
-    return JsonResponse({
-        "error": "PUT method required"
-    }, status=405)
+    message = body.get(
+
+        "message",
+
+        ""
+
+    )
+
+
+    intent = detect_intent(
+
+        message
+
+    )
+
+
+    return JsonResponse(
+
+        {
+
+            "message":
+            message,
+
+            "intent":
+            intent
+
+        }
+
+    )

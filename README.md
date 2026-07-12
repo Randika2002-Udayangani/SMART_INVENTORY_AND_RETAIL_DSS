@@ -130,6 +130,7 @@ bash
 
 8. **Access the application**
    - Open your browser and navigate to: `http://127.0.0.1:8000/`
+   
    - Admin panel: `http://127.0.0.1:8000/admin/`
 
 ## 📖 Usage
