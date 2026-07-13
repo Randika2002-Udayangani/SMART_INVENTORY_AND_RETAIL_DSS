@@ -316,31 +316,21 @@ class OrderCreateView(APIView):
             )
 
 
-
-        order_reference = (
-
-            f"ORD-2026-"
-            f"{str(OnlineOrder.objects.count()+1).zfill(5)}"
-
-        )
-
-
-
         order = OnlineOrder.objects.create(
 
-            customer=customer,
+          customer=customer,
 
-            pickup_date=pickup_date,
+          pickup_date=pickup_date,
 
-            pickup_time_slot=time_slot,
+          pickup_time_slot=time_slot,
 
-            order_reference=order_reference,
-
-            status="PENDING"
+          status="PENDING"
 
         )
 
+        order.order_reference = f"ORD-2026-{order.id:05d}"
 
+        order.save()
 
         total = 0
 
@@ -767,4 +757,8 @@ def chatbot(request):
        message,
        customer_id
     )
-    
+
+    return JsonResponse(
+    result,
+    safe=True
+)
