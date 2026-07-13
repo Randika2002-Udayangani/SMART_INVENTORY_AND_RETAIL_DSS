@@ -17,7 +17,7 @@ from inventory.models import StockLedger
 
 from .models import Customer, OnlineOrder, OnlineOrderItem
 from .tokens import get_tokens_for_customer
-from .chatbot import detect_intent
+from .chatbot import chatbot_response
 from .jwt_authentication import CustomerJWTAuthentication
 
 
@@ -28,7 +28,7 @@ class CustomerRegisterView(APIView):
 
 
     def post(self, request):
-
+        print("========== CUSTOMER REGISTER HIT ==========")
         name = request.data.get("name")
         email = request.data.get("email")
         password = request.data.get("password")
@@ -400,7 +400,7 @@ class OrderCreateView(APIView):
 
                     {
                         "error":
-                        f"Insufficient stock for {product.name}",
+                       f"Insufficient stock for {product.product_name}",
 
                         "requested_quantity":
                         quantity,
@@ -416,7 +416,7 @@ class OrderCreateView(APIView):
 
 
 
-            price = product.selling_price
+            price = product.unit_price
 
 
             OnlineOrderItem.objects.create(
@@ -528,7 +528,7 @@ class OrderListView(APIView):
                     {
 
                         "product":
-                        item.product.name,
+                         item.product.product_name,
 
                         "quantity":
                         item.quantity,
@@ -577,6 +577,9 @@ class OrderListView(APIView):
 
 class OrderStatusUpdateView(APIView):
 
+    authentication_classes = [
+        CustomerJWTAuthentication
+    ]
 
     def put(self, request, pk):
 
@@ -714,76 +717,54 @@ class OrderStatusUpdateView(APIView):
         )
 
 
+
 @csrf_exempt
 def chatbot(request):
-
 
     if request.method != "POST":
 
         return JsonResponse(
-
             {
-                "error":
-                "POST required"
+                "error": "POST required"
             },
-
             status=405
-
         )
-
 
 
     try:
 
         body = json.loads(
-
             request.body
-
         )
 
-
-    except json.JSONDecodeError:
-
+    except Exception:
 
         return JsonResponse(
-
             {
-                "error":
-                "Invalid JSON"
+                "error": "Invalid JSON format"
             },
-
             status=400
-
         )
 
+    message = body.get("message")
 
-
-    message = body.get(
-
-        "message",
-
-        ""
-
+    customer_id = body.get(
+      "customer_id"
     )
 
 
-    intent = detect_intent(
+    if not message:
 
-        message
-
-    )
-
-
-    return JsonResponse(
-
+       return JsonResponse(
         {
+            "error": "message field is required"
+        },
+        status=400
+       )
 
-            "message":
-            message,
 
-            "intent":
-            intent
-
-        }
-
+    result = chatbot_response(
+       message,
+       customer_id
     )
+    
