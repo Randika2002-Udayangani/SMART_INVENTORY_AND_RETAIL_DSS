@@ -33,6 +33,14 @@ class StockLedger(models.Model):
     class Meta:
         db_table = 'stock_ledger'
 
+    def __str__(self):
+
+        return (
+            f"{self.product.product_name} | "
+            f"{self.quantity_change} | "
+            f"{self.transaction_type}"
+        )    
+
 
 class StockAdjustment(models.Model):
     product = models.ForeignKey(
