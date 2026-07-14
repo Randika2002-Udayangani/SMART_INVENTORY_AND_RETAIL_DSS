@@ -17,10 +17,9 @@ from inventory.models import StockLedger
 
 from .models import Customer, OnlineOrder, OnlineOrderItem
 from .tokens import get_tokens_for_customer
-from .authentication import CustomerJWTAuthentication
-from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.tokens import RefreshToken
 from .chatbot import chatbot_response
+from .jwt_authentication import CustomerJWTAuthentication
+
 
 class CustomerRegisterView(APIView):
 
@@ -206,102 +205,41 @@ class CustomerLoginView(APIView):
         )
 
 
-# ============================================================
-# In orders/views.py:
-# 1) DELETE the existing stub `class CustomerProfileView(APIView): ...`
-#    and replace it with the version below.
-# 2) ADD these imports near the top, with your other imports:
-#    from rest_framework.permissions import IsAuthenticated
-#    from rest_framework_simplejwt.tokens import RefreshToken
-#    from .authentication import CustomerJWTAuthentication
-# 3) APPEND CustomerLogoutView and CustomerChangePasswordView below.
-# ============================================================
-
-
 class CustomerProfileView(APIView):
 
-    """
-    GET   /api/customer-auth/profile/   — view own profile
-    PATCH /api/customer-auth/profile/   — partial update
-          Body: any subset of {name, contact_number, address}
-    Requires customer JWT (Authorization: Bearer <customer_access_token>).
-    """
-    authentication_classes = [CustomerJWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    authentication_classes = [
+
+        CustomerJWTAuthentication
+
+    ]
+
 
     def get(self, request):
-        c = request.user  # CustomerJWTAuthentication resolves this to a Customer
-        return Response({
-            'customer_id': c.id,
-            'name': c.name,
-            'email': c.email,
-            'contact_number': c.contact_number,
-            'address': c.address,
-        })
 
-    def patch(self, request):
-        c = request.user
-
-        if 'name' in request.data:
-            c.name = request.data['name']
-        if 'contact_number' in request.data:
-            c.contact_number = request.data['contact_number']
-        if 'address' in request.data:
-            c.address = request.data['address']
-        c.save()
-
-        return Response({
-            'message': 'Profile updated',
-            'name': c.name,
-            'contact_number': c.contact_number,
-            'address': c.address,
-        })
+        customer = request.user
 
 
-class CustomerLogoutView(APIView):
-    """
-    POST /api/customer-auth/logout/
-    Body: { "refresh": "<refresh_token>" }
-    Blacklists the refresh token. Requires
-    'rest_framework_simplejwt.token_blacklist' in INSTALLED_APPS.
-    """
-    authentication_classes = [CustomerJWTAuthentication]
-    permission_classes = [IsAuthenticated]
+        return Response(
 
-    def post(self, request):
-        refresh_token = request.data.get('refresh')
-        if not refresh_token:
-            return Response({'error': 'refresh token is required'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            RefreshToken(refresh_token).blacklist()
-        except Exception:
-            return Response({'error': 'Invalid or already-expired refresh token'}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({'message': 'Logged out successfully'})
+            {
+                "id":
+                customer.id,
 
+                "name":
+                customer.name,
 
-class CustomerChangePasswordView(APIView):
-    """
-    POST /api/customer-auth/change-password/
-    Body: { "old_password": "...", "new_password": "..." }
-    """
-    authentication_classes = [CustomerJWTAuthentication]
-    permission_classes = [IsAuthenticated]
+                "email":
+                customer.email,
 
-    def post(self, request):
-        c = request.user
-        old_password = request.data.get('old_password', '')
-        new_password = request.data.get('new_password', '')
+                "contact_number":
+                customer.contact_number,
 
-        if not old_password or not new_password:
-            return Response({'error': 'old_password and new_password are required'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(new_password) < 6:
-            return Response({'error': 'New password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
-        if not check_password(old_password, c.password_hash):
-            return Response({'error': 'old_password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
+                "address":
+                customer.address
 
-        c.password_hash = make_password(new_password)
-        c.save()
-        return Response({'message': 'Password changed successfully'})
+            }
+
+        )
 
 
 class OrderCreateView(APIView):
@@ -378,31 +316,21 @@ class OrderCreateView(APIView):
             )
 
 
-
-        order_reference = (
-
-            f"ORD-2026-"
-            f"{str(OnlineOrder.objects.count()+1).zfill(5)}"
-
-        )
-
-
-
         order = OnlineOrder.objects.create(
 
-            customer=customer,
+          customer=customer,
 
-            pickup_date=pickup_date,
+          pickup_date=pickup_date,
 
-            pickup_time_slot=time_slot,
+          pickup_time_slot=time_slot,
 
-            order_reference=order_reference,
-
-            status="PENDING"
+          status="PENDING"
 
         )
 
+        order.order_reference = f"ORD-2026-{order.id:05d}"
 
+        order.save()
 
         total = 0
 
@@ -834,4 +762,3 @@ def chatbot(request):
     result,
     safe=True
 )
-

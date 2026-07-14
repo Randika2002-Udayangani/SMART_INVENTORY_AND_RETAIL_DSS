@@ -118,7 +118,7 @@ class OnlineOrderItem(models.Model):
         db_table = 'online_order_item'
 
     def __str__(self):
-        return f"{self.order.order_reference} - {self.product.name}"
+     return f"{self.order.order_reference} - {self.product.product_name}"
 
 
 class ChatbotLog(models.Model):
@@ -271,15 +271,3 @@ class Notification(models.Model):
 
     class Meta:
         db_table = 'notification'
-
-# ============================================================
-# APPEND to the very bottom of orders/models.py
-# (after the Notification class — don't touch anything above)
-# ============================================================
- 
-# Minimal Django-auth-like interface so DRF permission classes
-# (IsAuthenticated) work correctly with Customer objects returned by
-# CustomerJWTAuthentication. Customer already has its own `is_active`
-# field, so we only add the two attributes it's missing.
-Customer.is_authenticated = True
-Customer.is_anonymous = False

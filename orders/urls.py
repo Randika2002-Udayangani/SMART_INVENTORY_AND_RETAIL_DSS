@@ -3,59 +3,58 @@ from django.urls import path
 from .views import (
     CustomerRegisterView,
     CustomerLoginView,
-    CustomerLogoutView,
     CustomerProfileView,
-    CustomerChangePasswordView,
     OrderCreateView,
     OrderListView,
     OrderStatusUpdateView,
     chatbot,
 )
 
+
 urlpatterns = [
+
     path(
         "customer-auth/register/",
         CustomerRegisterView.as_view(),
-        name="customer-register",
+        name="customer-register"
     ),
+
     path(
         "customer-auth/login/",
         CustomerLoginView.as_view(),
-        name="customer-login",
+        name="customer-login"
     ),
-    path(
-        "customer-auth/logout/",
-        CustomerLogoutView.as_view(),
-        name="customer-logout",
-    ),
+
     path(
         "customer-auth/profile/",
         CustomerProfileView.as_view(),
-        name="customer-profile",
+        name="customer-profile"
     ),
-    path(
-        "customer-auth/change-password/",
-        CustomerChangePasswordView.as_view(),
-        name="customer-change-password",
-    ),
+
+
     path(
         "orders/",
         OrderCreateView.as_view(),
-        name="order-create",
+        name="order-create"
     ),
+
     path(
         "orders/list/",
         OrderListView.as_view(),
-        name="order-list",
+        name="order-list"
     ),
+
     path(
         "orders/<int:pk>/status/",
         OrderStatusUpdateView.as_view(),
-        name="order-status",
+        name="order-status"
     ),
+
+
     path(
         "chatbot/query/",
         chatbot,
-        name="chatbot",
+        name="chatbot"
     ),
+
 ]
