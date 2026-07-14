@@ -118,7 +118,7 @@ class OnlineOrderItem(models.Model):
         db_table = 'online_order_item'
 
     def __str__(self):
-     return f"{self.order.order_reference} - {self.product.product_name}"
+        return f"{self.order.order_reference} - {self.product.name}"
 
 
 class ChatbotLog(models.Model):
