@@ -378,21 +378,31 @@ class OrderCreateView(APIView):
             )
 
 
-        order = OnlineOrder.objects.create(
 
-          customer=customer,
+        order_reference = (
 
-          pickup_date=pickup_date,
-
-          pickup_time_slot=time_slot,
-
-          status="PENDING"
+            f"ORD-2026-"
+            f"{str(OnlineOrder.objects.count()+1).zfill(5)}"
 
         )
 
-        order.order_reference = f"ORD-2026-{order.id:05d}"
 
-        order.save()
+
+        order = OnlineOrder.objects.create(
+
+            customer=customer,
+
+            pickup_date=pickup_date,
+
+            pickup_time_slot=time_slot,
+
+            order_reference=order_reference,
+
+            status="PENDING"
+
+        )
+
+
 
         total = 0
 
