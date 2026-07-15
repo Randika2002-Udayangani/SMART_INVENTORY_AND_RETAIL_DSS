@@ -1,7 +1,11 @@
-from datetime import date, timedelta
+from datetime import date, timedelta    
+from decimal import Decimal
+from users.audit import log_action
 
 from django.db.models import Sum
 from rest_framework import generics, status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -17,6 +21,8 @@ from .models import (
 from .serializers import (
     StockLedgerSerializer, StockAdjustmentSerializer, CurrentStockSerializer
 )
+from sales.models import ItemSalesRecord
+from inventory.services.reorder_logic import get_urgency
 
 
 def get_last_sync_date():
@@ -157,7 +163,8 @@ class StockAdjustmentView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        new_qty = batch.remaining_quantity + int(quantity_change)
+        old_qty = batch.remaining_quantity
+        new_qty = old_qty + int(quantity_change)
         if new_qty < 0:
             return Response(
                 {'error': f'Adjustment would make stock negative. '
@@ -184,6 +191,16 @@ class StockAdjustmentView(APIView):
             reason=reason,
         )
 
+        log_action(
+            user=request.user,
+            action='STOCK_ADJUSTMENT',
+            table_name='purchase_batch',
+            record_id=batch.id,
+            old_value={'remaining_quantity': old_qty},
+            new_value={'remaining_quantity': new_qty, 'reason': reason},
+            request=request,
+        )
+
         return Response({
             'message'               : 'Stock adjusted successfully',
             'product'               : product.product_name,
@@ -194,32 +211,169 @@ class StockAdjustmentView(APIView):
             'adjustment_id'         : adjustment.id
         }, status=status.HTTP_201_CREATED)
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def expiry_summary(request):
+    """
+    GET /api/reports/expiry-summary/
+ 
+    Counts of ACTIVE batches (with remaining stock) expiring in
+    each urgency window, plus a detailed list per window.
+ 
+    Response:
+        as_of                       str  — today's date
+        expiring_in_7_days          int  — within 0-7 days
+        expiring_in_7_to_14_days    int  — between 8-14 days
+        expiring_in_14_to_30_days   int  — between 15-30 days
+        total_expiring_in_30_days   int  — sum of all three
+        batches_7_days              list — detailed batch list (7-day window)
+        batches_7_to_14_days        list — detailed batch list (7-14 day window)
+        batches_14_to_30_days       list — detailed batch list (14-30 day window)
+ 
+    Auth: Staff JWT required
+    """
+ 
+    today = date.today()
+    d7    = today + timedelta(days=7)
+    d14   = today + timedelta(days=14)
+    d30   = today + timedelta(days=30)
+ 
+    # Base queryset: only ACTIVE batches with stock and an expiry date
+    active_with_expiry = PurchaseBatch.objects.filter(
+        status='ACTIVE',
+        remaining_quantity__gt=0,
+        expiry_date__isnull=False,
+    ).select_related('product')
+ 
+    # ── Counts ─────────────────────────────────────────────────────────────────
+    batches_7    = active_with_expiry.filter(expiry_date__lte=d7)
+    batches_7_14 = active_with_expiry.filter(expiry_date__gt=d7,  expiry_date__lte=d14)
+    batches_14_30 = active_with_expiry.filter(expiry_date__gt=d14, expiry_date__lte=d30)
+ 
+    count_7     = batches_7.count()
+    count_7_14  = batches_7_14.count()
+    count_14_30 = batches_14_30.count()
+ 
+    def _serialize_batch(batch):
+        """Return the detail dict for one batch."""
+        days_left = (batch.expiry_date - today).days
+        est_loss  = round(
+            float(batch.remaining_quantity) * float(batch.cost_price or 0), 2
+        )
+        return {
+            'batch_id':          batch.id,
+            'product_id':        batch.product.id,
+            'product_name':      batch.product.product_name,
+            'sku_code':          batch.product.sku_code or '',
+            'expiry_date':       str(batch.expiry_date),
+            'days_until_expiry': days_left,
+            'remaining_quantity': batch.remaining_quantity,
+            'cost_price':        float(batch.cost_price or 0),
+            'estimated_loss':    est_loss,  # remaining_qty x cost_price
+        }
+ 
+    return Response({
+        'as_of':                    str(today),
+        'expiring_in_7_days':       count_7,
+        'expiring_in_7_to_14_days': count_7_14,
+        'expiring_in_14_to_30_days': count_14_30,
+        'total_expiring_in_30_days': count_7 + count_7_14 + count_14_30,
+        'batches_7_days':       [_serialize_batch(b) for b in batches_7.order_by('expiry_date')],
+        'batches_7_to_14_days': [_serialize_batch(b) for b in batches_7_14.order_by('expiry_date')],
+        'batches_14_to_30_days': [_serialize_batch(b) for b in batches_14_30.order_by('expiry_date')],
+    })
 
+SALES_LOOKBACK_DAYS = 30
+ 
+ 
 class LowStockView(APIView):
+    """
+    GET /api/inventory/low-stock/
+ 
+    Returns products where current_stock < reorder_threshold,
+    sorted by urgency (CRITICAL first).
+ 
+    Response per product:
+        product_id          int
+        product_name        str
+        sku_code             str
+        current_stock        int     — SUM of remaining_quantity from ACTIVE batches
+        reorder_threshold    int     — Product.reorder_threshold
+        shortage              int     — how many units below reorder_threshold
+        urgency               str     — CRITICAL | HIGH | MEDIUM | LOW
+        days_of_stock         float|None — None if no sales data (avg_daily == 0)
+        avg_daily_sales       float
+    """
+ 
     def get(self, request):
-        products  = Product.objects.filter(is_active=True)
+        today = date.today()
+        since = today - timedelta(days=SALES_LOOKBACK_DAYS)
+ 
+        products = Product.objects.filter(is_active=True)
+ 
+        # Bulk-fetch all active batch stock in one query (avoid N+1)
+        stock_by_product = {
+            row['product']: row['total']
+            for row in PurchaseBatch.objects.filter(
+                status='ACTIVE',
+                remaining_quantity__gt=0,
+            ).values('product').annotate(total=Sum('remaining_quantity'))
+        }
+ 
+        # Bulk-fetch 30-day sales per product (avoid N+1)
+        sales_by_product = {
+            row['product']: row['total']
+            for row in ItemSalesRecord.objects.filter(
+                sale_date__gte=since,
+                sale_date__lte=today,
+            ).values('product').annotate(total=Sum('quantity_sold'))
+        }
+ 
         low_stock = []
-
+ 
         for product in products:
-            current = PurchaseBatch.objects.filter(
-                product=product, status='ACTIVE'
-            ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
-
-            reorder = product.reorder_threshold or 0
-            if current <= reorder:
-                low_stock.append({
-                    'product_id'       : product.id,
-                    'product_name'     : product.product_name,
-                    'sku_code'         : product.sku_code,
-                    'current_stock'    : current,
-                    'reorder_threshold': reorder,
-                    'units_short'      : reorder - current,
-                })
-
+            reorder_threshold = product.reorder_threshold or 0
+            current = stock_by_product.get(product.id, 0)
+ 
+            if current > reorder_threshold:
+                continue  # only include products at or below threshold
+ 
+            shortage = reorder_threshold - current
+ 
+            # ── Urgency calculation ──────────────────────────────────────
+            total_sold = sales_by_product.get(product.id, 0)
+            avg_daily  = Decimal(str(total_sold)) / Decimal(str(SALES_LOOKBACK_DAYS))
+ 
+            if avg_daily > 0:
+                days_of_stock = round(float(current) / float(avg_daily), 1)
+                urgency       = get_urgency(days_of_stock)
+            else:
+                # No recent sales — can't compute days_of_stock meaningfully,
+                # but product is still below threshold, so flag as LOW
+                days_of_stock = None
+                urgency       = 'LOW'
+ 
+            low_stock.append({
+                'product_id'       : product.id,
+                'product_name'     : product.product_name,
+                'sku_code'         : product.sku_code,
+                'current_stock'    : current,
+                'reorder_threshold': reorder_threshold,
+                'shortage'         : shortage,
+                'urgency'          : urgency,
+                'days_of_stock'    : days_of_stock,
+                'avg_daily_sales'  : round(float(avg_daily), 2),
+            })
+ 
+        # Sort: CRITICAL first, then HIGH, MEDIUM, LOW
+        _PRIORITY = {'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3}
+        low_stock.sort(key=lambda r: _PRIORITY.get(r['urgency'], 4))
+ 
         return Response({
             'count'             : len(low_stock),
             'low_stock_products': low_stock
         })
+ 
 
 
 class OutOfStockView(APIView):
@@ -698,3 +852,140 @@ class HealthScoreDetailView(APIView):
             'rating_sufficient', 'weighting_mode', 'calculated_date'
         )
         return Response(list(data))
+    
+
+"""
+Plan spec:
+    Calls run_lifecycle_calculation() for each active product.
+    Returns product_name, lifecycle_status, recommendation.
+    Classification order (STRICT — from plan and pseudocode):
+        NEW → GROWING → DECLINING → SLOW_MOVING → STABLE
+    Staff JWT required.
+
+IMPORTANT NOTE on GET vs POST:
+    POST /api/lifecycle/calculate/ (already exists — LifecycleCalculateView)
+    saves to DB. GET /api/lifecycle/ (already exists — LifecycleListView)
+    reads latest from DB but does NOT include 'recommendation' grouping/
+    summary counts the Week 5 plan asks for.
+    This new endpoint is a separate REPORTING view — it reads the same
+    ProductLifecycle table but adds: status-grouped summary counts,
+    a guaranteed recommendation mapping (self-healing if DB has stale
+    values), and a friendly empty-state message. It does NOT recalculate —
+    GET should never trigger DB writes.
+"""
+
+
+RECOMMENDATION_MAP = {
+    'NEW':          'MONITOR',
+    'GROWING':      'RETAIN',
+    'STABLE':       'RETAIN',
+    'DECLINING':    'DISCOUNT',
+    'SLOW_MOVING':  'DISCONTINUE',
+}
+
+STATUS_ORDER = {
+    'DECLINING':   0,   # most urgent — show first
+    'SLOW_MOVING': 1,
+    'NEW':         2,
+    'GROWING':     3,
+    'STABLE':      4,
+}
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def lifecycle_analytics(request):
+    """
+    GET /api/analytics/lifecycle/
+
+    Query params (optional):
+        ?status=GROWING            filter by one status
+        ?recommendation=DISCOUNT   filter by recommendation
+
+    Response per product:
+        product_id          int
+        product_name        str
+        sku_code             str
+        lifecycle_status     str  — NEW | GROWING | STABLE | DECLINING | SLOW_MOVING
+        recommendation        str  — RETAIN | MONITOR | DISCOUNT | DISCONTINUE
+        sales_velocity         float — avg units/day in the calculation period
+        comparison_period      str  — YYYY-MM format
+        calculated_date        str  — when this record was generated
+
+    If no lifecycle calculation has been run yet:
+        Returns 200 with empty results list and a note.
+
+    Auth: Staff JWT required
+    """
+    from django.db.models import OuterRef, Subquery
+    from collections import Counter
+
+    # ── Get latest lifecycle record per product ──────────────────────────────
+    latest_dates = (
+        ProductLifecycle.objects
+        .filter(product_id=OuterRef('product_id'))
+        .order_by('-calculated_date', '-id')
+        .values('id')[:1]
+    )
+
+    latest_records = ProductLifecycle.objects.filter(
+        id__in=Subquery(latest_dates)
+    ).select_related('product')
+
+    if not latest_records.exists():
+        return Response({
+            'results': [],
+            'total':   0,
+            'note':    (
+                'No lifecycle calculation has been run yet. '
+                'Trigger POST /api/lifecycle/calculate/ first, '
+                'then this endpoint will return the results.'
+            ),
+        })
+
+    # ── Optional filters ──────────────────────────────────────────────────────
+    status_filter = request.query_params.get('status', '').upper()
+    rec_filter    = request.query_params.get('recommendation', '').upper()
+
+    if status_filter:
+        latest_records = latest_records.filter(status=status_filter)
+    if rec_filter:
+        latest_records = latest_records.filter(recommendation=rec_filter)
+
+    # ── Serialize ─────────────────────────────────────────────────────────────
+    results = []
+    for record in latest_records:
+        recommendation = RECOMMENDATION_MAP.get(
+            record.status, record.recommendation or 'MONITOR'
+        )
+
+        results.append({
+            'product_id':        record.product.id,
+            'product_name':      record.product.product_name,
+            'sku_code':          record.product.sku_code or '',
+            'lifecycle_status':  record.status,
+            'recommendation':    recommendation,
+            'sales_velocity':    float(record.sales_velocity) if record.sales_velocity else None,
+            'comparison_period': record.comparison_period or '',
+            'calculated_date':   str(record.calculated_date),
+        })
+
+    results.sort(key=lambda r: STATUS_ORDER.get(r['lifecycle_status'], 9))
+
+    status_counts = Counter(r['lifecycle_status'] for r in results)
+
+    return Response({
+        'results': results,
+        'total':   len(results),
+        'summary': {
+            'NEW':         status_counts.get('NEW', 0),
+            'GROWING':     status_counts.get('GROWING', 0),
+            'STABLE':      status_counts.get('STABLE', 0),
+            'DECLINING':   status_counts.get('DECLINING', 0),
+            'SLOW_MOVING': status_counts.get('SLOW_MOVING', 0),
+        },
+        'note': (
+            'This endpoint reads the most recent calculation run. '
+            'To recalculate, call POST /api/lifecycle/calculate/ first.'
+        ),
+    })

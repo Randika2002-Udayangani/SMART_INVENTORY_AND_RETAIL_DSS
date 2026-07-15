@@ -1,27 +1,22 @@
-# products/views.py
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from django.shortcuts import render
 from django.utils import timezone
 import pandas as pd
 
-from .models import Brand, Category, StoreZone, Product
+from .models import Brand, Category, StoreZone, Product, ZoneRecommendation
 from .serializers import (
     BrandSerializer, CategorySerializer,
-    StoreZoneSerializer, ProductSerializer, ProductPublicSerializer
+    StoreZoneSerializer, ProductSerializer, ProductPublicSerializer,
+    ZoneRecommendationSerializer
 )
 from sales.models import UploadLog
 
 
 def product_list(request):
-    return render(request, "customer/product_list.html")
-from .models import Brand, Category, StoreZone, Product
-from .serializers import (
-    BrandSerializer, CategorySerializer,
-    StoreZoneSerializer, ProductSerializer, ProductPublicSerializer
-)
-from sales.models import UploadLog
+    return render(request, "customer/products.html")
 
 
 # ─────────────────────────────────────────────
@@ -82,20 +77,12 @@ class ProductListCreateView(generics.ListCreateAPIView):
         return queryset
 
     def get_serializer_class(self):
-        # POST (create) — staff only, always full serializer
         if self.request.method == 'POST':
             return ProductSerializer
-        # GET — public but cost fields hidden for unauthenticated
         if self.request.user and self.request.user.is_authenticated:
             return ProductSerializer
         return ProductPublicSerializer
 
-    # Point 1 fix: method-level permissions
-    # Before: permission_classes = [permissions.AllowAny]
-    #         AllowAny applied to ALL methods including POST
-    #         Any unauthenticated user could create products
-    # After:  GET → public (customers browse product list)
-    #         POST → authenticated staff only
     def get_permissions(self):
         if self.request.method == 'POST':
             return [permissions.IsAuthenticated()]
@@ -112,11 +99,6 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
             return ProductSerializer
         return ProductPublicSerializer
 
-    # Point 2 fix: method-level permissions
-    # Before: permission_classes = [permissions.AllowAny]
-    #         Anyone could PUT/PATCH/DELETE any product
-    # After:  GET → public (customers view product detail)
-    #         PUT/PATCH/DELETE → authenticated staff only
     def get_permissions(self):
         if self.request.method in ('PUT', 'PATCH', 'DELETE'):
             return [permissions.IsAuthenticated()]
@@ -124,43 +106,16 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 # ─────────────────────────────────────────────
-# Item Master Excel Upload  (Pipeline 1)
+# Item Master Excel Upload (Pipeline 1)
 # POST /api/products/import/
 # ─────────────────────────────────────────────
 class ItemMasterUploadView(APIView):
-    """
-    Uploads the easyAcc Item Master Excel file (Book1.xlsx).
-
-    File structure — NO header row, 495 rows in real file:
-      Col A (index 0) — seq_number   : row reference only, never stored
-      Col B (index 1) — product_name : MANDATORY, primary match key
-      Col C (index 2) — sinhala_name : optional, ignored
-      Col D (index 3) — sku_code     : sparse — only ~10/495 rows have a value
-      Col E (index 4) — qty_on_hand  : informational only, ignored (R6)
-      Col F (index 5) — unit_price   : MANDATORY, must be > 0
-
-    Rules (Data_Ingestion_Rules_v3.pdf — all 8 verified):
-      R1 ✅ Skip 'DEFAULT ITEM' placeholder silently
-      R2 ✅ Skip blank product name — log error
-      R3 ✅ Skip price <= 0 — log error
-      R4 ✅ Skip 2nd duplicate SKU in file — log warning
-      R5 ✅ Skip 2nd duplicate name in file when sku_code is NULL
-             Case-insensitive check: "MILK" and "Milk" treated as same product
-      R6 ✅ Negative qty_on_hand allowed — field is ignored entirely
-      R7 ✅ Inactive product: update_fields=['unit_price'] — is_active never touched
-      R8 ✅ New product no category: insert with category=None, flagged for staff
-
-    Performance:
-      Products preloaded into memory before loop — 2 DB queries total
-      instead of ~1000 queries for 495 rows
-    """
-    parser_classes   = [MultiPartParser, FormParser]
+    parser_classes     = [MultiPartParser, FormParser]
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         file = request.FILES.get('file')
 
-        # ── Basic file validation ─────────────────────────────────────────
         if not file:
             return Response(
                 {'error': 'No file uploaded. Send file as form-data with key "file"'},
@@ -172,7 +127,6 @@ class ItemMasterUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ── Create upload log ─────────────────────────────────────────────
         upload_log = UploadLog.objects.create(
             file_name=file.name,
             upload_type='ITEM_MASTER',
@@ -180,7 +134,6 @@ class ItemMasterUploadView(APIView):
             error_message=''
         )
 
-        # ── Read Excel ────────────────────────────────────────────────────
         try:
             df = pd.read_excel(file, header=None)
         except Exception as e:
@@ -192,13 +145,6 @@ class ItemMasterUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ── Point 5 fix: Preload all products into memory ─────────────────
-        # Before: Product.objects.filter() inside loop = ~1000 queries for 495 rows
-        # After: 2 queries total — one for SKU map, one for name map
-        # All lookups are pure Python dict access — O(1) per row
-        #
-        # products_by_sku  — keyed by sku_code (exact, only ~10 products)
-        # products_by_name — keyed by lowercase name (case-insensitive match)
         products_by_sku  = {
             p.sku_code: p
             for p in Product.objects.exclude(sku_code__isnull=True)
@@ -209,25 +155,17 @@ class ItemMasterUploadView(APIView):
             for p in Product.objects.all()
         }
 
-        # ── Processing counters ───────────────────────────────────────────
         inserted = 0
         updated  = 0
         skipped  = 0
         flagged  = 0
         errors   = []
-
-        # Duplicate tracking within THIS file (R4, R5)
-        # seen_names uses lowercase key — case-insensitive within-file dedup
         seen_skus  = {}
         seen_names = {}
 
-        # ── Row-by-row processing ─────────────────────────────────────────
         for index, row in df.iterrows():
             row_num = index + 1
 
-            # ── Point 8 fix: column count guard ──────────────────────────
-            # Wrong file (fewer than 6 columns) → iloc[5] crashes with IndexError
-            # Guard catches it per row so rest of file still processes
             if len(row) < 6:
                 skipped += 1
                 errors.append(
@@ -236,36 +174,28 @@ class ItemMasterUploadView(APIView):
                 )
                 continue
 
-            # ── Col B — product_name ──────────────────────────────────────
-            # Point 9 fix: use pd.isna() instead of string 'nan' check
             raw_name     = row.iloc[1] if not pd.isna(row.iloc[1]) else ''
             product_name = str(raw_name).strip()
 
-            # R1 — skip DEFAULT ITEM placeholder silently
             if product_name == 'DEFAULT ITEM':
                 skipped += 1
                 continue
 
-            # R2 — skip blank name
             if not product_name:
                 skipped += 1
                 errors.append(f'Row {row_num}: Empty product name — skipped')
                 continue
 
-            # ── Col D — sku_code (sparse) ─────────────────────────────────
-            # Point 9 fix: pd.isna() instead of string comparison
             raw_sku  = row.iloc[3] if not pd.isna(row.iloc[3]) else None
             sku_code = str(raw_sku).strip() if raw_sku is not None else None
             if not sku_code or sku_code.lower() in ('nan', 'none', ''):
                 sku_code = None
 
-            # ── Col F — unit_price ────────────────────────────────────────
             try:
                 unit_price = float(row.iloc[5]) if not pd.isna(row.iloc[5]) else 0.0
             except (ValueError, TypeError):
                 unit_price = 0.0
 
-            # R3 — skip invalid price
             if unit_price <= 0:
                 skipped += 1
                 errors.append(
@@ -273,7 +203,6 @@ class ItemMasterUploadView(APIView):
                 )
                 continue
 
-            # R4 — duplicate SKU within this file
             if sku_code:
                 if sku_code in seen_skus:
                     skipped += 1
@@ -284,12 +213,6 @@ class ItemMasterUploadView(APIView):
                     continue
                 seen_skus[sku_code] = row_num
 
-            # R5 — duplicate name within this file (only when no SKU)
-            # Point 3 fix: case-insensitive comparison
-            # Before: if product_name in seen_names
-            #         "Milk" and "MILK" treated as different → duplicate slips through
-            # After:  normalize to lowercase for comparison only
-            #         original product_name casing preserved for storage
             if not sku_code:
                 normalized_name = product_name.lower()
                 if normalized_name in seen_names:
@@ -301,13 +224,6 @@ class ItemMasterUploadView(APIView):
                     continue
                 seen_names[normalized_name] = row_num
 
-            # ── Match existing product in memory ──────────────────────────
-            # Point 5 fix: dict lookup instead of DB query
-            # Point 4 fix: name lookup uses lowercase key (__iexact equivalent)
-            #   Before: Product.objects.filter(product_name=product_name)
-            #           Case sensitive in PostgreSQL — "MILK" ≠ "Milk" in DB
-            #   After:  products_by_name[product_name.lower()]
-            #           Matches regardless of casing stored in DB
             existing = None
             if sku_code:
                 existing = products_by_sku.get(sku_code)
@@ -315,20 +231,16 @@ class ItemMasterUploadView(APIView):
                 existing = products_by_name.get(product_name.lower())
 
             if existing:
-                # ── R7: update_fields restricts SQL UPDATE to price only ───
-                # is_active is physically excluded from the UPDATE statement
                 existing.unit_price = unit_price
                 if sku_code and not existing.sku_code:
                     existing.sku_code = sku_code
                     existing.save(update_fields=['unit_price', 'sku_code'])
-                    # Update preload map so later rows in same file see the new SKU
                     products_by_sku[sku_code] = existing
                 else:
                     existing.save(update_fields=['unit_price'])
                 updated += 1
 
             else:
-                # ── R8: new product — insert with category=None ───────────
                 new_product = Product.objects.create(
                     product_name      = product_name,
                     sku_code          = sku_code,
@@ -343,7 +255,6 @@ class ItemMasterUploadView(APIView):
                 )
                 inserted += 1
                 flagged  += 1
-                # Add to preload maps so later rows in same file can find it
                 products_by_name[product_name.lower()] = new_product
                 if sku_code:
                     products_by_sku[sku_code] = new_product
@@ -352,7 +263,6 @@ class ItemMasterUploadView(APIView):
                     f'needs category assignment'
                 )
 
-        # ── Finalise upload log ───────────────────────────────────────────
         if inserted == 0 and updated == 0:
             upload_log.status = 'FAILED'
         elif skipped == 0 and flagged == 0:
@@ -360,9 +270,6 @@ class ItemMasterUploadView(APIView):
         else:
             upload_log.status = 'PARTIAL'
 
-        # Point 7 fix: truncate by line count not character count
-        # Before: '\n'.join(errors)[:2000] — cuts mid-line, corrupts last message
-        # After:  '\n'.join(errors[:100])  — keeps complete lines, max 100 entries
         upload_log.error_message = '\n'.join(errors[:100])
         upload_log.save()
 
@@ -378,3 +285,56 @@ class ItemMasterUploadView(APIView):
             'notes'         : errors[:20],
         }, status=status.HTTP_201_CREATED)
 
+
+# ─────────────────────────────────────────────
+# Zone Recommendation
+# ─────────────────────────────────────────────
+class ZoneRecommendationListView(generics.ListAPIView):
+    queryset = ZoneRecommendation.objects.select_related(
+        'product', 'current_zone', 'suggested_zone'
+    ).order_by('-recommendation_date')
+    serializer_class   = ZoneRecommendationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+
+# ─────────────────────────────────────────────
+# Recalculate WAC
+# ─────────────────────────────────────────────
+class RecalculateWACView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        from purchases.models import PurchaseBatch
+
+        try:
+            product = Product.objects.get(pk=pk)
+        except Product.DoesNotExist:
+            return Response(
+                {'error': 'Product not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        batches     = PurchaseBatch.objects.filter(product=product)
+        total_units = sum(b.quantity_received for b in batches)
+
+        if total_units == 0:
+            return Response(
+                {'error': 'No purchase batches found for this product — cannot calculate WAC'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        total_cost = sum(b.quantity_received * b.cost_price for b in batches)
+        old_wac    = product.avg_cost_price
+        new_wac    = total_cost / total_units
+
+        product.avg_cost_price = new_wac
+        product.save(update_fields=['avg_cost_price'])
+
+        return Response({
+            'product_id'          : product.id,
+            'product_name'        : product.product_name,
+            'old_avg_cost_price'  : old_wac,
+            'new_avg_cost_price'  : round(new_wac, 2),
+            'total_units_received': total_units,
+            'batches_used'        : batches.count(),
+        })
