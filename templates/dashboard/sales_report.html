@@ -99,12 +99,12 @@
 
 <script>
 // Auth check
-const token = localStorage.getItem('access_token');
+const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
 
 function doLogout() {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
     window.location.href = '/dashboard/login/';
 }
 

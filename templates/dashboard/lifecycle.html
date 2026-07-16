@@ -121,11 +121,13 @@ async function runCalculate() {
     btn.innerHTML = '⏳ Calculating...';
     btn.disabled = true;
     try {
-        await fetch('/api/lifecycle/calculate/', {
+       const calcRes = await fetch('/api/lifecycle/calculate/', {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + token }
         });
-        await loadLifecycle();
+        if (calcRes.ok) {
+            await loadLifecycle();
+        }
     } catch(e) {}
     btn.innerHTML = '▶ Calculate Lifecycle';
     btn.disabled = false;

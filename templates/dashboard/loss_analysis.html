@@ -175,7 +175,7 @@ async function loadLosses() {
         } else {
             tbody.innerHTML = rows.map(r => `
                 <tr>
-                    <td>${r.product_name ?? r.product ?? '—'}</td>
+                    <td>${r.product_name ?? r.product_name ?? (typeof r.product === 'object' ? r.product?.name : r.product) ?? '—'}</td>
                     <td><span class="badge bg-secondary">${r.loss_type}</span></td>
                     <td>${r.loss_quantity ?? r.quantity ?? '—'}</td>
                     <td>Rs ${Number(r.loss_value ?? 0).toLocaleString()}</td>
@@ -202,8 +202,8 @@ async function loadReturns() {
         } else {
             tbody.innerHTML = rows.map(r => `
                 <tr>
-                    <td>${r.supplier_name ?? r.supplier ?? '—'}</td>
-                    <td>${r.product_name ?? r.product ?? '—'}</td>
+                   <td>${r.supplier_name ?? (typeof r.supplier === 'object' ? r.supplier?.name : r.supplier) ?? '—'}</td>
+                   <td>${r.product_name ?? (typeof r.product === 'object' ? r.product?.name : r.product) ?? '—'}</td>
                     <td>${r.quantity_returned ?? '—'}</td>
                     <td><span class="badge ${r.status==='CONFIRMED'?'bg-success':r.status==='REJECTED'?'bg-danger':'bg-warning'}">${r.status}</span></td>
                     <td>
