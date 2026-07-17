@@ -8,3 +8,9 @@ def dashboard_login(request):
 
 def sales_report(request):
     return render(request, 'dashboard/sales_report.html')
+
+def loss_analysis(request):
+    return render(request, 'dashboard/loss_analysis.html')
+
+def lifecycle(request):
+    return render(request, 'dashboard/lifecycle.html')

@@ -99,12 +99,12 @@
 
 <script>
 // Auth check
-const token = localStorage.getItem('access_token');
+const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
 
 function doLogout() {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
     window.location.href = '/dashboard/login/';
 }
 
@@ -127,8 +127,8 @@ async function loadReport() {
 
         document.getElementById('totalUnits').innerText = data.total_units_sold ?? '—';
         document.getElementById('totalRevenue').innerText = 'Rs ' + Number(data.total_sales_revenue ?? 0).toLocaleString();
-        document.getElementById('bestProduct').innerText = data.best_selling_product ?? '—';
-        document.getElementById('worstProduct').innerText = data.worst_selling_product ?? '—';
+        document.getElementById('bestProduct').innerText = data.best_selling_product?.product_name ?? '—';
+        document.getElementById('worstProduct').innerText = data.worst_selling_product?.product_name ?? '—';
 
         document.getElementById('summarySection').style.display = 'flex';
         document.getElementById('tableSection').style.display = 'block';
