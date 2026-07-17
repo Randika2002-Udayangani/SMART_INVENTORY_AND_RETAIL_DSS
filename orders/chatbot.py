@@ -48,3 +48,12 @@ def generate_response(intent):
 def extract_number(message):
     numbers = re.findall(r'\d+', message)
     return int(numbers[0]) if numbers else None
+
+# 🔹 Combined handler — detects intent and returns response text
+def chatbot_response(message, customer_id=None):
+    intent = detect_intent(message)
+    reply = generate_response(intent)
+    return {
+        "intent": intent,
+        "response": reply
+    }
