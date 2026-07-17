@@ -1,23 +1,387 @@
-{% extends 'customer/base.html' %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with Us | SmartDeals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #333; }
 
-{% block content %}
+        /* ── Nav ── */
+        nav {
+            background: #1a73e8; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        nav .nav-links a { color: white; text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+        nav .nav-links a:hover { text-decoration: underline; }
+        nav .logout-btn {
+            background: rgba(255,255,255,0.2); color: white;
+            border: none; padding: 7px 16px; border-radius: 20px;
+            margin-left: 20px; cursor: pointer; font-size: 0.9rem;
+        }
+
+        /* ── Demo Banner ── */
+        .demo-banner {
+            background: #fff3cd; border-bottom: 1px solid #ffc107;
+            color: #856404; padding: 8px 24px;
+            font-size: 0.88rem; text-align: center;
+        }
+
+        /* ── Page layout ── */
+        .page { padding: 20px; }
+
+        .chat-box {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        /* ── Chat Header ── */
+        .chat-header {
+            background: #1a73e8;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .bot-avatar {
+            width: 44px; height: 44px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.4rem;
+        }
+        .bot-info h3 { font-size: 1rem; color: white; }
+        .bot-info p { font-size: 0.8rem; color: rgba(255,255,255,0.8); }
+        .online-dot {
+            width: 8px; height: 8px; background: #4caf50;
+            border-radius: 50%; display: inline-block; margin-right: 4px;
+        }
+
+        /* ── Messages ── */
+        .chat-messages {
+            padding: 20px;
+            height: 420px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            background: #f8f9fa;
+        }
+
+        .message { display: flex; gap: 10px; align-items: flex-end; }
+        .message.user { flex-direction: row-reverse; }
+
+        .avatar {
+            width: 32px; height: 32px; border-radius: 50%;
+            display: flex; align-items: center;
+            justify-content: center; font-size: 1rem; flex-shrink: 0;
+        }
+        .message.bot .avatar { background: #e8f0fe; }
+        .message.user .avatar { background: #e8f0fe; }
+
+        .bubble {
+            max-width: 70%; padding: 12px 16px;
+            border-radius: 18px; font-size: 0.93rem; line-height: 1.6;
+        }
+        .message.bot .bubble {
+            background: white; color: #333;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .message.user .bubble {
+            background: #1a73e8; color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        /* ── Product cards inside chat ── */
+        .product-list { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+        .mini-card {
+            background: #f0f4f8; border-radius: 8px; padding: 10px 12px;
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 8px;
+        }
+        .mini-card .pname { font-weight: 600; font-size: 0.88rem; color: #222; }
+        .mini-card .pprice { font-size: 0.8rem; color: #888; margin-top: 2px; }
+        .mini-card .pdiscount { color: #1a73e8; font-weight: 700; }
+        .order-link {
+            background: #1a73e8; color: white; border: none;
+            padding: 6px 12px; border-radius: 6px; cursor: pointer;
+            font-size: 0.8rem; white-space: nowrap; flex-shrink: 0;
+        }
+        .order-link:hover { background: #1558b0; }
+
+        /* ── Typing indicator ── */
+        .typing { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+        .typing span {
+            width: 8px; height: 8px; background: #bbb;
+            border-radius: 50%; animation: bounce 1.2s infinite;
+        }
+        .typing span:nth-child(2) { animation-delay: 0.2s; }
+        .typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-6px); }
+        }
+
+        /* ── Quick suggestions ── */
+        .suggestions {
+            padding: 12px 16px;
+            display: flex; gap: 8px; flex-wrap: wrap;
+            border-top: 1px solid #eee;
+            background: white;
+        }
+        .suggestion-btn {
+            background: #e8f0fe; color: #1a73e8; border: none;
+            padding: 7px 14px; border-radius: 20px;
+            cursor: pointer; font-size: 0.83rem; font-weight: 500;
+        }
+        .suggestion-btn:hover { background: #d2e3fc; }
+
+        /* ── Input row ── */
+        .chat-input-row {
+            padding: 14px 16px;
+            display: flex; gap: 10px; align-items: center;
+            border-top: 1px solid #eee;
+            background: white;
+        }
+        .chat-input-row input {
+            flex: 1; padding: 11px 16px;
+            border: 1.5px solid #ddd; border-radius: 24px;
+            font-size: 0.95rem; outline: none;
+        }
+        .chat-input-row input:focus { border-color: #1a73e8; }
+        .send-btn {
+            width: 44px; height: 44px; background: #1a73e8;
+            border: none; border-radius: 50%; cursor: pointer;
+            font-size: 1.1rem; color: white; flex-shrink: 0;
+        }
+        .send-btn:hover { background: #1558b0; }
+
+        /* ── Mobile ── */
+        @media (max-width: 480px) {
+            .bubble { max-width: 88%; }
+            .chat-messages { height: 350px; }
+            nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <div class="nav-links">
+        <a href="/customer/products/">Products</a>
+        <a href="/customer/chatbot/">Chat</a>
+        <a href="/customer/my-orders/">My Orders</a>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+</nav>
 
 
-<h2>Chatbot</h2>
 
-<div class="chat-box">
-    <div class="message bot">Hello! How can I help?</div>
+<!-- Chat Box -->
+<div class="page">
+    <div class="chat-box">
+
+        <!-- Header -->
+        <div class="chat-header">
+            <div class="bot-avatar">🤖</div>
+            <div class="bot-info">
+                <h3>SmartDeals Assistant</h3>
+                <p><span class="online-dot"></span>Online — ready to help!</p>
+            </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="chat-messages" id="chatMessages"></div>
+
+        <!-- Quick Suggestions -->
+        <div class="suggestions">
+            <button class="suggestion-btn" onclick="sendSuggestion('Show me today\'s deals')">Today's deals</button>
+            <button class="suggestion-btn" onclick="sendSuggestion('Items under Rs 200')">Under Rs 200</button>
+            <button class="suggestion-btn" onclick="sendSuggestion('Price of Milo')">Price of Milo</button>
+            <button class="suggestion-btn" onclick="sendSuggestion('Do you have milk?')">Do you have milk?</button>
+            <button class="suggestion-btn" onclick="sendSuggestion('Expiring soon')">Expiring soon</button>
+        </div>
+
+        <!-- Input -->
+        <div class="chat-input-row">
+            <input type="text" id="chatInput"
+                   placeholder="Type anything e.g. price of Milo, items under Rs 300...">
+            <button class="send-btn" onclick="sendMessage()">➤</button>
+        </div>
+
+    </div>
 </div>
 
-<input type="text" placeholder="Type message...">
-<button>Send</button>
-
-<button onclick="sendMessage()">Send</button>
-
 <script>
-function sendMessage(){
-    alert("Mock chatbot response");
-}
+    const demoProducts = [
+        { id:1, name:"Anchor Full Cream Milk 1L",  price:350, discounted:280, expiry:"2026-07-25", discount:20 },
+        { id:2, name:"Milo Chocolate Drink 400g",  price:480, discounted:384, expiry:"2026-07-22", discount:20 },
+        { id:3, name:"Yogurt Strawberry 200g",     price:120, discounted:84,  expiry:"2026-07-20", discount:30 },
+        { id:4, name:"Bread Loaf 400g",            price:85,  discounted:60,  expiry:"2026-07-19", discount:29 },
+        { id:5, name:"Cheddar Cheese Block 250g",  price:620, discounted:496, expiry:"2026-07-23", discount:20 },
+        { id:6, name:"Orange Juice 1L",            price:290, discounted:203, expiry:"2026-07-21", discount:30 },
+        { id:7, name:"Butter Unsalted 200g",       price:420, discounted:336, expiry:"2026-07-24", discount:20 },
+        { id:8, name:"Cream Cheese 150g",          price:380, discounted:266, expiry:"2026-07-20", discount:30 },
+    ];
+
+    function getBotResponse(input) {
+        const msg = input.toLowerCase();
+
+        // Price of specific product
+        if (msg.includes('price') || msg.includes('cost') || msg.includes('how much')) {
+            const found = demoProducts.find(p =>
+                p.name.toLowerCase().split(' ').some(w => w.length > 3 && msg.includes(w))
+            );
+            if (found) return { text: `Here is the price for <strong>${found.name}</strong>:`, products: [found] };
+        }
+
+        // Under a price
+        const underMatch = msg.match(/under\s+rs?\s*(\d+)|below\s+rs?\s*(\d+)|less than\s+rs?\s*(\d+)/);
+        if (underMatch) {
+            const limit = parseInt(underMatch[1] || underMatch[2] || underMatch[3]);
+            const found = demoProducts.filter(p => p.discounted <= limit);
+            return found.length > 0
+                ? { text: `Here are items available under Rs ${limit}:`, products: found }
+                : { text: `Sorry, no items found under Rs ${limit}. Try a higher amount!`, products: [] };
+        }
+
+        // Availability check
+        if (msg.includes('do you have') || msg.includes('available') || msg.includes('in stock')) {
+            const found = demoProducts.find(p =>
+                p.name.toLowerCase().split(' ').some(w => w.length > 3 && msg.includes(w))
+            );
+            if (found) return { text: `Yes! <strong>${found.name}</strong> is available:`, products: [found] };
+            return { text: `Yes, we have ${demoProducts.length} near-expiry items available today! Here are some:`, products: demoProducts.slice(0,3) };
+        }
+
+        // Expiring soon
+        if (msg.includes('expir') || msg.includes('soon')) {
+            const soon = [...demoProducts].sort((a,b) => a.expiry.localeCompare(b.expiry)).slice(0,3);
+            return { text: `These items are expiring soonest — grab them before they're gone! 🏃`, products: soon };
+        }
+
+        // Today's deals / all
+        if (msg.includes('deal') || msg.includes('discount') || msg.includes('offer') || msg.includes('all') || msg.includes('today')) {
+            return { text: `Here are all today's near-expiry deals with special discounts! 🔥`, products: demoProducts };
+        }
+
+        // Specific product search
+        const found = demoProducts.find(p =>
+            p.name.toLowerCase().split(' ').some(w => w.length > 3 && msg.includes(w))
+        );
+        if (found) return { text: `I found a match for you:`, products: [found] };
+
+        // Greeting
+        if (msg.includes('hello') || msg.includes('hi') || msg.includes('hey')) {
+            return { text: `Hello! 👋 I'm your SmartDeals assistant. I can help you find near-expiry products at discounted prices.<br><br>Try asking:<br>• <em>Price of Milo</em><br>• <em>Items under Rs 200</em><br>• <em>Do you have milk?</em><br>• <em>Show today's deals</em>`, products: [] };
+        }
+
+        // Unknown
+        return {
+            text: `I didn't quite understand that 🤔 Try asking:<br><br>• <em>Price of Milo</em><br>• <em>Items under Rs 500</em><br>• <em>Do you have Anchor milk?</em><br>• <em>Show expiring soon</em><br>• <em>Today's deals</em>`,
+            products: []
+        };
+    }
+
+    function addMessage(text, sender, products = []) {
+        const messages = document.getElementById('chatMessages');
+
+        const productHTML = products.length > 0 ? `
+            <div class="product-list">
+                ${products.map(p => `
+                    <div class="mini-card">
+                        <div>
+                            <div class="pname">${p.name}</div>
+                            <div class="pprice">
+                                <s>Rs ${p.price}</s> →
+                                <span class="pdiscount">Rs ${p.discounted}</span>
+                                (${p.discount}% off) · Exp: ${p.expiry}
+                            </div>
+                        </div>
+                        <button class="order-link"
+                            onclick="window.location.href='/customer/order/?product=${p.id}'">
+                            Order
+                        </button>
+                    </div>`).join('')}
+            </div>` : '';
+
+        const div = document.createElement('div');
+        div.className = `message ${sender}`;
+        div.innerHTML = `
+            <div class="avatar">${sender === 'bot' ? '🤖' : '👤'}</div>
+            <div class="bubble">${text}${productHTML}</div>`;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    function showTyping() {
+        const messages = document.getElementById('chatMessages');
+        const div = document.createElement('div');
+        div.className = 'message bot';
+        div.id = 'typingIndicator';
+        div.innerHTML = `
+            <div class="avatar">🤖</div>
+            <div class="bubble">
+                <div class="typing"><span></span><span></span><span></span></div>
+            </div>`;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    function hideTyping() {
+        const el = document.getElementById('typingIndicator');
+        if (el) el.remove();
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('chatInput');
+        const text  = input.value.trim();
+        if (!text) return;
+
+        addMessage(text, 'user');
+        input.value = '';
+        showTyping();
+
+        setTimeout(() => {
+            hideTyping();
+            const response = getBotResponse(text);
+            addMessage(response.text, 'bot', response.products);
+        }, 800);
+    }
+
+    function sendSuggestion(text) {
+        document.getElementById('chatInput').value = text;
+        sendMessage();
+    }
+
+    document.getElementById('chatInput').addEventListener('keypress', e => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    function logout() {
+        sessionStorage.clear();
+        window.location.href = '/customer/login/';
+    }
+
+    // Welcome message on load
+    window.onload = () => {
+        setTimeout(() => {
+            addMessage(
+                `Hello! 👋 Welcome to <strong>SmartDeals</strong>!<br><br>I can help you find near-expiry products at special discounted prices. Just type anything or click a suggestion below!`,
+                'bot'
+            );
+        }, 400);
+    };
 </script>
 
-{% endblock %}
+</body>
+</html>
