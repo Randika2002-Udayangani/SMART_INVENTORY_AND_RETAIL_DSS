@@ -228,7 +228,9 @@ class ItemLedgerPDFUploadView(APIView):
                         if len(numeric_parts) < 2:
                             continue
 
-                        qty_out = numeric_parts[-1]
+                        # Row format: ... IN OUT Balance  (3 trailing numbers)
+                        # OUT is second-to-last; last is the cumulative running Balance, not a transaction qty
+                        qty_out = numeric_parts[-2] if len(numeric_parts) >= 2 else numeric_parts[-1]
 
                         if qty_out > 0:
                             daily_totals[sale_date] += qty_out
