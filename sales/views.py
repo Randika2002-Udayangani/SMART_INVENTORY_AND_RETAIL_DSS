@@ -1,5 +1,5 @@
 import os
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from decimal import Decimal
 
 import pandas as pd
@@ -812,3 +812,78 @@ class DailyBillsListView(generics.ListAPIView):
             )
 
         return queryset
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def profit_summary(request):
+    """
+    GET /api/analytics/profit-summary/
+
+    Single summary object for the dashboard profit KPI card.
+    Default: last 30 days.
+
+    Response:
+        total_revenue           float
+        total_cost              float  (WAC-based)
+        total_profit            float
+        overall_margin_percent  float
+        period                  {date_from, date_to}
+    """
+    raw_to   = request.query_params.get('date_to')
+    raw_from = request.query_params.get('date_from')
+
+    try:
+        date_to = datetime.strptime(raw_to, '%Y-%m-%d').date() if raw_to else date.today()
+    except ValueError:
+        return Response({'error': 'Invalid date_to format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from = datetime.strptime(raw_from, '%Y-%m-%d').date() if raw_from else date_to - timedelta(days=30)
+    except ValueError:
+        return Response({'error': 'Invalid date_from format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if date_from > date_to:
+        return Response({'error': 'date_from must be before date_to.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    records = ItemSalesRecord.objects.filter(
+        sale_date__gte=date_from,
+        sale_date__lte=date_to,
+    )
+
+    store_totals = records.aggregate(
+        total_revenue=Sum('total_amount'),
+    )
+    total_revenue = float(store_totals['total_revenue'] or 0)
+
+    # WAC cost calculation
+    per_product = records.values('product_id').annotate(
+        units=Sum('quantity_sold')
+    )
+    product_ids  = [r['product_id'] for r in per_product]
+    products_map = {
+        p.id: p for p in Product.objects.filter(id__in=product_ids)
+    }
+
+    total_cost = 0.0
+    for row in per_product:
+        product = products_map.get(row['product_id'])
+        if not product:
+            continue
+        wac = float(product.avg_cost_price or product.cost_price or 0)
+        total_cost += row['units'] * wac
+
+    total_profit = total_revenue - total_cost
+    margin_pct   = round((total_profit / total_revenue * 100), 2) if total_revenue > 0 else 0.0
+
+    return Response({
+        'total_revenue':          round(total_revenue, 2),
+        'total_cost':             round(total_cost, 2),
+        'total_profit':           round(total_profit, 2),
+        'overall_margin_percent': margin_pct,
+        'period': {
+            'date_from': str(date_from),
+            'date_to':   str(date_to),
+        }
+    })

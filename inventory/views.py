@@ -346,10 +346,12 @@ class LowStockView(APIView):
  
         for product in products:
             reorder_threshold = product.reorder_threshold or 0
+            if reorder_threshold == 0:
+                continue  # skip products with no reorder point set
+
             current = stock_by_product.get(product.id, 0)
- 
-            if current > reorder_threshold:
-                continue  # only include products at or below threshold
+            if current >= reorder_threshold:
+                continue  # only include products strictly below threshold
  
             shortage = reorder_threshold - current
  
@@ -790,7 +792,7 @@ class HealthScoreCalculateView(APIView):
 class HealthScoreListView(APIView):
 
     def get(self, request):
-        queryset      = InventoryHealthScore.objects.all().order_by(
+        queryset = InventoryHealthScore.objects.all().order_by(
             '-calculated_date', 'overall_score'
         )
         status_filter = request.query_params.get('status')
@@ -805,6 +807,34 @@ class HealthScoreListView(APIView):
         )
         return Response(list(data))
 
+
+class HealthScoreSummaryView(APIView):
+
+    def get(self, request):
+        from django.db.models import Count
+
+        counts = InventoryHealthScore.objects.values('status').annotate(
+            count=Count('id')
+        )
+
+        summary = {
+            'HEALTHY':  0,
+            'WATCH':    0,
+            'AT RISK':  0,
+            'CRITICAL': 0,
+        }
+        for row in counts:
+            if row['status'] in summary:
+                summary[row['status']] = row['count']
+
+        return Response({
+            'summary': summary,
+            'total':   sum(summary.values()),
+            'note': (
+                'Call POST /api/health-scores/calculate/ first if all counts '
+                'are 0. For the full product list use GET /api/health-scores/.'
+            )
+        })
 
 # ─────────────────────────────────────────────────────────────────
 # GET /api/health-scores/categories/
@@ -1146,6 +1176,31 @@ class DiscountRecommendationDetailView(APIView):
         )
  
         return Response(DiscountRecommendationSerializer(rec).data)
+    
+
+
+class DiscountCalculateView(APIView):
+
+    def post(self, request):
+        from inventory.services.discount_engine import calculate_discounts
+        result = calculate_discounts()
+
+        log_action(
+            user=request.user, action='CALCULATE', table_name='discount_recommendation',
+            record_id=None, old_value=None,
+            new_value=result, request=request,
+        )
+
+        return Response({
+            'message': (
+                f"Discount calculation complete — "
+                f"{result['recommendations_created']} created, "
+                f"{result['recommendations_updated']} updated."
+            ),
+            **result,
+        }, status=status.HTTP_200_OK)
+    
+    
     
 class SyncDateView(APIView):
     """

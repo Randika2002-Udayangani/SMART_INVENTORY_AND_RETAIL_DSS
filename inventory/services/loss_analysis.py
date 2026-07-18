@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import date
 from django.db.models import Sum
 from products.models import Product
 from purchases.models import PurchaseBatch
@@ -182,3 +183,149 @@ def calculate_loss_analysis():
         },
         'products': products,
     }
+
+
+
+def record_damage(product_id, quantity, reason, loss_type='DAMAGE', batch_id=None):
+    """
+    Records a damage or other-type loss event for a product.
+ 
+    Mirrors the validation already used in LossRecordView.post()
+    (inventory/views.py) — same rules, same error format, so callers
+    get consistent behaviour whether they go through the API view
+    or call this function directly.
+ 
+    Args:
+        product_id : int  — required, must be a valid Product id
+        quantity   : int  — required, must be > 0
+        reason     : str  — optional notes, stored as LossRecord.notes
+        loss_type  : str  — defaults to 'DAMAGE'. Must be one of:
+                             EXPIRY / SLOW_MOVING / DAMAGE / OTHER
+                             (matches the 4-value constraint already
+                             enforced in LossRecordView.post())
+        batch_id   : int  — optional. Link to a specific PurchaseBatch
+                             if the damage came from a known batch.
+                             Omit for damage with no specific batch
+                             (e.g. shelf breakage, not batch-specific).
+ 
+    Returns:
+        dict with the same shape LossRecordView.post() already returns,
+        so this can be called directly from a view and the result
+        passed straight into a Response():
+            {
+                'success'      : bool,
+                'error'        : str | None,
+                'loss_id'      : int | None,
+                'product_name' : str | None,
+                'loss_value'   : Decimal | None,
+            }
+ 
+    Raises:
+        Does NOT raise — returns {'success': False, 'error': '...'}
+        on any validation failure, so callers don't need try/except
+        for expected validation errors. Matches the existing pattern
+        of returning Response(...) with an 'error' key rather than
+        raising exceptions, used throughout inventory/views.py.
+ 
+    Example:
+        result = record_damage(
+            product_id=493,
+            quantity=12,
+            reason='Dropped during shelf restocking',
+        )
+        if result['success']:
+            print(f"Recorded loss #{result['loss_id']}")
+        else:
+            print(f"Failed: {result['error']}")
+    """
+    VALID_LOSS_TYPES = ['EXPIRY', 'SLOW_MOVING', 'DAMAGE', 'OTHER']
+ 
+    # ── Validation — mirrors LossRecordView.post() exactly ───────────────────
+    if not product_id or quantity is None:
+        return {
+            'success': False,
+            'error': 'product_id and quantity are required',
+            'loss_id': None,
+            'product_name': None,
+            'loss_value': None,
+        }
+ 
+    if loss_type not in VALID_LOSS_TYPES:
+        return {
+            'success': False,
+            'error': f'loss_type must be one of: {", ".join(VALID_LOSS_TYPES)}',
+            'loss_id': None,
+            'product_name': None,
+            'loss_value': None,
+        }
+ 
+    try:
+        quantity = int(quantity)
+    except (ValueError, TypeError):
+        return {
+            'success': False,
+            'error': 'quantity must be a whole number',
+            'loss_id': None,
+            'product_name': None,
+            'loss_value': None,
+        }
+ 
+    if quantity <= 0:
+        return {
+            'success': False,
+            'error': 'quantity must be greater than 0',
+            'loss_id': None,
+            'product_name': None,
+            'loss_value': None,
+        }
+ 
+    try:
+        product = Product.objects.get(pk=product_id)
+    except Product.DoesNotExist:
+        return {
+            'success': False,
+            'error': 'Product not found',
+            'loss_id': None,
+            'product_name': None,
+            'loss_value': None,
+        }
+ 
+    # ── Optional batch link ───────────────────────────────────────────────────
+    batch = None
+    if batch_id:
+        try:
+            batch = PurchaseBatch.objects.get(pk=batch_id)
+        except PurchaseBatch.DoesNotExist:
+            return {
+                'success': False,
+                'error': f'PurchaseBatch with id={batch_id} not found',
+                'loss_id': None,
+                'product_name': None,
+                'loss_value': None,
+            }
+ 
+    # ── Loss value — WAC-based, same calculation as LossRecordView.post() ────
+    # Uses avg_cost_price (WAC), falling back to 0 if not yet calculated
+    # (consistent with the avg_cost_price fallback pattern used in
+    # sales_summary() and calculate_sales_and_profit() elsewhere)
+    loss_value = quantity * (product.avg_cost_price or Decimal('0'))
+ 
+    # ── Create the record ──────────────────────────────────────────────────
+    record = LossRecord.objects.create(
+        product       = product,
+        batch         = batch,
+        loss_type     = loss_type,
+        loss_quantity = quantity,
+        loss_value    = loss_value,
+        loss_date     = date.today(),
+        notes         = reason or '',
+    )
+ 
+    return {
+        'success': True,
+        'error': None,
+        'loss_id': record.id,
+        'product_name': product.product_name,
+        'loss_value': loss_value,
+    }
+ 

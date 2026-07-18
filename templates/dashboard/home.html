@@ -26,10 +26,11 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--txt); min-height: 100vh; }
+ 
 
     /* ── SIDEBAR ─────────────────────────────────────────── */
-    .sidebar {
-      width: 220px; min-height: 100vh; background: var(--sidebar);
+    .sidebar { overflow-y: auto;
+      width: 220px; height: 100vh; background: var(--sidebar);
       position: fixed; top: 0; left: 0;
       display: flex; flex-direction: column; z-index: 100;
       border-right: 1px solid rgba(255,255,255,0.06);
@@ -37,7 +38,7 @@
     .sb-logo { padding: 20px 18px 14px; border-bottom: 1px solid rgba(255,255,255,0.15); }
     .sb-logo .lt { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #d4f7e0; }
     .sb-logo .ls { font-size: 9.5px; color: rgba(255,255,255,0.5); margin-top: 2px; }
-    .sb-nav { padding: 12px 8px; flex: 1; overflow-y: auto; }
+    .sb-nav { padding: 12px 8px; flex: 1; overflow-y: auto; max-height: calc(100vh - 80px); }
     .sb-sec { font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 0 10px 6px; margin-top: 10px; }
     .sb-nav a {
       display: flex; align-items: center; gap: 9px; padding: 8px 10px;
@@ -251,7 +252,7 @@
     /* ── RESPONSIVE ──────────────────────────────────────── */
     @media (max-width: 1200px) { .kpi-grid { grid-template-columns: repeat(2,1fr); } }
     @media (max-width: 960px) {
-      .sidebar { display: none; } .main { margin-left: 0; padding: 16px; }
+      .sidebar { overflow-y: auto; display: none; } .main { margin-left: 0; padding: 16px; }
       .kpi-grid { grid-template-columns: repeat(2,1fr); }
       .two-col { grid-template-columns: 1fr; }
       .health-bands { grid-template-columns: repeat(2,1fr); }
@@ -279,18 +280,19 @@
     <a href="#"><i class="bi bi-upload"></i> Sales Upload</a>
 
     <div class="sb-sec">Decision Support</div>
-    <a href="#"><i class="bi bi-heart-pulse"></i> Health Score</a>
-    <a href="#"><i class="bi bi-tag"></i> Discount Engine</a>
-    <a href="#"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
-    <a href="#"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
+    <a href="#" onclick="alert('Coming soon')"><i class="bi bi-heart-pulse"></i> Health Score</a>
+    <a href="#" onclick="alert('Coming soon')"><i class="bi bi-tag"></i> Discount Engine</a>
+    <a href="#" onclick="alert('Coming soon')"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
+    <a href="/dashboard/loss-analysis/"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
+    <a href="/dashboard/lifecycle/"><i class="bi bi-activity"></i> Lifecycle</a>
 
     <div class="sb-sec">Operations</div>
     <a href="#"><i class="bi bi-receipt"></i> Order Management</a>
     <a href="#"><i class="bi bi-truck"></i> Suppliers</a>
 
     <div class="sb-sec">Reports</div>
-    <a href="#"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
-    <a href="/dashboard/sales-report/" class="bi bi-bar-chart"></i> Sales Report</a>
+    <a href="#" onclick="alert('Coming soon')"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
+   <a href="/dashboard/sales-report/"><i class="bi bi-bar-chart"></i> Sales Report</a>
     <a href="#"><i class="bi bi-bell"></i> Notifications <span class="badge-pill">5</span></a>
   </nav>
   <div class="sb-footer">
@@ -390,9 +392,9 @@
       </div>
       <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:82%;background:var(--red);"></div></div>
       <div class="kpi-footer">
-        <span class="chg down">Below reorder threshold</span>
-        <span>14 of 17 tracked</span>
-      </div>
+    <span class="chg down">Below reorder threshold</span>
+    <span id="lowStockFooter">14 of 17 tracked</span>
+</div>
     </div>
 
     <!-- Expiring -->
@@ -462,22 +464,22 @@
       <div class="card-body">
         <div class="expiry-buckets">
           <div class="exp-bucket eb-7">
-            <div class="eb-num">3</div>
+            <div class="eb-num" id="exp7">3</div>
             <div class="eb-lbl">Within 7 Days</div>
             <div class="eb-loss">Est. loss Rs 12,400</div>
           </div>
           <div class="exp-bucket eb-14">
-            <div class="eb-num">6</div>
+            <div class="eb-num" id="exp14">6</div>
             <div class="eb-lbl">Within 14 Days</div>
             <div class="eb-loss">Est. loss Rs 28,700</div>
           </div>
           <div class="exp-bucket eb-30">
-            <div class="eb-num">9</div>
+            <div class="eb-num" id="exp30">9</div>
             <div class="eb-lbl">Within 30 Days</div>
             <div class="eb-loss">Est. loss Rs 51,200</div>
           </div>
         </div>
-        <ul class="expiry-list">
+        <ul class="expiry-list" id="expiryList">
           <li>
             <div>
               <div class="exp-name">Anchor Butter 200g</div>
@@ -582,7 +584,7 @@
         <div class="sh">Inventory Health Score</div>
         <div class="ss">Composite 0–100 score · 4-band classification · triggered on-demand · from /api/health-scores/</div>
       </div>
-      <button class="calc-btn" onclick="this.innerHTML='&#x23F3; Calculating...'">&#9654; Run Health Calculation</button>
+      <button class="calc-btn" onclick="runHealthCalculation(this)">&#9654; Run Health Calculation</button>
     </div>
 
     <!-- Band summary -->
@@ -756,7 +758,7 @@
   }
 
   function renderHS(filter) {
-    const rows = filter==='all' ? hsData : hsData.filter(r=>r.status===filter);
+    const rows = filter==='all' ? hsData.filter(r=>r.status==='AT RISK'||r.status==='CRITICAL') : hsData.filter(r=>r.status===filter);
     document.getElementById('hsTbody').innerHTML = rows.map(r=>`
       <tr>
         <td style="font-weight:600">${r.name}</td>
@@ -769,6 +771,7 @@
         <td><span class="action-txt">${r.action}</span></td>
       </tr>`).join('');
   }
+  
 
   function fhs(filter, btn) {
     document.querySelectorAll('.hf-btn').forEach(b=>b.classList.remove('on'));
@@ -776,24 +779,24 @@
     renderHS(filter);
   }
 
-  renderHS('all');
+  renderHS('AT RISK')
   // JWT CHECK
 function checkAuth() {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token');
     if (!token) { window.location.href = '/dashboard/login/'; }
 }
 checkAuth();
 
 // Logout
 function doLogout() {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
     window.location.href = '/dashboard/login/';
 }
 
 // FETCH 1 — Total Profit
 async function fetchProfitSummary() {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token')
     try {
         const res = await fetch('/api/analytics/profit-summary/', {
             headers: { 'Authorization': 'Bearer ' + token }
@@ -803,10 +806,22 @@ async function fetchProfitSummary() {
             document.getElementById('totalProfit').innerText = 'Rs ' + Number(data.total_profit).toLocaleString();
     } catch(e) {}
 }
+// FETCH — Total Sales
+async function fetchTotalSales() {
+    const token = sessionStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/reports/sales-summary/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        if (data.total_sales_revenue !== undefined)
+            document.getElementById('totalSales').innerText = 'Rs ' + Number(data.total_sales_revenue).toLocaleString();
+    } catch(e) {}
+}
 
 // FETCH 2 — Pending Orders
 async function fetchPendingOrders() {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token');
     try {
         const res = await fetch('/api/orders/', {
             headers: { 'Authorization': 'Bearer ' + token }
@@ -819,7 +834,7 @@ async function fetchPendingOrders() {
 
 // FETCH 3 — Low Stock
 async function fetchLowStockCount() {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token');
     try {
         const res = await fetch('/api/inventory/low-stock/', {
             headers: { 'Authorization': 'Bearer ' + token }
@@ -827,12 +842,14 @@ async function fetchLowStockCount() {
         const data = await res.json();
         const count = Array.isArray(data) ? data.length : 0;
         document.getElementById('lowStock').innerText = count;
+        document.getElementById('lowStockFooter').innerText = count + ' products below threshold';
+
     } catch(e) {}
 }
 
 // FETCH 4 — Expiring Soon
 async function fetchExpiringCount() {
-    const token = localStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token');
     try {
         const res = await fetch('/api/batches/expiring-soon/?days=30', {
             headers: { 'Authorization': 'Bearer ' + token }
@@ -842,12 +859,121 @@ async function fetchExpiringCount() {
         document.getElementById('expiringSoon').innerText = count;
     } catch(e) {}
 }
+// FETCH — Expiry Risk Widget
+async function fetchExpirySummary() {
+    const token = sessionStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/reports/expiry-summary/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        if (data.expiring_in_7_days !== undefined)
+            document.getElementById('exp7').innerText = data.expiring_in_7_days;
+        if (data.expiring_in_7_to_14_days !== undefined)
+            document.getElementById('exp14').innerText = data.expiring_in_7_to_14_days;
+        if (data.expiring_in_14_to_30_days !== undefined)
+            document.getElementById('exp30').innerText = data.expiring_in_14_to_30_days;
+        if (data.batches && Array.isArray(data.batches)) {
+            const list = document.getElementById('expiryList');
+            list.innerHTML = data.batches.map(b => `
+                <li>
+                    <div>
+                        <div class="exp-name">${b.product_name}</div>
+                        <div class="exp-batch">Batch #${b.batch_id} · ${b.remaining_quantity} units · Rs ${b.estimated_loss}</div>
+                    </div>
+                    <span class="exp-days">${b.days_until_expiry} days</span>
+                </li>
+            `).join('');
+        }
+    } catch(e) {}
+}
 
+// Run Health Calculation
+async function runHealthCalculation(btn) {
+    btn.innerHTML = '&#x23F3; Calculating...';
+    btn.disabled = true;
+    const token = sessionStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/health-scores/calculate/', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+            // Fetch real data after calculation
+            const hsRes = await fetch('/api/analytics/health-scores/', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            const hsData = await hsRes.json();
+            const tbody = document.getElementById('hsTbody');
+            const rows = Array.isArray(hsData) ? hsData : (hsData.results ?? []);
+            const filtered = rows.filter(r => r.status === 'AT RISK' || r.status === 'CRITICAL');
+            tbody.innerHTML = filtered.map(r => `
+                <tr>
+                    <td style="font-weight:600">${r.product_name ?? r.name ?? '—'}</td>
+                    <td style="color:var(--muted)">${r.category ?? '—'}</td>
+                    <td>${miniBar(r.velocity_score,'#34d17a')}</td>
+                    <td>${miniBar(r.margin_score,'#22c55e')}</td>
+                    <td>${miniBar(r.expiry_risk_score,'#f59e0b')}</td>
+                    <td>${miniBar(r.overall_score, scoreCol(r.overall_score))}</td>
+                    <td>${spPill(r.status)}</td>
+                    <td><span class="action-txt">${r.recommended_action ?? '—'}</span></td>
+                </tr>
+            `).join('');
+        }
+    } catch(e) {}
+    btn.innerHTML = '&#9654; Run Health Calculation';
+    btn.disabled = false;
+}
 // Run all fetches
 fetchProfitSummary();
+fetchTotalSales();
 fetchPendingOrders();
 fetchLowStockCount();
 fetchExpiringCount();
+fetchExpirySummary();
+// FETCH — Monthly Sales Trend
+async function fetchMonthlySales() {
+    const token = sessionStorage.getItem('access_token');
+    const months = [
+        {label:'Jan', from:'2026-01-01', to:'2026-01-31'},
+        {label:'Feb', from:'2026-02-01', to:'2026-02-28'},
+        {label:'Mar', from:'2026-03-01', to:'2026-03-31'},
+        {label:'Apr', from:'2026-04-01', to:'2026-04-30'},
+        {label:'May', from:'2026-05-01', to:'2026-05-31'},
+        {label:'Jun', from:'2026-06-01', to:'2026-06-30'}
+    ];
+    try {
+        const results = await Promise.all(months.map(m =>
+            fetch(`/api/reports/sales-summary/?date_from=${m.from}&date_to=${m.to}`, {
+                headers: { 'Authorization': 'Bearer ' + token }
+            }).then(r => r.json()).then(d => d.total_sales_revenue ?? 0)
+        ));
+        if (window.trendChart) {
+            window.trendChart.data.datasets[0].data = results;
+            window.trendChart.update();
+        }
+    } catch(e) {}
+}
+
+// FETCH — Top 5 Products
+async function fetchTopProducts() {
+    const token = sessionStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/reports/sales-summary/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        const products = data.top_products ?? [];
+        if (products.length > 0 && window.topChart) {
+            window.topChart.data.labels = products.map(p => p.product_name);
+            window.topChart.data.datasets[0].data = products.map(p => p.units_sold);
+            window.topChart.update();
+        }
+    } catch(e) {}
+}
+
+fetchMonthlySales();
+fetchTopProducts();
 </script>
 </body>
 </html>
