@@ -8,3 +8,5 @@ admin.site.register(ChatbotLog)
 admin.site.register(ProductRating)
 admin.site.register(ProductRatingSummary)
 admin.site.register(Notification)
+
+# Register your models here.

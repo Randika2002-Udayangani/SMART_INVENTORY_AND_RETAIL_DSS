@@ -1414,3 +1414,9 @@ class NotificationMarkReadView(APIView):
         return Response({
             'id': n.id, 'is_read': n.is_read, 'read_at': n.read_at,
         })
+from django.http import JsonResponse
+
+def api_status(request):
+    return JsonResponse({
+        "status": "working"
+    })

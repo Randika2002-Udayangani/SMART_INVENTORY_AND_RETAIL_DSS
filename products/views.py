@@ -4,7 +4,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.utils import timezone
-
+from core.permissions import ReadPublicWriteAuthenticated
+from core.authentication import LenientJWTAuthentication
+import pandas as pd
 
 from .models import Brand, Category, StoreZone, Product, ZoneRecommendation
 from .serializers import (
@@ -18,28 +20,31 @@ from inventory.services.auto_categorise import classify_product
 # ─────────────────────────────────────────────
 # Brand
 # ─────────────────────────────────────────────
-class BrandListCreateView(generics.ListCreateAPIView):
+class BrandListCreateView(ReadPublicWriteAuthenticated, generics.ListCreateAPIView):
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
+    authentication_classes = [LenientJWTAuthentication]
 
 
-class BrandDetailView(generics.RetrieveUpdateDestroyAPIView):
+class BrandDetailView(ReadPublicWriteAuthenticated, generics.RetrieveUpdateDestroyAPIView):
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
+    authentication_classes = [LenientJWTAuthentication]
 
 
 # ─────────────────────────────────────────────
 # Category
 # ─────────────────────────────────────────────
-class CategoryListCreateView(generics.ListCreateAPIView):
+class CategoryListCreateView(ReadPublicWriteAuthenticated, generics.ListCreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
+    authentication_classes = [LenientJWTAuthentication]
 
 
-class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+class CategoryDetailView(ReadPublicWriteAuthenticated, generics.RetrieveUpdateDestroyAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-
+    authentication_classes = [LenientJWTAuthentication]
 
 # ─────────────────────────────────────────────
 # StoreZone

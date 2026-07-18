@@ -2,11 +2,14 @@ from rest_framework import generics
 from .models import Supplier
 from .serializers import SupplierSerializer
 from users.audit import log_action
+from core.permissions import ReadPublicWriteAuthenticated
+from core.authentication import LenientJWTAuthentication
 
 
-class SupplierListCreateView(generics.ListCreateAPIView):
+class SupplierListCreateView(ReadPublicWriteAuthenticated, generics.ListCreateAPIView):
     queryset = Supplier.objects.all()
     serializer_class = SupplierSerializer
+    authentication_classes = [LenientJWTAuthentication]
 
     def perform_create(self, serializer):
         supplier = serializer.save()
@@ -21,9 +24,10 @@ class SupplierListCreateView(generics.ListCreateAPIView):
         )
 
 
-class SupplierDetailView(generics.RetrieveUpdateDestroyAPIView):
+class SupplierDetailView(ReadPublicWriteAuthenticated, generics.RetrieveUpdateDestroyAPIView):
     queryset = Supplier.objects.all()
     serializer_class = SupplierSerializer
+    authentication_classes = [LenientJWTAuthentication]
 
     def perform_update(self, serializer):
         old_data = SupplierSerializer(self.get_object()).data
