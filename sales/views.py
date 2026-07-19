@@ -205,15 +205,12 @@ class ItemLedgerPDFUploadView(APIView):
 
                         if 'CASH' not in line or 'SALE' not in line:
                             continue
+                        # parts[0]=date, parts[1]=actual bill number, parts[2]='CASH' (literal word)
+                        # Using parts[2] here previously caused every row's "bill_no" to be the string
+                        # "CASH", making all same-day sales look like duplicate bills and get skipped.
+                        bill_no = parts[1]
 
-                        bill_no = parts[2]
-
-                        bill_key = (sale_date, bill_no)
-
-                        if bill_key in seen_bills:
-                            continue
-
-                        seen_bills.add(bill_key)
+                       
 
                         numeric_parts = []
 
