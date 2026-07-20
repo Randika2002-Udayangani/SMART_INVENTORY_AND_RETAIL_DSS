@@ -30,12 +30,14 @@ class PurchaseBatch(models.Model):
         ('EXPIRED', 'Expired'),
         ('DEPLETED', 'Depleted'),
         ('DISPOSED', 'Disposed'),
+        ('PENDING_EXPIRY', 'Pending Expiry'),
     ]
     purchase = models.ForeignKey(
         Purchase, on_delete=models.CASCADE, db_column='purchase_id'
     )
     product = models.ForeignKey(
-        Product, on_delete=models.PROTECT, db_column='product_id'
+        Product, on_delete=models.PROTECT, db_column='product_id',
+        null=True, blank=True 
     )
     quantity_received = models.IntegerField()
     cost_price = models.DecimalField(max_digits=10, decimal_places=2)
