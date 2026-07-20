@@ -1,3 +1,13 @@
+import io
+...
+from django.http import HttpResponse
+...
+from openpyxl import Workbook
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
 import os
 from datetime import date, timedelta, datetime
 from decimal import Decimal
@@ -886,3 +896,262 @@ def profit_summary(request):
             'date_to':   str(date_to),
         }
     })
+
+
+# F16 — Report Export (API Design Doc v3.1 §21.1)
+#
+# GET /api/reports/sales/?format=excel|pdf&date_from=&date_to=
+# GET /api/reports/profit/?format=excel|pdf&date_from=&date_to=
+# GET /api/reports/inventory/?format=excel|pdf
+#
+# Excel via openpyxl (already in requirements.txt). PDF via reportlab
+# (pure Python — no system-level deps like weasyprint needs, safer
+# across everyone's machine). ⚠ reportlab is NOT yet in
+# requirements.txt — add `reportlab` and run
+# `pip install reportlab` before testing this.
+#
+# Deliberately NOT reusing sales_summary()/profit_summary() directly —
+# those are dashboard KPI-card endpoints with an agreed response shape
+# (totals + top 5 only, per the Week 4-5 plan with Lavanya). A report
+# export needs every product, not top 5, so the per-product rows are
+# rebuilt here rather than risk changing that already-agreed contract.
+#
+# Export events are logged to Upload_Log with upload_type='EXPORT',
+# per the note in API Design Doc v3.1 §21.
+# =========================================================
+
+def _report_date_range(request):
+    """Same default as sales_summary()/profit_summary(): last 30 days."""
+    to_str = request.query_params.get('date_to')
+    from_str = request.query_params.get('date_from')
+
+    date_to = date.fromisoformat(to_str) if to_str else date.today()
+    date_from = date.fromisoformat(from_str) if from_str else date_to - timedelta(days=30)
+
+    if date_from > date_to:
+        raise ValueError('date_from must be on or before date_to.')
+    return date_from, date_to
+
+
+def _sales_and_profit_rows(date_from, date_to):
+    """
+    Per-product breakdown for the date range — ALL products, not top 5.
+    Same WAC method as sales_summary()/profit_summary()
+    (Product.avg_cost_price, falls back to cost_price).
+    """
+    records = ItemSalesRecord.objects.filter(
+        sale_date__gte=date_from, sale_date__lte=date_to,
+    )
+
+    per_product = (
+        records
+        .values('product_id')
+        .annotate(units=Sum('quantity_sold'), revenue=Sum('total_amount'))
+        .order_by('-revenue')
+    )
+
+    product_ids = [row['product_id'] for row in per_product]
+    products_map = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
+
+    rows = []
+    for row in per_product:
+        product = products_map.get(row['product_id'])
+        if not product:
+            continue  # orphaned sales record — same guard as sales_summary()
+
+        units = row['units'] or 0
+        revenue = float(row['revenue'] or 0)
+        wac = float(product.avg_cost_price or product.cost_price or 0)
+        cost = units * wac
+        profit = revenue - cost
+        margin_pct = round(profit / revenue * 100, 1) if revenue > 0 else 0.0
+
+        rows.append({
+            'product_name': product.product_name,
+            'sku_code': product.sku_code or '',
+            'units_sold': units,
+            'revenue': round(revenue, 2),
+            'cost': round(cost, 2),
+            'profit': round(profit, 2),
+            'margin_pct': margin_pct,
+        })
+    return rows
+
+
+def _inventory_rows():
+    """Same current-stock logic as StockSnapshotView (inventory app)."""
+    rows = []
+    for product in Product.objects.filter(is_active=True):
+        current_stock = PurchaseBatch.objects.filter(
+            product=product, status='ACTIVE'
+        ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
+
+        reorder = product.reorder_threshold or 0
+        if current_stock == 0:
+            stock_status = 'OUT OF STOCK'
+        elif current_stock <= reorder:
+            stock_status = 'LOW STOCK'
+        else:
+            stock_status = 'AVAILABLE'
+
+        rows.append({
+            'product_name': product.product_name,
+            'sku_code': product.sku_code or '',
+            'current_stock': current_stock,
+            'reorder_threshold': reorder,
+            'stock_status': stock_status,
+            'avg_cost_price': str(product.avg_cost_price or 0),
+        })
+    return rows
+
+
+def _log_export(request, filename):
+    UploadLog.objects.create(
+        file_name=filename,
+        upload_type='EXPORT',
+        status='SUCCESS',
+        uploaded_by=request.user.id if request.user and request.user.is_authenticated else None,
+    )
+
+
+def _excel_response(filename, headers, rows):
+    wb = Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for row in rows:
+        ws.append(list(row))
+
+    for i, header in enumerate(headers, start=1):
+        col_letter = ws.cell(row=1, column=i).column_letter
+        widths = [len(str(header))] + [len(str(r[i - 1])) for r in rows] if rows else [len(str(header))]
+        ws.column_dimensions[col_letter].width = min(max(widths) + 2, 40)
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    response = HttpResponse(
+        buffer.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _pdf_response(filename, title, headers, rows):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = [Paragraph(title, styles['Title']), Spacer(1, 12)]
+
+    if rows:
+        table_data = [headers] + [list(row) for row in rows]
+    else:
+        table_data = [headers, ['No data for this period'] + [''] * (len(headers) - 1)]
+
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f4f4f4')]),
+    ]))
+    elements.append(table)
+    doc.build(elements)
+    buffer.seek(0)
+
+    response = HttpResponse(buffer.read(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def sales_report_export(request):
+    """GET /api/reports/sales/?format=excel|pdf&date_from=&date_to="""
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from, date_to = _report_date_range(request)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _sales_and_profit_rows(date_from, date_to)
+    headers = ['Product Name', 'SKU', 'Units Sold', 'Revenue']
+    rows = [(r['product_name'], r['sku_code'], r['units_sold'], r['revenue']) for r in data]
+
+    filename_base = f'sales_report_{date_from}_to_{date_to}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        title = f'Sales Report ({date_from} to {date_to})'
+        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def profit_report_export(request):
+    """GET /api/reports/profit/?format=excel|pdf&date_from=&date_to="""
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from, date_to = _report_date_range(request)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _sales_and_profit_rows(date_from, date_to)
+    headers = ['Product Name', 'SKU', 'Units Sold', 'Revenue', 'Cost', 'Profit', 'Margin %']
+    rows = [
+        (r['product_name'], r['sku_code'], r['units_sold'], r['revenue'], r['cost'], r['profit'], r['margin_pct'])
+        for r in data
+    ]
+
+    filename_base = f'profit_report_{date_from}_to_{date_to}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        title = f'Profit Report ({date_from} to {date_to})'
+        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def inventory_report_export(request):
+    """GET /api/reports/inventory/?format=excel|pdf"""
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _inventory_rows()
+    headers = ['Product Name', 'SKU', 'Current Stock', 'Reorder Threshold', 'Status', 'Avg Cost Price']
+    rows = [
+        (r['product_name'], r['sku_code'], r['current_stock'], r['reorder_threshold'], r['stock_status'], r['avg_cost_price'])
+        for r in data
+    ]
+
+    today = date.today()
+    filename_base = f'inventory_report_{today}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Inventory Report ({today})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
