@@ -70,4 +70,11 @@ urlpatterns = [
         name='inventory-report-export'
     ),
 
+    path(
+        'reports/health-scores/',
+        views.health_score_report_export,
+        name='health-score-report-export'
+    ),
+
+
 ]

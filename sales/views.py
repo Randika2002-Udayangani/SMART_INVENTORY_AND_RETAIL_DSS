@@ -41,6 +41,8 @@ from .serializers import (
     ItemSalesSerializer,
 )
 
+from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore
+
 # =========================================================
 # HELPERS
 # =========================================================
@@ -1151,6 +1153,56 @@ def inventory_report_export(request):
         logged_name = f'{filename_base}.xlsx'
     else:
         response = _pdf_response(f'{filename_base}.pdf', f'Inventory Report ({today})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/health-scores/?format=excel|pdf&status=
+#
+# No date range — health scores are calculated on-demand (not
+# date-windowed), same as GET /api/health-scores/. Same status
+# filter and same ordering (-calculated_date, overall_score) as
+# HealthScoreListView, for consistency with that existing endpoint.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def health_score_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    queryset = InventoryHealthScore.objects.select_related('product').order_by(
+        '-calculated_date', 'overall_score'
+    )
+    status_filter = request.query_params.get('status')
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+
+    headers = [
+        'Product Name', 'SKU', 'Velocity', 'Margin', 'Expiry Risk',
+        'Stock Duration', 'Rating', 'Overall Score', 'Status',
+        'Recommended Action', 'Calculated Date',
+    ]
+    rows = [
+        (
+            r.product.product_name, r.product.sku_code or '',
+            str(r.velocity_score), str(r.margin_score), str(r.expiry_risk_score),
+            str(r.stock_duration_score),
+            str(r.rating_score) if r.rating_score is not None else 'N/A',
+            str(r.overall_score), r.status, r.recommended_action or '',
+            str(r.calculated_date),
+        )
+        for r in queryset
+    ]
+
+    filename_base = f'health_score_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Health Score Report ({date.today()})', headers, rows)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
