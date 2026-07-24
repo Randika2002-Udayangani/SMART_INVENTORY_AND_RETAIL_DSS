@@ -76,5 +76,19 @@ urlpatterns = [
         name='health-score-report-export'
     ),
 
+    path(
+        'reports/supplier/',
+        views.supplier_report_export,
+        name='supplier-report-export'
+    ),
+
+    path(
+        'reports/lifecycle/',
+        views.lifecycle_report_export,
+        name='lifecycle-report-export'
+    ),
+
+
+
 
 ]

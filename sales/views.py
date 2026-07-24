@@ -42,6 +42,10 @@ from .serializers import (
 )
 
 from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore
+from suppliers.models import Supplier
+from suppliers.views import _compute_scorecard
+
+from inventory.services.lifecycle import get_latest_lifecycle
 
 # =========================================================
 # HELPERS
@@ -1203,6 +1207,86 @@ def health_score_report_export(request):
         logged_name = f'{filename_base}.xlsx'
     else:
         response = _pdf_response(f'{filename_base}.pdf', f'Health Score Report ({date.today()})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/supplier/?format=excel|pdf
+#
+# Reuses _compute_scorecard() from suppliers app directly — same
+# logic already tested via GET /api/suppliers/scorecard-summary/,
+# not reimplemented here. Missing components (no data yet for that
+# supplier) show as 'N/A', same convention as the Health Score export.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def supplier_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    scores = [_compute_scorecard(s) for s in Supplier.objects.all()]
+    scores.sort(key=lambda s: (s['overall_score'] is None, -(s['overall_score'] or 0)))
+
+    headers = [
+        'Supplier Name', 'Delivery Accuracy', 'Price Stability',
+        'Return Acceptance Rate', 'Avg Product Quality', 'Overall Score',
+    ]
+    rows = []
+    for s in scores:
+        c = s['components']
+        rows.append((
+            s['supplier_name'],
+            c.get('delivery_accuracy', 'N/A'),
+            c.get('price_stability', 'N/A'),
+            c.get('return_acceptance_rate', 'N/A'),
+            c.get('avg_product_quality', 'N/A'),
+            s['overall_score'] if s['overall_score'] is not None else 'N/A',
+        ))
+
+    filename_base = f'supplier_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Supplier Performance Report ({date.today()})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/lifecycle/?format=excel|pdf&status=
+#
+# Reuses get_latest_lifecycle() from inventory.services.lifecycle
+# directly — same function backing GET /api/lifecycle/ and
+# GET /api/lifecycle/declining/, not reimplemented here. Already
+# de-duplicated to one record per product (Nipuni's Subquery fix).
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def lifecycle_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    status_filter = request.query_params.get('status')
+    data = get_latest_lifecycle(status_filter=status_filter)
+
+    headers = ['Product Name', 'Status', 'Sales Velocity', 'Recommendation', 'Calculated Date']
+    rows = [
+        (r['product_name'], r['status'], r['sales_velocity'], r['recommendation'], r['calculated_date'])
+        for r in data
+    ]
+
+    filename_base = f'lifecycle_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Product Lifecycle Report ({date.today()})', headers, rows)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
