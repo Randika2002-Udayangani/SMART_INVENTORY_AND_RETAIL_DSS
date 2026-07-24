@@ -17,6 +17,9 @@ from .serializers import (
 from suppliers.models import Supplier
 from products.models import Product
 from sales.models import UploadLog
+from django.db.models import Sum, F, DecimalField
+from django.db.models.functions import Coalesce
+
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -264,6 +267,43 @@ def _try_resolve_truncated_product(description):
     if len(candidates) == 1:
         return candidates[0]
     return None
+
+
+def _recalculate_avg_cost_price(product):
+    """
+    True weighted-average-cost recalculation across ALL PurchaseBatch
+    records for this product (both from this invoice pipeline and the
+    original JSON /api/purchases/ endpoint) -- not just the most recent
+    purchase.
+ 
+    Formula: avg_cost_price = total_purchase_cost / total_units_received
+    (matches Randika's spec exactly.)
+ 
+    Called after every batch creation, not just the first purchase.
+    Safe to call multiple times for the same product within one
+    transaction -- each call re-aggregates from the DB, so it stays
+    correct even if the same product appears twice on one invoice.
+    """
+    agg = PurchaseBatch.objects.filter(product=product).aggregate(
+        total_cost=Coalesce(
+            Sum(
+                F('quantity_received') * F('cost_price'),
+                output_field=DecimalField(max_digits=14, decimal_places=2)
+            ),
+            Decimal('0'),
+        ),
+        total_qty=Coalesce(Sum('quantity_received'), 0),
+    )
+    total_cost = agg['total_cost']
+    total_qty = agg['total_qty']
+ 
+    if total_qty and total_qty > 0:
+        new_avg = (total_cost / total_qty).quantize(Decimal('0.01'))
+        product.avg_cost_price = new_avg
+        product.save(update_fields=['avg_cost_price'])
+        return new_avg
+    return None
+ 
 
 
 class PurchaseInvoicePDFUploadView(APIView):
@@ -541,11 +581,14 @@ class PurchaseInvoicePDFUploadView(APIView):
                         flagged_for_review.append(entry)
                         continue
 
-                    # Update Product cost (NOT full WAC -- see TODO)
+                    # Update most-recent cost_price (informational field)
                     product.cost_price = final_cost_price
-                    if not product.avg_cost_price:
-                        product.avg_cost_price = final_cost_price
-                    product.save(update_fields=['cost_price', 'avg_cost_price'])
+                    product.save(update_fields=['cost_price'])
+
+                    # Recalculate avg_cost_price as a true weighted average
+                    # across ALL batches for this product -- fixes the
+                    # "frozen after first purchase" bug Randika flagged.
+                    _recalculate_avg_cost_price(product)
 
                     total_amount += final_cost_price * qty
 
