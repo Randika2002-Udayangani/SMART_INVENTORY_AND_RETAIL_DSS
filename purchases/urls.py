@@ -9,6 +9,7 @@ urlpatterns = [
 
     # GET  /api/purchases/<id>/  — get one purchase with batches
     path('purchases/<int:pk>/', views.PurchaseDetailView.as_view(), name='purchase-detail'),
+    path('purchases/upload/invoice/', views.PurchaseInvoicePDFUploadView.as_view(), name='upload-purchase-invoice'),
 
     # ── Batches ──────────────────────────────────────────────────
     # NOTE: expiring-soon must come BEFORE <int:pk> to avoid URL conflict
