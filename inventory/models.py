@@ -304,6 +304,7 @@ class ReorderRecommendation(models.Model):
         ('PENDING', 'Pending'),
         ('ORDERED', 'Ordered'),
         ('IGNORED', 'Ignored'),
+        ('AUTO_RESOLVED', 'Auto Resolved'), 
     ]
     product = models.ForeignKey(
         Product, on_delete=models.PROTECT, db_column='product_id'
@@ -319,7 +320,7 @@ class ReorderRecommendation(models.Model):
     suggested_quantity = models.IntegerField()
     estimated_cost = models.DecimalField(max_digits=12, decimal_places=2)
     urgency = models.CharField(max_length=10, choices=URGENCY_CHOICES)
-    calculation_date = models.DateField(auto_now_add=True)
+    calculation_date = models.DateField(auto_now=True)
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default='PENDING'
     )
