@@ -17,6 +17,9 @@ from sales.models import UploadLog
 from sales.services.excel_parser import parse_item_master
 from inventory.services.auto_categorise import classify_product
 
+from purchases.models import PurchaseBatch
+from django.db.models import Sum
+
 # ─────────────────────────────────────────────
 # Brand
 # ─────────────────────────────────────────────
@@ -96,6 +99,43 @@ class ProductListCreateView(generics.ListCreateAPIView):
         if self.request.method == 'POST':
             return [permissions.IsAuthenticated()]
         return [permissions.AllowAny()]
+
+    # ─────────────────────────────────────────────
+# Customer-safe stock check  (F01, API Design Doc v3.1 §5.4)
+# GET /api/products/<id>/availability/
+# Public (Auth: No). Used by M3 Chalani (product detail/browse)
+# and Kiritharan's Chatbot AVAILABILITY_QUERY intent — the chatbot
+# is meant to call THIS endpoint rather than query stock directly,
+# since exact quantity must never be exposed to customers.
+# Logic: >10 units = AVAILABLE, 1–10 = LIMITED_STOCK, 0 = UNAVAILABLE.
+# ─────────────────────────────────────────────
+class ProductAvailabilityView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        try:
+            product = Product.objects.get(pk=pk, is_active=True)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        current_stock = PurchaseBatch.objects.filter(
+            product=product, status='ACTIVE'
+        ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
+
+        if current_stock == 0:
+            availability_status = 'UNAVAILABLE'
+            can_order = False
+        elif current_stock <= 10:
+            availability_status = 'LIMITED_STOCK'
+            can_order = True
+        else:
+            availability_status = 'AVAILABLE'
+            can_order = True
+
+        return Response({
+            'status': availability_status,
+            'can_order': can_order,
+        })
 
 
 class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):

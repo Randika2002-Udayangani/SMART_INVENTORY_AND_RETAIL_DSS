@@ -88,6 +88,18 @@ urlpatterns = [
         name='lifecycle-report-export'
     ),
 
+    path(
+        'reports/loss/',
+        views.loss_report_export,
+        name='loss-report-export'
+    ),
+
+    path(
+        'reports/reorder/',
+        views.reorder_report_export,
+        name='reorder-report-export'
+    ),
+
 
 
 

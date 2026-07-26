@@ -15,7 +15,7 @@ from decimal import Decimal
 import pandas as pd
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Sum, OuterRef, Subquery
 from django.utils import timezone
 
 from rest_framework.views import APIView
@@ -27,7 +27,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 
 from products.models import Product
 from users.models import SystemConfig
-from inventory.models import PurchaseBatch, StockLedger
+from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore, ReorderRecommendation
 
 from .models import (
     UploadLog,
@@ -1287,6 +1287,120 @@ def lifecycle_report_export(request):
         logged_name = f'{filename_base}.xlsx'
     else:
         response = _pdf_response(f'{filename_base}.pdf', f'Product Lifecycle Report ({date.today()})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/loss/?format=excel|pdf&date_from=&date_to=
+#
+# Lists individual loss records for the date range (same filter fields
+# as LossRecordView/LossSummaryView in inventory app). This is the
+# detailed row-level export — aggregate totals (gross_expiry_loss,
+# recovered_amount, net_loss) already exist separately via
+# GET /api/losses/summary/, not duplicated here.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def loss_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from, date_to = _report_date_range(request)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    queryset = LossRecord.objects.select_related('product').filter(
+        loss_date__gte=date_from, loss_date__lte=date_to,
+    ).order_by('-loss_date')
+
+    headers = ['Product Name', 'SKU', 'Loss Type', 'Quantity', 'Loss Value', 'Loss Date', 'Notes']
+    rows = [
+        (
+            r.product.product_name, r.product.sku_code or '',
+            r.loss_type, r.loss_quantity, str(r.loss_value),
+            str(r.loss_date), r.notes or '',
+        )
+        for r in queryset
+    ]
+
+    filename_base = f'loss_report_{date_from}_to_{date_to}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        title = f'Loss Report ({date_from} to {date_to})'
+        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/reorder/?format=excel|pdf&urgency=&status=
+#
+# Deliberately does its OWN "latest per product" dedup here (same
+# Subquery pattern as lifecycle_analytics()), independent of whatever
+# write-side/read-side fix Nipuni applies to ReorderCalculateView /
+# ReorderRecommendationListView. This way the export is correct
+# regardless of which fix lands — if the write side gets fixed later,
+# deduping an already-clean table is harmless; if it doesn't, this
+# export still shows accurate current data.
+#
+# "Latest per product" here means the most recent recommendation
+# regardless of status — so an already-actioned (ORDERED/IGNORED)
+# recommendation correctly stays visible until a newer calculation
+# run replaces it, rather than showing a stale duplicate.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def reorder_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    latest_ids = (
+        ReorderRecommendation.objects
+        .filter(product_id=OuterRef('product_id'))
+        .order_by('-calculation_date', '-id')
+        .values('id')[:1]
+    )
+    queryset = ReorderRecommendation.objects.filter(
+        id__in=Subquery(latest_ids)
+    ).select_related('product', 'supplier').order_by('product__product_name')
+
+    urgency_filter = request.query_params.get('urgency')
+    status_filter = request.query_params.get('status')
+    if urgency_filter:
+        queryset = queryset.filter(urgency=urgency_filter)
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+
+    headers = [
+        'Product Name', 'SKU', 'Supplier', 'Current Stock', 'Avg Daily Sales',
+        'Days of Stock', 'Suggested Qty', 'Estimated Cost', 'Urgency',
+        'Status', 'Calculation Date',
+    ]
+    rows = [
+        (
+            r.product.product_name, r.product.sku_code or '',
+            r.supplier.supplier_name if r.supplier else 'N/A',
+            r.current_stock, str(r.avg_daily_sales), r.days_of_stock,
+            r.suggested_quantity, str(r.estimated_cost), r.urgency,
+            r.status, str(r.calculation_date),
+        )
+        for r in queryset
+    ]
+
+    filename_base = f'reorder_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Reorder Recommendations Report ({date.today()})', headers, rows)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
