@@ -51,4 +51,56 @@ urlpatterns = [
         views.expiry_summary,
         name='expiry-summary'
     ),
+
+    path(
+        'reports/sales/',
+        views.sales_report_export,
+        name='sales-report-export'
+    ),
+
+    path(
+        'reports/profit/',
+        views.profit_report_export,
+        name='profit-report-export'
+    ),
+
+    path(
+        'reports/inventory/',
+        views.inventory_report_export,
+        name='inventory-report-export'
+    ),
+
+    path(
+        'reports/health-scores/',
+        views.health_score_report_export,
+        name='health-score-report-export'
+    ),
+
+    path(
+        'reports/supplier/',
+        views.supplier_report_export,
+        name='supplier-report-export'
+    ),
+
+    path(
+        'reports/lifecycle/',
+        views.lifecycle_report_export,
+        name='lifecycle-report-export'
+    ),
+
+    path(
+        'reports/loss/',
+        views.loss_report_export,
+        name='loss-report-export'
+    ),
+
+    path(
+        'reports/reorder/',
+        views.reorder_report_export,
+        name='reorder-report-export'
+    ),
+
+
+
+
 ]

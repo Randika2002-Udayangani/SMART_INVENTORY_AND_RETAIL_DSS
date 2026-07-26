@@ -126,6 +126,12 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    # Disabled — DRF reserves ?format= for its own content-negotiation
+    # (picks a renderer, e.g. ?format=json). The Report Export API
+    # (API Design Doc v3.1 §21.1) uses ?format=excel|pdf as a business
+    # parameter, which collides with that and got silently intercepted
+    # before reaching the view (returned 404/400 instead of the file).
+    'URL_FORMAT_OVERRIDE': None,
 }
 
 # JWT SETTINGS
