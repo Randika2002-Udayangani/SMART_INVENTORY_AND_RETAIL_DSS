@@ -14,3 +14,14 @@ def loss_analysis(request):
 
 def lifecycle(request):
     return render(request, 'dashboard/lifecycle.html')
+def health_score(request):
+    return render(request, 'dashboard/health_score.html')
+
+def analytics(request):
+    return render(request, 'dashboard/analytics.html')
+
+def reorder(request):
+    return render(request, 'dashboard/reorder.html')
+
+def discount_engine(request):
+    return render(request, 'dashboard/discount_engine.html')

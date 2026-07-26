@@ -271,8 +271,7 @@
   <nav class="sb-nav">
     <div class="sb-sec">Overview</div>
     <a href="#" class="active"><i class="bi bi-grid-1x2"></i> Dashboard <span class="badge-pill">3</span></a>
-    <a href="#"><i class="bi bi-bar-chart-line"></i> Analytics</a>
-
+   <a href="/dashboard/analytics/"><i class="bi bi-bar-chart-line"></i> Analytics</a>
     <div class="sb-sec">Inventory</div>
     <a href="#"><i class="bi bi-box-seam"></i> Products</a>
     <a href="#"><i class="bi bi-layers"></i> Batches</a>
@@ -280,9 +279,9 @@
     <a href="#"><i class="bi bi-upload"></i> Sales Upload</a>
 
     <div class="sb-sec">Decision Support</div>
-    <a href="#" onclick="alert('Coming soon')"><i class="bi bi-heart-pulse"></i> Health Score</a>
-    <a href="#" onclick="alert('Coming soon')"><i class="bi bi-tag"></i> Discount Engine</a>
-    <a href="#" onclick="alert('Coming soon')"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
+   <a href="/dashboard/health-score/"><i class="bi bi-heart-pulse"></i> Health Score</a>
+    <a href="/dashboard/discount-engine/"><i class="bi bi-tag"></i> Discount Engine</a>
+    <a href="/dashboard/reorder/"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
     <a href="/dashboard/loss-analysis/"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
     <a href="/dashboard/lifecycle/"><i class="bi bi-activity"></i> Lifecycle</a>
 
@@ -409,7 +408,7 @@
       <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:33%;background:var(--purple);"></div></div>
       <div class="kpi-footer">
         <span class="chg down">Needs urgent action</span>
-        <span>3 of 9 expiring batches</span>
+        <span id="expiringFooter">3 of 9 expiring batches</span>
       </div>
     </div>
 
@@ -591,22 +590,22 @@
     <div class="health-bands" style="margin-bottom:16px;">
       <div class="hband hb-h">
         <div class="bl">Healthy · 80–100</div>
-        <div class="bv">42</div>
+        <div class="bv" id="bandHealthy">42</div>
         <div class="bs">Monitor normally</div>
       </div>
       <div class="hband hb-w">
         <div class="bl">Watch · 60–79</div>
-        <div class="bv">18</div>
+        <div class="bv" id="bandWatch">18</div>
         <div class="bs">Keep an eye on these</div>
       </div>
       <div class="hband hb-a">
         <div class="bl">At Risk · 40–59</div>
-        <div class="bv">11</div>
+        <div class="bv" id="bandAtRisk">11</div>
         <div class="bs">Needs attention soon</div>
       </div>
       <div class="hband hb-c">
         <div class="bl">Critical · 0–39</div>
-        <div class="bv">5</div>
+        <div class="bv" id="bandCritical">5</div>
         <div class="bs">Immediate action required</div>
       </div>
     </div>
@@ -665,7 +664,7 @@
   profGrad.addColorStop(0,'rgba(245,158,11,0.18)');
   profGrad.addColorStop(1,'rgba(245,158,11,0)');
 
-  new Chart(tCtx, {
+  window.trendChart = new Chart(tCtx, {
     type: 'line',
     data: {
       labels: ['Sep','Oct','Nov','Dec','Jan','Feb'],
@@ -705,7 +704,7 @@
   });
 
   // ── Top Products Chart ───────────────────────────────
-  new Chart(document.getElementById('topChart').getContext('2d'), {
+  window.topChart = new Chart(document.getElementById('topChart').getContext('2d'), {
     type: 'bar',
     data: {
       labels: ['Anchor Milk 1L','Milo 400g','Kiri Hatti','Maliban Cream','Astra Butter'],
@@ -792,6 +791,22 @@ function doLogout() {
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('refresh_token');
     window.location.href = '/dashboard/login/';
+}// FETCH — Health Score Bands
+async function fetchHealthBands() {
+    const token = sessionStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/analytics/health-scores/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        const summary = typeof data === 'object' && !Array.isArray(data) ? data : {};
+        if (summary.HEALTHY !== undefined) {
+            document.getElementById('bandHealthy').innerText = summary.HEALTHY;
+            document.getElementById('bandWatch').innerText = summary.WATCH;
+            document.getElementById('bandAtRisk').innerText = summary['AT RISK'];
+            document.getElementById('bandCritical').innerText = summary.CRITICAL;
+        }
+    } catch(e) {}
 }
 
 // FETCH 1 — Total Profit
@@ -856,7 +871,8 @@ async function fetchExpiringCount() {
         });
         const data = await res.json();
         const count = Array.isArray(data) ? data.length : 0;
-        document.getElementById('expiringSoon').innerText = count;
+      document.getElementById('expiringSoon').innerText = count;
+        document.getElementById('expiringFooter').innerText = count + ' expiring batches';
     } catch(e) {}
 }
 // FETCH — Expiry Risk Widget
@@ -924,6 +940,23 @@ async function runHealthCalculation(btn) {
     btn.innerHTML = '&#9654; Run Health Calculation';
     btn.disabled = false;
 }
+// FETCH — Health Score Bands
+async function fetchHealthBands() {
+    const token = sessionStorage.getItem('access_token');
+    try {
+        const res = await fetch('/api/analytics/health-scores/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        const summary = typeof data === 'object' && !Array.isArray(data) ? data : {};
+        if (summary.HEALTHY !== undefined) {
+            document.getElementById('bandHealthy').innerText = summary.HEALTHY;
+            document.getElementById('bandWatch').innerText = summary.WATCH;
+            document.getElementById('bandAtRisk').innerText = summary['AT RISK'];
+            document.getElementById('bandCritical').innerText = summary.CRITICAL;
+        }
+    } catch(e) {}
+}
 // Run all fetches
 fetchProfitSummary();
 fetchTotalSales();
@@ -931,6 +964,7 @@ fetchPendingOrders();
 fetchLowStockCount();
 fetchExpiringCount();
 fetchExpirySummary();
+fetchHealthBands();
 // FETCH — Monthly Sales Trend
 async function fetchMonthlySales() {
     const token = sessionStorage.getItem('access_token');
