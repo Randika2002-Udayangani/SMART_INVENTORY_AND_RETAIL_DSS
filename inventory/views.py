@@ -790,12 +790,12 @@ class HealthScoreCalculateView(APIView):
 # Filter by ?status=CRITICAL|AT RISK|WATCH|HEALTHY
 # ─────────────────────────────────────────────────────────────────
 class HealthScoreListView(APIView):
-
     """
     GET /api/health-scores/
     Returns the LATEST health score per product (one row per product,
     not one row per calculation run). Filter by ?status= and/or
-    ?product=<id>.
+    ?product=<id>. Includes product_name and sku_code so callers don't
+    need a separate lookup per row.
     """
  
     def get(self, request):
@@ -809,7 +809,7 @@ class HealthScoreListView(APIView):
         )
         queryset = InventoryHealthScore.objects.filter(
             id__in=Subquery(latest_ids)
-        ).order_by('overall_score')
+        ).select_related('product').order_by('overall_score')
  
         status_filter = request.query_params.get('status')
         product_filter = request.query_params.get('product')
@@ -820,7 +820,8 @@ class HealthScoreListView(APIView):
             queryset = queryset.filter(product_id=product_filter)
  
         data = queryset.values(
-            'id', 'product', 'velocity_score', 'margin_score',
+            'id', 'product', 'product__product_name', 'product__sku_code',
+            'velocity_score', 'margin_score',
             'expiry_risk_score', 'stock_duration_score', 'rating_score',
             'overall_score', 'status', 'recommended_action',
             'rating_sufficient', 'weighting_mode', 'calculated_date'
@@ -828,10 +829,12 @@ class HealthScoreListView(APIView):
         return Response(list(data))
  
 
+ 
+
 
 
 class HealthScoreSummaryView(APIView):
-
+ 
     def get(self, request):
         from django.db.models import Count, OuterRef, Subquery
  
@@ -872,10 +875,10 @@ class HealthScoreSummaryView(APIView):
 # ⚠ Must be registered BEFORE health-scores/<int:product_id>/
 # ─────────────────────────────────────────────────────────────────
 class CategoryHealthScoreView(APIView):
-
     """
     GET /api/health-scores/categories/
-    Returns the LATEST CategoryHealthScore per category.
+    Returns the LATEST CategoryHealthScore per category, including
+    category_name (not just the raw category id).
     """
  
     def get(self, request):
@@ -889,14 +892,15 @@ class CategoryHealthScoreView(APIView):
         )
         queryset = CategoryHealthScore.objects.filter(
             id__in=Subquery(latest_ids)
-        ).order_by('avg_health_score')
+        ).select_related('category').order_by('avg_health_score')
  
         data = queryset.values(
-            'id', 'category', 'avg_health_score',
+            'id', 'category', 'category__category_name', 'avg_health_score',
             'healthy_count', 'watch_count', 'at_risk_count',
             'critical_count', 'status', 'calculated_date'
         )
         return Response(list(data))
+
 
 
 
@@ -905,13 +909,29 @@ class CategoryHealthScoreView(APIView):
 # ⚠ Must be registered BEFORE health-scores/<int:product_id>/
 # ─────────────────────────────────────────────────────────────────
 class HealthScoreCriticalView(APIView):
-
+    """
+    GET /api/health-scores/critical/
+    Returns the LATEST health score record for every product currently
+    at CRITICAL status, including product_name and sku_code.
+    """
+ 
     def get(self, request):
+        from django.db.models import OuterRef, Subquery
+ 
+        latest_ids = (
+            InventoryHealthScore.objects
+            .filter(product_id=OuterRef('product_id'))
+            .order_by('-calculated_date', '-id')
+            .values('id')[:1]
+        )
         queryset = InventoryHealthScore.objects.filter(
+            id__in=Subquery(latest_ids),
             status='CRITICAL'
-        ).order_by('-calculated_date', 'overall_score')
+        ).select_related('product').order_by('overall_score')
+ 
         data = queryset.values(
-            'id', 'product', 'overall_score', 'status',
+            'id', 'product', 'product__product_name', 'product__sku_code',
+            'overall_score', 'status',
             'recommended_action', 'calculated_date'
         )
         return Response(list(data))
@@ -922,11 +942,10 @@ class HealthScoreCriticalView(APIView):
 # Full health score history for one product across all runs
 # ─────────────────────────────────────────────────────────────────
 class HealthScoreDetailView(APIView):
-
     """
     GET /api/health-scores/<product_id>/
     Returns the SINGLE latest health score record for one product
-    (today's breakdown -- velocity/margin/expiry/duration/rating scores).
+    (today's breakdown), including product_name and sku_code.
  
     For full multi-run history (trend view), use
     GET /api/health-scores/history/<product_id>/ instead.
@@ -953,6 +972,8 @@ class HealthScoreDetailView(APIView):
         data = {
             'id': record.id,
             'product': record.product_id,
+            'product_name': product.product_name,
+            'sku_code': product.sku_code,
             'velocity_score': record.velocity_score,
             'margin_score': record.margin_score,
             'expiry_risk_score': record.expiry_risk_score,
@@ -967,13 +988,13 @@ class HealthScoreDetailView(APIView):
         }
         return Response(data)
 
+
 class HealthScoreHistoryView(APIView):
     """
     GET /api/health-scores/history/<product_id>/
     Full health score history for one product across ALL calculation
-    runs (trend view) -- per API Design Doc Section 13. This is the
-    unfiltered query that HealthScoreDetailView used to serve under
-    the wrong path.
+    runs (trend view) -- per API Design Doc Section 13. Includes
+    product_name and sku_code for consistency with the other views.
     """
  
     def get(self, request, product_id):
@@ -985,15 +1006,17 @@ class HealthScoreHistoryView(APIView):
  
         queryset = InventoryHealthScore.objects.filter(
             product=product
-        ).order_by('-calculated_date')
+        ).select_related('product').order_by('-calculated_date')
  
         data = queryset.values(
-            'id', 'product', 'velocity_score', 'margin_score',
+            'id', 'product', 'product__product_name', 'product__sku_code',
+            'velocity_score', 'margin_score',
             'expiry_risk_score', 'stock_duration_score', 'rating_score',
             'overall_score', 'status', 'recommended_action',
             'rating_sufficient', 'weighting_mode', 'calculated_date'
         )
         return Response(list(data))
+
     
 """
 Plan spec:
