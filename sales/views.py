@@ -1,3 +1,13 @@
+import io
+...
+from django.http import HttpResponse
+...
+from openpyxl import Workbook
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
 import os
 from datetime import date, timedelta, datetime
 from decimal import Decimal
@@ -5,7 +15,7 @@ from decimal import Decimal
 import pandas as pd
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Sum, OuterRef, Subquery
 from django.utils import timezone
 
 from rest_framework.views import APIView
@@ -17,7 +27,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 
 from products.models import Product
 from users.models import SystemConfig
-from inventory.models import PurchaseBatch, StockLedger
+from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore, ReorderRecommendation
 
 from .models import (
     UploadLog,
@@ -30,6 +40,12 @@ from .serializers import (
     DailyBillSerializer,
     ItemSalesSerializer,
 )
+
+from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore
+from suppliers.models import Supplier
+from suppliers.views import _compute_scorecard
+
+from inventory.services.lifecycle import get_latest_lifecycle
 
 # =========================================================
 # HELPERS
@@ -886,3 +902,506 @@ def profit_summary(request):
             'date_to':   str(date_to),
         }
     })
+
+
+# F16 — Report Export (API Design Doc v3.1 §21.1)
+#
+# GET /api/reports/sales/?format=excel|pdf&date_from=&date_to=
+# GET /api/reports/profit/?format=excel|pdf&date_from=&date_to=
+# GET /api/reports/inventory/?format=excel|pdf
+#
+# Excel via openpyxl (already in requirements.txt). PDF via reportlab
+# (pure Python — no system-level deps like weasyprint needs, safer
+# across everyone's machine). ⚠ reportlab is NOT yet in
+# requirements.txt — add `reportlab` and run
+# `pip install reportlab` before testing this.
+#
+# Deliberately NOT reusing sales_summary()/profit_summary() directly —
+# those are dashboard KPI-card endpoints with an agreed response shape
+# (totals + top 5 only, per the Week 4-5 plan with Lavanya). A report
+# export needs every product, not top 5, so the per-product rows are
+# rebuilt here rather than risk changing that already-agreed contract.
+#
+# Export events are logged to Upload_Log with upload_type='EXPORT',
+# per the note in API Design Doc v3.1 §21.
+# =========================================================
+
+def _report_date_range(request):
+    """Same default as sales_summary()/profit_summary(): last 30 days."""
+    to_str = request.query_params.get('date_to')
+    from_str = request.query_params.get('date_from')
+
+    date_to = date.fromisoformat(to_str) if to_str else date.today()
+    date_from = date.fromisoformat(from_str) if from_str else date_to - timedelta(days=30)
+
+    if date_from > date_to:
+        raise ValueError('date_from must be on or before date_to.')
+    return date_from, date_to
+
+
+def _sales_and_profit_rows(date_from, date_to):
+    """
+    Per-product breakdown for the date range — ALL products, not top 5.
+    Same WAC method as sales_summary()/profit_summary()
+    (Product.avg_cost_price, falls back to cost_price).
+    """
+    records = ItemSalesRecord.objects.filter(
+        sale_date__gte=date_from, sale_date__lte=date_to,
+    )
+
+    per_product = (
+        records
+        .values('product_id')
+        .annotate(units=Sum('quantity_sold'), revenue=Sum('total_amount'))
+        .order_by('-revenue')
+    )
+
+    product_ids = [row['product_id'] for row in per_product]
+    products_map = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
+
+    rows = []
+    for row in per_product:
+        product = products_map.get(row['product_id'])
+        if not product:
+            continue  # orphaned sales record — same guard as sales_summary()
+
+        units = row['units'] or 0
+        revenue = float(row['revenue'] or 0)
+        wac = float(product.avg_cost_price or product.cost_price or 0)
+        cost = units * wac
+        profit = revenue - cost
+        margin_pct = round(profit / revenue * 100, 1) if revenue > 0 else 0.0
+
+        rows.append({
+            'product_name': product.product_name,
+            'sku_code': product.sku_code or '',
+            'units_sold': units,
+            'revenue': round(revenue, 2),
+            'cost': round(cost, 2),
+            'profit': round(profit, 2),
+            'margin_pct': margin_pct,
+        })
+    return rows
+
+
+def _inventory_rows():
+    """Same current-stock logic as StockSnapshotView (inventory app)."""
+    rows = []
+    for product in Product.objects.filter(is_active=True):
+        current_stock = PurchaseBatch.objects.filter(
+            product=product, status='ACTIVE'
+        ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
+
+        reorder = product.reorder_threshold or 0
+        if current_stock == 0:
+            stock_status = 'OUT OF STOCK'
+        elif current_stock <= reorder:
+            stock_status = 'LOW STOCK'
+        else:
+            stock_status = 'AVAILABLE'
+
+        rows.append({
+            'product_name': product.product_name,
+            'sku_code': product.sku_code or '',
+            'current_stock': current_stock,
+            'reorder_threshold': reorder,
+            'stock_status': stock_status,
+            'avg_cost_price': str(product.avg_cost_price or 0),
+        })
+    return rows
+
+
+def _log_export(request, filename):
+    UploadLog.objects.create(
+        file_name=filename,
+        upload_type='EXPORT',
+        status='SUCCESS',
+        uploaded_by=request.user.id if request.user and request.user.is_authenticated else None,
+    )
+
+
+def _excel_response(filename, headers, rows):
+    wb = Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for row in rows:
+        ws.append(list(row))
+
+    for i, header in enumerate(headers, start=1):
+        col_letter = ws.cell(row=1, column=i).column_letter
+        widths = [len(str(header))] + [len(str(r[i - 1])) for r in rows] if rows else [len(str(header))]
+        ws.column_dimensions[col_letter].width = min(max(widths) + 2, 40)
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    response = HttpResponse(
+        buffer.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _pdf_response(filename, title, headers, rows):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = [Paragraph(title, styles['Title']), Spacer(1, 12)]
+
+    if rows:
+        table_data = [headers] + [list(row) for row in rows]
+    else:
+        table_data = [headers, ['No data for this period'] + [''] * (len(headers) - 1)]
+
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f4f4f4')]),
+    ]))
+    elements.append(table)
+    doc.build(elements)
+    buffer.seek(0)
+
+    response = HttpResponse(buffer.read(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def sales_report_export(request):
+    """GET /api/reports/sales/?format=excel|pdf&date_from=&date_to="""
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from, date_to = _report_date_range(request)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _sales_and_profit_rows(date_from, date_to)
+    headers = ['Product Name', 'SKU', 'Units Sold', 'Revenue']
+    rows = [(r['product_name'], r['sku_code'], r['units_sold'], r['revenue']) for r in data]
+
+    filename_base = f'sales_report_{date_from}_to_{date_to}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        title = f'Sales Report ({date_from} to {date_to})'
+        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def profit_report_export(request):
+    """GET /api/reports/profit/?format=excel|pdf&date_from=&date_to="""
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from, date_to = _report_date_range(request)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _sales_and_profit_rows(date_from, date_to)
+    headers = ['Product Name', 'SKU', 'Units Sold', 'Revenue', 'Cost', 'Profit', 'Margin %']
+    rows = [
+        (r['product_name'], r['sku_code'], r['units_sold'], r['revenue'], r['cost'], r['profit'], r['margin_pct'])
+        for r in data
+    ]
+
+    filename_base = f'profit_report_{date_from}_to_{date_to}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        title = f'Profit Report ({date_from} to {date_to})'
+        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def inventory_report_export(request):
+    """GET /api/reports/inventory/?format=excel|pdf"""
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _inventory_rows()
+    headers = ['Product Name', 'SKU', 'Current Stock', 'Reorder Threshold', 'Status', 'Avg Cost Price']
+    rows = [
+        (r['product_name'], r['sku_code'], r['current_stock'], r['reorder_threshold'], r['stock_status'], r['avg_cost_price'])
+        for r in data
+    ]
+
+    today = date.today()
+    filename_base = f'inventory_report_{today}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Inventory Report ({today})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/health-scores/?format=excel|pdf&status=
+#
+# No date range — health scores are calculated on-demand (not
+# date-windowed), same as GET /api/health-scores/. Same status
+# filter and same ordering (-calculated_date, overall_score) as
+# HealthScoreListView, for consistency with that existing endpoint.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def health_score_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    queryset = InventoryHealthScore.objects.select_related('product').order_by(
+        '-calculated_date', 'overall_score'
+    )
+    status_filter = request.query_params.get('status')
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+
+    headers = [
+        'Product Name', 'SKU', 'Velocity', 'Margin', 'Expiry Risk',
+        'Stock Duration', 'Rating', 'Overall Score', 'Status',
+        'Recommended Action', 'Calculated Date',
+    ]
+    rows = [
+        (
+            r.product.product_name, r.product.sku_code or '',
+            str(r.velocity_score), str(r.margin_score), str(r.expiry_risk_score),
+            str(r.stock_duration_score),
+            str(r.rating_score) if r.rating_score is not None else 'N/A',
+            str(r.overall_score), r.status, r.recommended_action or '',
+            str(r.calculated_date),
+        )
+        for r in queryset
+    ]
+
+    filename_base = f'health_score_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Health Score Report ({date.today()})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/supplier/?format=excel|pdf
+#
+# Reuses _compute_scorecard() from suppliers app directly — same
+# logic already tested via GET /api/suppliers/scorecard-summary/,
+# not reimplemented here. Missing components (no data yet for that
+# supplier) show as 'N/A', same convention as the Health Score export.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def supplier_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    scores = [_compute_scorecard(s) for s in Supplier.objects.all()]
+    scores.sort(key=lambda s: (s['overall_score'] is None, -(s['overall_score'] or 0)))
+
+    headers = [
+        'Supplier Name', 'Delivery Accuracy', 'Price Stability',
+        'Return Acceptance Rate', 'Avg Product Quality', 'Overall Score',
+    ]
+    rows = []
+    for s in scores:
+        c = s['components']
+        rows.append((
+            s['supplier_name'],
+            c.get('delivery_accuracy', 'N/A'),
+            c.get('price_stability', 'N/A'),
+            c.get('return_acceptance_rate', 'N/A'),
+            c.get('avg_product_quality', 'N/A'),
+            s['overall_score'] if s['overall_score'] is not None else 'N/A',
+        ))
+
+    filename_base = f'supplier_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Supplier Performance Report ({date.today()})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/lifecycle/?format=excel|pdf&status=
+#
+# Reuses get_latest_lifecycle() from inventory.services.lifecycle
+# directly — same function backing GET /api/lifecycle/ and
+# GET /api/lifecycle/declining/, not reimplemented here. Already
+# de-duplicated to one record per product (Nipuni's Subquery fix).
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def lifecycle_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    status_filter = request.query_params.get('status')
+    data = get_latest_lifecycle(status_filter=status_filter)
+
+    headers = ['Product Name', 'Status', 'Sales Velocity', 'Recommendation', 'Calculated Date']
+    rows = [
+        (r['product_name'], r['status'], r['sales_velocity'], r['recommendation'], r['calculated_date'])
+        for r in data
+    ]
+
+    filename_base = f'lifecycle_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Product Lifecycle Report ({date.today()})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/loss/?format=excel|pdf&date_from=&date_to=
+#
+# Lists individual loss records for the date range (same filter fields
+# as LossRecordView/LossSummaryView in inventory app). This is the
+# detailed row-level export — aggregate totals (gross_expiry_loss,
+# recovered_amount, net_loss) already exist separately via
+# GET /api/losses/summary/, not duplicated here.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def loss_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from, date_to = _report_date_range(request)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    queryset = LossRecord.objects.select_related('product').filter(
+        loss_date__gte=date_from, loss_date__lte=date_to,
+    ).order_by('-loss_date')
+
+    headers = ['Product Name', 'SKU', 'Loss Type', 'Quantity', 'Loss Value', 'Loss Date', 'Notes']
+    rows = [
+        (
+            r.product.product_name, r.product.sku_code or '',
+            r.loss_type, r.loss_quantity, str(r.loss_value),
+            str(r.loss_date), r.notes or '',
+        )
+        for r in queryset
+    ]
+
+    filename_base = f'loss_report_{date_from}_to_{date_to}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        title = f'Loss Report ({date_from} to {date_to})'
+        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/reorder/?format=excel|pdf&urgency=&status=
+#
+# Deliberately does its OWN "latest per product" dedup here (same
+# Subquery pattern as lifecycle_analytics()), independent of whatever
+# write-side/read-side fix Nipuni applies to ReorderCalculateView /
+# ReorderRecommendationListView. This way the export is correct
+# regardless of which fix lands — if the write side gets fixed later,
+# deduping an already-clean table is harmless; if it doesn't, this
+# export still shows accurate current data.
+#
+# "Latest per product" here means the most recent recommendation
+# regardless of status — so an already-actioned (ORDERED/IGNORED)
+# recommendation correctly stays visible until a newer calculation
+# run replaces it, rather than showing a stale duplicate.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def reorder_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    latest_ids = (
+        ReorderRecommendation.objects
+        .filter(product_id=OuterRef('product_id'))
+        .order_by('-calculation_date', '-id')
+        .values('id')[:1]
+    )
+    queryset = ReorderRecommendation.objects.filter(
+        id__in=Subquery(latest_ids)
+    ).select_related('product', 'supplier').order_by('product__product_name')
+
+    urgency_filter = request.query_params.get('urgency')
+    status_filter = request.query_params.get('status')
+    if urgency_filter:
+        queryset = queryset.filter(urgency=urgency_filter)
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+
+    headers = [
+        'Product Name', 'SKU', 'Supplier', 'Current Stock', 'Avg Daily Sales',
+        'Days of Stock', 'Suggested Qty', 'Estimated Cost', 'Urgency',
+        'Status', 'Calculation Date',
+    ]
+    rows = [
+        (
+            r.product.product_name, r.product.sku_code or '',
+            r.supplier.supplier_name if r.supplier else 'N/A',
+            r.current_stock, str(r.avg_daily_sales), r.days_of_stock,
+            r.suggested_quantity, str(r.estimated_cost), r.urgency,
+            r.status, str(r.calculation_date),
+        )
+        for r in queryset
+    ]
+
+    filename_base = f'reorder_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Reorder Recommendations Report ({date.today()})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response

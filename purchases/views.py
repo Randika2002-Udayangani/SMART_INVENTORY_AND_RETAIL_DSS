@@ -11,6 +11,7 @@ from django.db import transaction
 from datetime import timedelta
 
 from .models import Purchase, PurchaseBatch
+from users.audit import log_action
 from .serializers import (
     PurchaseSerializer, PurchaseCreateSerializer, PurchaseBatchSerializer
 )
@@ -60,6 +61,13 @@ class PurchaseListCreateView(generics.ListCreateAPIView):
         if serializer.is_valid():
             purchase = serializer.save()
             output = PurchaseSerializer(purchase)
+
+            log_action(
+                user=request.user, action='CREATE', table_name='purchase',
+                record_id=purchase.id, old_value=None,
+                new_value=output.data, request=request,
+            )
+
             return Response(
                 {
                     'message': 'Purchase recorded successfully',
@@ -161,8 +169,17 @@ class BatchStatusUpdateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        old_status = batch.status
         batch.status = new_status
         batch.save()
+
+        log_action(
+            user=request.user, action='UPDATE', table_name='purchase_batch',
+            record_id=batch.id,
+            old_value={'status': old_status},
+            new_value={'status': batch.status},
+            request=request,
+        )
 
         return Response({
             'message'  : f'Batch {batch.id} status updated',
