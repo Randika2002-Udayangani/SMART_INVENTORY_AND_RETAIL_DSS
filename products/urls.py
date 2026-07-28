@@ -26,6 +26,7 @@ urlpatterns = [
     # Products — specific URLs FIRST, generic <int:pk> LAST (Risk R12)
     path('products/', views.ProductListCreateView.as_view(), name='product-list'),
     path('products/import/', views.ItemMasterUploadView.as_view(), name='item-master-upload'),
+    path('products/<int:pk>/availability/', views.ProductAvailabilityView.as_view(), name='product-availability'),
     path('products/<int:pk>/recalculate-wac/', views.RecalculateWACView.as_view(), name='product-recalculate-wac'),
     path('products/<int:pk>/', views.ProductDetailView.as_view(), name='product-detail'),
 
