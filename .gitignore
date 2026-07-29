@@ -4,3 +4,5 @@ __pycache__/
 db.sqlite3
 *.log
 .env
+# Ignore uploaded media files
+media/
