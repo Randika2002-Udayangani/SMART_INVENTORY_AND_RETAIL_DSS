@@ -7,4 +7,12 @@ urlpatterns = [
     path('sales-report/', views.sales_report, name='sales_report'),
     path('loss-analysis/', views.loss_analysis, name='loss_analysis'),
     path('lifecycle/', views.lifecycle, name='lifecycle'),
+    path('health-score/', views.health_score, name='health_score'),
+    path('reorder/', views.reorder, name='reorder'),
+    path('analytics/', views.analytics, name='analytics'),
+    path('discount-engine/', views.discount_engine, name='discount_engine'),
+    path('inventory/', views.inventory, name='inventory'),
+    path('purchases/', views.purchases, name='purchases'),
+    path('suppliers/', views.suppliers, name='suppliers'),
+    path('products/', views.products, name='products'),
 ]
