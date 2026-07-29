@@ -903,7 +903,6 @@ class CategoryHealthScoreView(APIView):
 
 
 
-
 # ─────────────────────────────────────────────────────────────────
 # GET /api/health-scores/critical/
 # ⚠ Must be registered BEFORE health-scores/<int:product_id>/
@@ -988,7 +987,6 @@ class HealthScoreDetailView(APIView):
         }
         return Response(data)
 
-
 class HealthScoreHistoryView(APIView):
     """
     GET /api/health-scores/history/<product_id>/
@@ -1016,7 +1014,6 @@ class HealthScoreHistoryView(APIView):
             'rating_sufficient', 'weighting_mode', 'calculated_date'
         )
         return Response(list(data))
-
     
 """
 Plan spec:
