@@ -1177,9 +1177,19 @@ def health_score_report_export(request):
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
-    queryset = InventoryHealthScore.objects.select_related('product').order_by(
-        '-calculated_date', 'overall_score'
+    # Latest-per-product dedup — same Subquery pattern as HealthScoreListView,
+    # kept in sync after Nipuni's fix (PR #11) so this export doesn't show
+    # the pre-fix 9x-inflated duplicate rows.
+    latest_ids = (
+        InventoryHealthScore.objects
+        .filter(product_id=OuterRef('product_id'))
+        .order_by('-calculated_date', '-id')
+        .values('id')[:1]
     )
+    queryset = InventoryHealthScore.objects.filter(
+        id__in=Subquery(latest_ids)
+    ).select_related('product').order_by('overall_score')
+
     status_filter = request.query_params.get('status')
     if status_filter:
         queryset = queryset.filter(status=status_filter)
