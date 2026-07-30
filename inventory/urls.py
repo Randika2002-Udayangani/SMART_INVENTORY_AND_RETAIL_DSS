@@ -35,6 +35,7 @@ urlpatterns = [
     path('health-scores/calculate/', views.HealthScoreCalculateView.as_view(), name='health-score-calculate'),
     path('health-scores/categories/', views.CategoryHealthScoreView.as_view(), name='health-score-categories'),
     path('health-scores/critical/', views.HealthScoreCriticalView.as_view(), name='health-score-critical'),
+    path('health-scores/history/<int:product_id>/', views.HealthScoreHistoryView.as_view(), name='health-score-history'),
     path('health-scores/', views.HealthScoreListView.as_view(), name='health-score-list'),
     path('health-scores/<int:product_id>/', views.HealthScoreDetailView.as_view(), name='health-score-detail'),
 
