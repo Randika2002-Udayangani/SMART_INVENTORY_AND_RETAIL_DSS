@@ -25,7 +25,8 @@ from django.db.models import Sum
 
 # ── Adjust these imports to match YOUR project's app names ──────────────────
 from products.models import Product          # product_id, sku_code, avg_cost_price
-from inventory.models import PurchaseBatch  # remaining_quantity, status, purchase→supplier
+#from inventory.models import PurchaseBatch  # remaining_quantity, status, purchase→supplier
+from purchases.models import PurchaseBatch    #fix by R
 from sales.models import ItemSalesRecord   # quantity_sold, sale_date
 
 
@@ -142,7 +143,7 @@ def calc_suggested_qty(
 #  FUNCTION 3 — check_reorder_needs
 # ════════════════════════════════════════════════════════════════════════════
 
-def check_reorder_needs() -> list:
+def check_reorder_needs(as_of: date = None) -> list:
     """
     Evaluate every active product and return those that need reordering.
 
@@ -176,7 +177,7 @@ def check_reorder_needs() -> list:
             urgency            (str)     — CRITICAL | HIGH | MEDIUM | LOW
             supplier_id        (int|None)
     """
-    today   = date.today()
+    today   = as_of or date.today()
     since   = today - timedelta(days=SALES_LOOKBACK_DAYS)
     results = []
 
@@ -239,7 +240,7 @@ def check_reorder_needs() -> list:
 
         # ── 10. Append ────────────────────────────────────────────────────────
         results.append({
-            'product_id':         product.product_id,
+            'product_id':         product.id,
             'product_name':       product.product_name,
             'sku_code':           product.sku_code or '',
             'current_stock':      current_stock,
@@ -298,13 +299,12 @@ def _get_supplier_lead_time(product: Product):
         PurchaseBatch.objects
         .filter(product=product, status='ACTIVE')
         .select_related('purchase__supplier')
-        .order_by('-batch_id')
+        .order_by('-id')
         .first()
     )
 
     if latest_batch and latest_batch.purchase and latest_batch.purchase.supplier:
         supplier       = latest_batch.purchase.supplier
         lead_time      = supplier.lead_time_days or DEFAULT_LEAD_TIME
-        return supplier.supplier_id, lead_time
-
+        return supplier.id, lead_time
     return None, DEFAULT_LEAD_TIME

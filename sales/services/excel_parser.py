@@ -7,6 +7,7 @@ actual easyAcc export for item-level sales is PDF (one file per product).
 
 import re
 import pdfplumber
+import pandas as pd
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -285,3 +286,108 @@ def _parse_data_row(row, col_map):
         'total_amount':  total_amount,
     }
     return record, errors_note
+
+
+
+
+def parse_item_master(file):
+    """
+    Parse the easyAcc Item Master Excel file (Book1.xlsx format).
+
+    File structure — NO header row:
+      Col A (index 0) — seq_number   : ignored
+      Col B (index 1) — product_name : mandatory match key
+      Col C (index 2) — sinhala_name : ignored
+      Col D (index 3) — sku_code     : sparse, only ~10/495 rows
+      Col E (index 4) — qty_on_hand  : ignored
+      Col F (index 5) — unit_price   : mandatory, must be > 0
+
+    Returns:
+        {
+            'rows': [
+                {
+                    'product_name': str,
+                    'sku_code':     str | None,
+                    'unit_price':   float,
+                    'row_num':      int,
+                }
+            ],
+            'skipped': int,
+            'errors':  [str],
+        }
+    """
+    try:
+        df = pd.read_excel(file, header=None)
+    except Exception as e:
+        return {'rows': [], 'skipped': 0, 'errors': [], 'read_error': f'Could not read Excel file: {str(e)}'}
+
+    rows   = []
+    errors = []
+    skipped = 0
+
+    seen_skus   = {}
+    seen_names  = {}
+
+    for index, row in df.iterrows():
+        row_num = index + 1
+
+        if len(row) < 6:
+            skipped += 1
+            errors.append(f'Row {row_num}: Only {len(row)} columns — expected 6. Skipped.')
+            continue
+
+        raw_name     = row.iloc[1] if not pd.isna(row.iloc[1]) else ''
+        product_name = str(raw_name).strip()
+
+        if product_name == 'DEFAULT ITEM':
+            skipped += 1
+            continue
+
+        if not product_name:
+            skipped += 1
+            errors.append(f'Row {row_num}: Empty product name — skipped')
+            continue
+
+        raw_sku  = row.iloc[3] if not pd.isna(row.iloc[3]) else None
+        sku_code = str(raw_sku).strip() if raw_sku is not None else None
+        if not sku_code or sku_code.lower() in ('nan', 'none', ''):
+            sku_code = None
+
+        try:
+            unit_price = float(row.iloc[5]) if not pd.isna(row.iloc[5]) else 0.0
+        except (ValueError, TypeError):
+            unit_price = 0.0
+
+        if unit_price <= 0:
+            skipped += 1
+            errors.append(f'Row {row_num}: "{product_name}" price={unit_price} — skipped')
+            continue
+
+        if sku_code:
+            if sku_code in seen_skus:
+                skipped += 1
+                errors.append(f'Row {row_num}: Duplicate SKU "{sku_code}" (first seen row {seen_skus[sku_code]}) — skipped')
+                continue
+            seen_skus[sku_code] = row_num
+
+        if not sku_code:
+            normalized_name = product_name.lower()
+            if normalized_name in seen_names:
+                skipped += 1
+                errors.append(f'Row {row_num}: Duplicate name "{product_name}" (first seen row {seen_names[normalized_name]}) — skipped')
+                continue
+            seen_names[normalized_name] = row_num
+
+        rows.append({
+            'product_name': product_name,
+            'sku_code':     sku_code,
+            'unit_price':   unit_price,
+            'row_num':      row_num,
+        })
+
+    return {
+        'rows':       rows,
+        'skipped':    skipped,
+        'errors':     errors,
+        'read_error': None,
+    }

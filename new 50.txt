@@ -1,0 +1,9 @@
+Customer Portal and Online Order Management Module
+
+Responsibilities:
+- Implemented customer registration and authentication.
+- Developed JWT-based customer authorization.
+- Created online order APIs.
+- Implemented order tracking functionality.
+- Developed chatbot query interface.
+- Integrated customer module with product and inventory modules.

@@ -4,7 +4,8 @@ from rest_framework import status
 from django.contrib.auth.models import User, Group
 from rest_framework_simplejwt.tokens import RefreshToken
 from .audit import log_action
-
+from .models import SystemConfig
+from .models import AuditLog
 
 
 # ============================================================
@@ -220,3 +221,152 @@ class UserDetailView(APIView):
 
         return Response({'message': 'User updated', 'id': target.id, **new_value})
     
+# Default keys from API Design Doc v3.1, Section 20. Auto-seeded on
+# first GET if missing — won't touch any other keys already in the
+# table (e.g. 'last_item_ledger_sync', used separately by inventory).
+DEFAULT_CONFIG = [
+    ("min_margin_pct", "10", "F09 Discount Engine — profit floor"),
+    ("expiry_alert_days", "30", "F09 Discount Engine + F16 Alerts"),
+    ("min_order_value", "0", "F12 Online Order validation"),
+    ("min_order_advance_hours", "24", "F12 Online Order validation"),
+    ("max_order_advance_days", "7", "F12 Online Order validation"),
+]
+ 
+ 
+class SystemConfigListView(APIView):
+    """GET /api/config/ — all key-value pairs. Any authenticated staff."""
+ 
+    def get(self, request):
+        existing_keys = set(SystemConfig.objects.values_list('key', flat=True))
+        missing = [
+            SystemConfig(key=k, value=v, description=d)
+            for k, v, d in DEFAULT_CONFIG if k not in existing_keys
+        ]
+        if missing:
+            SystemConfig.objects.bulk_create(missing)
+ 
+        configs = SystemConfig.objects.all().order_by('key')
+        data = [{
+            'key': c.key,
+            'value': c.value,
+            'description': c.description,
+            'updated_at': c.updated_at,
+        } for c in configs]
+        return Response(data)
+ 
+ 
+class SystemConfigDetailView(APIView):
+    """
+    GET /api/config/{key}/  — any authenticated staff
+    PUT /api/config/{key}/  — Admin only. Body: {"value": "12"}. Writes Audit_Log.
+    """
+ 
+    def get(self, request, key):
+        try:
+            c = SystemConfig.objects.get(key=key)
+        except SystemConfig.DoesNotExist:
+            return Response({'error': f"Config key '{key}' not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            'key': c.key, 'value': c.value,
+            'description': c.description, 'updated_at': c.updated_at,
+        })
+ 
+    def put(self, request, key):
+        if not (request.user.is_superuser or request.user.groups.filter(name='ADMIN').exists()):
+            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+ 
+        try:
+            c = SystemConfig.objects.get(key=key)
+        except SystemConfig.DoesNotExist:
+            return Response({'error': f"Config key '{key}' not found"}, status=status.HTTP_404_NOT_FOUND)
+ 
+        new_value = request.data.get('value')
+        if new_value is None:
+            return Response({'error': 'value is required'}, status=status.HTTP_400_BAD_REQUEST)
+ 
+        old_value = c.value
+        c.value = str(new_value)
+        c.save()
+ 
+        log_action(
+            user=request.user, action='CONFIG_CHANGE', table_name='system_config',
+            record_id=c.id, old_value={'value': old_value},
+            new_value={'value': c.value}, request=request,
+        )
+ 
+        return Response({
+            'key': c.key, 'value': c.value,
+            'description': c.description, 'updated_at': c.updated_at,
+        })
+ 
+class AuditLogListView(APIView):
+    """
+    GET /api/audit-log/
+    Admin only. Filter by ?user=<id>, ?table_name=, ?action=,
+    ?date_from=YYYY-MM-DD, ?date_to=YYYY-MM-DD
+    """
+ 
+    def get(self, request):
+        if not (request.user.is_superuser or request.user.groups.filter(name='ADMIN').exists()):
+            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+ 
+        logs = AuditLog.objects.all().order_by('-timestamp')
+ 
+        user_id = request.query_params.get('user')
+        table_name = request.query_params.get('table_name')
+        action = request.query_params.get('action')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+ 
+        if user_id:
+            logs = logs.filter(user_id=user_id)
+        if table_name:
+            logs = logs.filter(table_name=table_name)
+        if action:
+            logs = logs.filter(action=action)
+        if date_from:
+            logs = logs.filter(timestamp__date__gte=date_from)
+        if date_to:
+            logs = logs.filter(timestamp__date__lte=date_to)
+ 
+        data = [{
+            'id': log.id,
+            'user_id': log.user_id,
+            'username': log.user.username if log.user else None,
+            'action': log.action,
+            'table_name': log.table_name,
+            'record_id': log.record_id,
+            'ip_address': log.ip_address,
+            'timestamp': log.timestamp,
+        } for log in logs]
+ 
+        return Response(data)
+ 
+ 
+class AuditLogDetailView(APIView):
+    """
+    GET /api/audit-log/{id}/
+    Admin only. Full entry including old_value/new_value JSON.
+    """
+ 
+    def get(self, request, pk):
+        if not (request.user.is_superuser or request.user.groups.filter(name='ADMIN').exists()):
+            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+ 
+        try:
+            log = AuditLog.objects.get(pk=pk)
+        except AuditLog.DoesNotExist:
+            return Response({'error': 'Audit log entry not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        return Response({
+            'id': log.id,
+            'user_id': log.user_id,
+            'username': log.user.username if log.user else None,
+            'action': log.action,
+            'table_name': log.table_name,
+            'record_id': log.record_id,
+            'old_value': log.old_value,
+            'new_value': log.new_value,
+            'ip_address': log.ip_address,
+            'timestamp': log.timestamp,
+        })

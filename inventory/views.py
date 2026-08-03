@@ -16,14 +16,27 @@ from users.models import SystemConfig
 from .models import (
     StockLedger, StockAdjustment, ProductLifecycle,
     LossRecord, SupplierReturn,
-    InventoryHealthScore, CategoryHealthScore
+    InventoryHealthScore, CategoryHealthScore,
+    DiscountRule, DiscountRecommendation, 
+    ReorderRecommendation,
 )
 from .serializers import (
-    StockLedgerSerializer, StockAdjustmentSerializer, CurrentStockSerializer
+    StockLedgerSerializer, StockAdjustmentSerializer, CurrentStockSerializer, 
+    DiscountRuleSerializer, DiscountRecommendationSerializer, 
+    ReorderRecommendationSerializer,
 )
 from sales.models import ItemSalesRecord
 from inventory.services.reorder_logic import get_urgency
 
+from inventory.services.reorder_logic import check_reorder_needs
+
+from orders.models import Notification
+
+from datetime import date
+#   from inventory.services.reorder_logic import check_reorder_needs
+
+
+from django.utils import timezone as dj_timezone
 
 def get_last_sync_date():
     """Helper — reads last_item_ledger_sync from SystemConfig."""
@@ -333,10 +346,12 @@ class LowStockView(APIView):
  
         for product in products:
             reorder_threshold = product.reorder_threshold or 0
+            if reorder_threshold == 0:
+                continue  # skip products with no reorder point set
+
             current = stock_by_product.get(product.id, 0)
- 
-            if current > reorder_threshold:
-                continue  # only include products at or below threshold
+            if current >= reorder_threshold:
+                continue  # only include products strictly below threshold
  
             shortage = reorder_threshold - current
  
@@ -775,22 +790,84 @@ class HealthScoreCalculateView(APIView):
 # Filter by ?status=CRITICAL|AT RISK|WATCH|HEALTHY
 # ─────────────────────────────────────────────────────────────────
 class HealthScoreListView(APIView):
-
+    """
+    GET /api/health-scores/
+    Returns the LATEST health score per product (one row per product,
+    not one row per calculation run). Filter by ?status= and/or
+    ?product=<id>. Includes product_name and sku_code so callers don't
+    need a separate lookup per row.
+    """
+ 
     def get(self, request):
-        queryset      = InventoryHealthScore.objects.all().order_by(
-            '-calculated_date', 'overall_score'
+        from django.db.models import OuterRef, Subquery
+ 
+        latest_ids = (
+            InventoryHealthScore.objects
+            .filter(product_id=OuterRef('product_id'))
+            .order_by('-calculated_date', '-id')
+            .values('id')[:1]
         )
+        queryset = InventoryHealthScore.objects.filter(
+            id__in=Subquery(latest_ids)
+        ).select_related('product').order_by('overall_score')
+ 
         status_filter = request.query_params.get('status')
+        product_filter = request.query_params.get('product')
+ 
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-
+        if product_filter:
+            queryset = queryset.filter(product_id=product_filter)
+ 
         data = queryset.values(
-            'id', 'product', 'velocity_score', 'margin_score',
+            'id', 'product', 'product__product_name', 'product__sku_code',
+            'velocity_score', 'margin_score',
             'expiry_risk_score', 'stock_duration_score', 'rating_score',
             'overall_score', 'status', 'recommended_action',
             'rating_sufficient', 'weighting_mode', 'calculated_date'
         )
         return Response(list(data))
+ 
+
+ 
+
+
+
+class HealthScoreSummaryView(APIView):
+ 
+    def get(self, request):
+        from django.db.models import Count, OuterRef, Subquery
+ 
+        latest_ids = (
+            InventoryHealthScore.objects
+            .filter(product_id=OuterRef('product_id'))
+            .order_by('-calculated_date', '-id')
+            .values('id')[:1]
+        )
+        latest_qs = InventoryHealthScore.objects.filter(
+            id__in=Subquery(latest_ids)
+        )
+ 
+        counts = latest_qs.values('status').annotate(count=Count('id'))
+ 
+        summary = {
+            'HEALTHY':  0,
+            'WATCH':    0,
+            'AT RISK':  0,
+            'CRITICAL': 0,
+        }
+        for row in counts:
+            if row['status'] in summary:
+                summary[row['status']] = row['count']
+ 
+        return Response({
+            'summary': summary,
+            'total':   sum(summary.values()),
+            'note': (
+                'Call POST /api/health-scores/calculate/ first if all counts '
+                'are 0. For the full product list use GET /api/health-scores/.'
+            )
+        })
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -798,17 +875,32 @@ class HealthScoreListView(APIView):
 # ⚠ Must be registered BEFORE health-scores/<int:product_id>/
 # ─────────────────────────────────────────────────────────────────
 class CategoryHealthScoreView(APIView):
-
+    """
+    GET /api/health-scores/categories/
+    Returns the LATEST CategoryHealthScore per category, including
+    category_name (not just the raw category id).
+    """
+ 
     def get(self, request):
-        queryset = CategoryHealthScore.objects.all().order_by(
-            '-calculated_date', 'avg_health_score'
+        from django.db.models import OuterRef, Subquery
+ 
+        latest_ids = (
+            CategoryHealthScore.objects
+            .filter(category_id=OuterRef('category_id'))
+            .order_by('-calculated_date', '-id')
+            .values('id')[:1]
         )
+        queryset = CategoryHealthScore.objects.filter(
+            id__in=Subquery(latest_ids)
+        ).select_related('category').order_by('avg_health_score')
+ 
         data = queryset.values(
-            'id', 'category', 'avg_health_score',
+            'id', 'category', 'category__category_name', 'avg_health_score',
             'healthy_count', 'watch_count', 'at_risk_count',
             'critical_count', 'status', 'calculated_date'
         )
         return Response(list(data))
+
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -816,13 +908,29 @@ class CategoryHealthScoreView(APIView):
 # ⚠ Must be registered BEFORE health-scores/<int:product_id>/
 # ─────────────────────────────────────────────────────────────────
 class HealthScoreCriticalView(APIView):
-
+    """
+    GET /api/health-scores/critical/
+    Returns the LATEST health score record for every product currently
+    at CRITICAL status, including product_name and sku_code.
+    """
+ 
     def get(self, request):
+        from django.db.models import OuterRef, Subquery
+ 
+        latest_ids = (
+            InventoryHealthScore.objects
+            .filter(product_id=OuterRef('product_id'))
+            .order_by('-calculated_date', '-id')
+            .values('id')[:1]
+        )
         queryset = InventoryHealthScore.objects.filter(
+            id__in=Subquery(latest_ids),
             status='CRITICAL'
-        ).order_by('-calculated_date', 'overall_score')
+        ).select_related('product').order_by('overall_score')
+ 
         data = queryset.values(
-            'id', 'product', 'overall_score', 'status',
+            'id', 'product', 'product__product_name', 'product__sku_code',
+            'overall_score', 'status',
             'recommended_action', 'calculated_date'
         )
         return Response(list(data))
@@ -833,27 +941,80 @@ class HealthScoreCriticalView(APIView):
 # Full health score history for one product across all runs
 # ─────────────────────────────────────────────────────────────────
 class HealthScoreDetailView(APIView):
-
+    """
+    GET /api/health-scores/<product_id>/
+    Returns the SINGLE latest health score record for one product
+    (today's breakdown), including product_name and sku_code.
+ 
+    For full multi-run history (trend view), use
+    GET /api/health-scores/history/<product_id>/ instead.
+    """
+ 
     def get(self, request, product_id):
         try:
             product = Product.objects.get(pk=product_id)
         except Product.DoesNotExist:
             return Response({'error': 'Product not found'},
                             status=status.HTTP_404_NOT_FOUND)
+ 
+        record = InventoryHealthScore.objects.filter(
+            product=product
+        ).order_by('-calculated_date', '-id').first()
+ 
+        if record is None:
+            return Response(
+                {'error': 'No health score calculated yet for this product. '
+                          'Call POST /api/health-scores/calculate/ first.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+ 
+        data = {
+            'id': record.id,
+            'product': record.product_id,
+            'product_name': product.product_name,
+            'sku_code': product.sku_code,
+            'velocity_score': record.velocity_score,
+            'margin_score': record.margin_score,
+            'expiry_risk_score': record.expiry_risk_score,
+            'stock_duration_score': record.stock_duration_score,
+            'rating_score': record.rating_score,
+            'overall_score': record.overall_score,
+            'status': record.status,
+            'recommended_action': record.recommended_action,
+            'rating_sufficient': record.rating_sufficient,
+            'weighting_mode': record.weighting_mode,
+            'calculated_date': record.calculated_date,
+        }
+        return Response(data)
 
+class HealthScoreHistoryView(APIView):
+    """
+    GET /api/health-scores/history/<product_id>/
+    Full health score history for one product across ALL calculation
+    runs (trend view) -- per API Design Doc Section 13. Includes
+    product_name and sku_code for consistency with the other views.
+    """
+ 
+    def get(self, request, product_id):
+        try:
+            product = Product.objects.get(pk=product_id)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found'},
+                            status=status.HTTP_404_NOT_FOUND)
+ 
         queryset = InventoryHealthScore.objects.filter(
             product=product
-        ).order_by('-calculated_date')
-
+        ).select_related('product').order_by('-calculated_date')
+ 
         data = queryset.values(
-            'id', 'product', 'velocity_score', 'margin_score',
+            'id', 'product', 'product__product_name', 'product__sku_code',
+            'velocity_score', 'margin_score',
             'expiry_risk_score', 'stock_duration_score', 'rating_score',
             'overall_score', 'status', 'recommended_action',
             'rating_sufficient', 'weighting_mode', 'calculated_date'
         )
         return Response(list(data))
     
-
 """
 Plan spec:
     Calls run_lifecycle_calculation() for each active product.
@@ -988,4 +1149,442 @@ def lifecycle_analytics(request):
             'This endpoint reads the most recent calculation run. '
             'To recalculate, call POST /api/lifecycle/calculate/ first.'
         ),
+    })
+
+ 
+ 
+# ═════════════════════════════════════════════════════════════════
+# F09 — Discount Rules (config CRUD only — NOT the calculation
+# engine. discount_engine.py / POST /api/discounts/calculate/ stay
+# blocked until the project lead confirms tier values.)
+# ═════════════════════════════════════════════════════════════════
+ 
+class DiscountRuleListCreateView(APIView):
+    """
+    GET  /api/discount-rules/   — all tiered discount rules
+    POST /api/discount-rules/   — create a new rule tier. Admin/Manager.
+    """
+ 
+    def get(self, request):
+        rules = DiscountRule.objects.all().order_by('days_from_expiry_min')
+        return Response(DiscountRuleSerializer(rules, many=True).data)
+ 
+    def post(self, request):
+        serializer = DiscountRuleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        # created_by is a legacy AppUser FK, not the real auth_user table —
+        # left null here, same gap as everywhere else in this codebase that
+        # still references AppUser instead of settings.AUTH_USER_MODEL.
+        rule = serializer.save(created_by=None)
+ 
+        log_action(
+            user=request.user, action='CREATE', table_name='discount_rule',
+            record_id=rule.id, old_value=None,
+            new_value=DiscountRuleSerializer(rule).data, request=request,
+        )
+        return Response(DiscountRuleSerializer(rule).data, status=status.HTTP_201_CREATED)
+ 
+ 
+class DiscountRuleDetailView(APIView):
+    """
+    PUT   /api/discount-rules/{id}/  — full update
+    PATCH /api/discount-rules/{id}/  — partial update. Used for soft
+          deactivation: body {"is_active": false}. Per API doc v3.1:
+          hard DELETE would break FK integrity on historical
+          DiscountRecommendation rows, so deactivation is PATCH-only,
+          there is no DELETE.
+    """
+ 
+    def get_object(self, pk):
+        try:
+            return DiscountRule.objects.get(pk=pk)
+        except DiscountRule.DoesNotExist:
+            return None
+ 
+    def put(self, request, pk):
+        rule = self.get_object(pk)
+        if rule is None:
+            return Response({'error': 'Discount rule not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        old_value = DiscountRuleSerializer(rule).data
+        serializer = DiscountRuleSerializer(rule, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+ 
+        log_action(
+            user=request.user, action='UPDATE', table_name='discount_rule',
+            record_id=rule.id, old_value=old_value,
+            new_value=serializer.data, request=request,
+        )
+        return Response(serializer.data)
+ 
+    def patch(self, request, pk):
+        rule = self.get_object(pk)
+        if rule is None:
+            return Response({'error': 'Discount rule not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        old_value = DiscountRuleSerializer(rule).data
+        serializer = DiscountRuleSerializer(rule, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+ 
+        log_action(
+            user=request.user, action='UPDATE', table_name='discount_rule',
+            record_id=rule.id, old_value=old_value,
+            new_value=serializer.data, request=request,
+        )
+        return Response(serializer.data)
+ 
+ 
+# ═════════════════════════════════════════════════════════════════
+# F09 — Discount Recommendations (read + review only).
+# POST /api/discounts/calculate/ is NOT built here — that's the
+# blocked calculation engine. This just serves whatever rows exist
+# (empty list until calculate/ is built) and lets a manager mark
+# a recommendation APPLIED/IGNORED.
+# ═════════════════════════════════════════════════════════════════
+ 
+class DiscountRecommendationListView(generics.ListAPIView):
+    """
+    GET /api/discounts/recommendations/
+    Filter by ?status=PENDING/APPLIED/IGNORED/EXPIRED or ?urgency=
+    ('urgency' here maps to days_until_expiry ranges, kept simple
+    as a direct status filter per the API doc wording.)
+    """
+    serializer_class = DiscountRecommendationSerializer
+ 
+    def get_queryset(self):
+        queryset = DiscountRecommendation.objects.select_related('product').order_by('days_until_expiry')
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        return queryset
+ 
+ 
+class DiscountRecommendationDetailView(APIView):
+    """
+    PATCH /api/discounts/recommendations/{id}/
+    Manager marks a recommendation APPLIED or IGNORED.
+    Body: {"status": "APPLIED"}  or  {"status": "IGNORED"}
+    """
+ 
+    def patch(self, request, pk):
+        try:
+            rec = DiscountRecommendation.objects.get(pk=pk)
+        except DiscountRecommendation.DoesNotExist:
+            return Response({'error': 'Discount recommendation not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        new_status = request.data.get('status')
+        if new_status not in ['APPLIED', 'IGNORED']:
+            return Response(
+                {'error': 'status must be APPLIED or IGNORED'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        old_value = {'status': rec.status}
+        rec.status = new_status
+        rec.reviewed_by = None  # AppUser FK — left null, same gap as elsewhere
+        rec.reviewed_at = dj_timezone.now()
+        rec.save()
+ 
+        log_action(
+            user=request.user, action='UPDATE', table_name='discount_recommendation',
+            record_id=rec.id, old_value=old_value,
+            new_value={'status': rec.status}, request=request,
+        )
+ 
+        return Response(DiscountRecommendationSerializer(rec).data)
+    
+
+
+class DiscountCalculateView(APIView):
+
+    def post(self, request):
+        from inventory.services.discount_engine import calculate_discounts
+        result = calculate_discounts()
+
+        log_action(
+            user=request.user, action='CALCULATE', table_name='discount_recommendation',
+            record_id=None, old_value=None,
+            new_value=result, request=request,
+        )
+
+        return Response({
+            'message': (
+                f"Discount calculation complete — "
+                f"{result['recommendations_created']} created, "
+                f"{result['recommendations_updated']} updated."
+            ),
+            **result,
+        }, status=status.HTTP_200_OK)
+    
+    
+    
+class SyncDateView(APIView):
+    """
+    GET /api/inventory/sync-date/
+    Returns the last_item_ledger_sync value from SystemConfig.
+    """
+
+    def get(self, request):
+        return Response({'last_sync_date': get_last_sync_date()})
+    
+
+class ReorderCalculateView(APIView):
+    """
+    POST /api/reorder/calculate/
+ 
+    Triggers reorder calculation for all products via check_reorder_needs().
+ 
+    Uses update_or_create keyed on (product, status='PENDING') so repeated
+    calculation runs refresh an existing PENDING recommendation instead of
+    creating duplicates. Recommendations already ORDERED/IGNORED are left
+    untouched -- actioned history is preserved. If a product still needs
+    reordering after being actioned, a fresh new PENDING row is created
+    (the old ORDERED/IGNORED row stays as-is).
+ 
+    Notifications only fire when a recommendation is newly created, or when
+    an existing PENDING recommendation's urgency escalates to CRITICAL from
+    a lower urgency on this run -- prevents notification spam from repeated
+    recalculation of an already-known critical item.
+ 
+    Any PENDING recommendation for a product that no longer appears in this
+    run's results (no longer needs reordering) is marked AUTO_RESOLVED
+    rather than deleted -- preserves the fact it was once flagged and has
+    since resolved, matching the report export's expectation of showing
+    "flagged, now resolved" instead of a misleadingly-stale PENDING.
+ 
+    Optional body: {"as_of": "2026-02-14"} — for testing against
+    frozen sample data only. Production calls should omit this and
+    let it default to today.
+    """
+ 
+    def post(self, request):
+        as_of_str = request.data.get('as_of')
+        as_of = None
+        if as_of_str:
+            try:
+                as_of = date.fromisoformat(as_of_str)
+            except ValueError:
+                return Response({'error': 'as_of must be YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
+ 
+        results = check_reorder_needs(as_of=as_of)
+ 
+        touched_product_ids = set()
+        created_or_updated = []
+        notifications_created = 0
+ 
+        for r in results:
+            touched_product_ids.add(r['product_id'])
+ 
+            # Capture previous urgency BEFORE update_or_create overwrites it,
+            # so we can detect a genuine escalation vs. a repeat of the same
+            # urgency level.
+            existing = ReorderRecommendation.objects.filter(
+                product_id=r['product_id'], status='PENDING'
+            ).first()
+            previous_urgency = existing.urgency if existing else None
+ 
+            rec, was_created = ReorderRecommendation.objects.update_or_create(
+                product_id=r['product_id'],
+                status='PENDING',
+                defaults={
+                    'supplier_id': r['supplier_id'],
+                    'current_stock': r['current_stock'],
+                    'avg_daily_sales': r['avg_daily_sales'],
+                    'days_of_stock': r['days_of_stock'],
+                    'safety_stock': r['safety_stock'],
+                    'suggested_quantity': r['suggested_quantity'],
+                    'estimated_cost': r['estimated_cost'],
+                    'urgency': r['urgency'],
+                }
+            )
+            created_or_updated.append(rec)
+ 
+            escalated_to_critical = (
+                previous_urgency is not None
+                and previous_urgency != 'CRITICAL'
+                and r['urgency'] == 'CRITICAL'
+            )
+ 
+            if r['urgency'] == 'CRITICAL' and (was_created or escalated_to_critical):
+                # Local import to avoid any cross-app circular import risk.
+                from orders.models import Notification
+                Notification.objects.create(
+                    user=None,  # AppUser FK gap — same issue flagged elsewhere
+                    customer=None,
+                    type='REORDER',
+                    priority='CRITICAL',
+                    title='Critical reorder needed',
+                    message=f"{r['product_name']} is at {r['days_of_stock']} days of stock — reorder now.",
+                    reference_table='reorder_recommendation',
+                    reference_id=rec.id,
+                )
+                notifications_created += 1
+ 
+        # ── Auto-resolve stale PENDING recs for products no longer needing reorder ──
+        stale_resolved = ReorderRecommendation.objects.filter(
+            status='PENDING'
+        ).exclude(product_id__in=touched_product_ids).update(status='AUTO_RESOLVED')
+ 
+        log_action(
+            user=request.user, action='CALCULATE', table_name='reorder_recommendation',
+            record_id=None, old_value=None,
+            new_value={
+                'recommendations_created_or_updated': len(created_or_updated),
+                'notifications_created': notifications_created,
+                'auto_resolved': stale_resolved,
+            }, request=request,
+        )
+ 
+        return Response({
+            'message': (
+                f'Reorder calculation complete — {len(created_or_updated)} recommendation(s) '
+                f'created/updated, {notifications_created} notification(s) sent, '
+                f'{stale_resolved} previously-pending recommendation(s) auto-resolved.'
+            ),
+            'recommendations': ReorderRecommendationSerializer(created_or_updated, many=True).data,
+        }, status=status.HTTP_201_CREATED)
+
+ 
+class ReorderRecommendationListView(generics.ListAPIView):
+    """
+    GET /api/reorder/recommendations/
+    Filter by ?urgency=CRITICAL/HIGH/MEDIUM/LOW and ?status=PENDING/ORDERED/IGNORED
+    """
+    serializer_class = ReorderRecommendationSerializer
+ 
+    def get_queryset(self):
+        queryset = ReorderRecommendation.objects.select_related(
+            'product', 'supplier'
+        ).order_by('-calculation_date')
+        urgency = self.request.query_params.get('urgency')
+        status_filter = self.request.query_params.get('status')
+        if urgency:
+            queryset = queryset.filter(urgency=urgency)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        return queryset
+ 
+ 
+class ReorderRecommendationDetailView(APIView):
+    """
+    PATCH /api/reorder/recommendations/{id}/
+    Staff/Manager marks recommendation ORDERED or IGNORED.
+    Body: {"status": "ORDERED"} or {"status": "IGNORED"}
+    """
+ 
+    def patch(self, request, pk):
+        try:
+            rec = ReorderRecommendation.objects.get(pk=pk)
+        except ReorderRecommendation.DoesNotExist:
+            return Response({'error': 'Reorder recommendation not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        new_status = request.data.get('status')
+        if new_status not in ['ORDERED', 'IGNORED']:
+            return Response({'error': 'status must be ORDERED or IGNORED'}, status=status.HTTP_400_BAD_REQUEST)
+ 
+        old_value = {'status': rec.status}
+        rec.status = new_status
+        rec.actioned_by = None  # AppUser FK gap — same issue flagged elsewhere
+        rec.save()
+ 
+        log_action(
+            user=request.user, action='UPDATE', table_name='reorder_recommendation',
+            record_id=rec.id, old_value=old_value,
+            new_value={'status': rec.status}, request=request,
+        )
+ 
+        return Response(ReorderRecommendationSerializer(rec).data)
+ 
+
+
+class NotificationListView(APIView):
+    """
+    GET /api/notifications/
+    Unread notifications, staff-facing (customer is null).
+    NOTE: Notification.user is still a legacy AppUser FK (same gap
+    flagged elsewhere in this project — it's never reliably
+    populated), so this currently returns ALL unread staff
+    notifications rather than filtering to "my" notifications.
+    Revisit once the AppUser → auth_user bridge is resolved.
+    """
+ 
+    def get(self, request):
+        notifications = Notification.objects.filter(
+            is_read=False, customer__isnull=True
+        ).order_by('-created_at')
+ 
+        data = [{
+            'id': n.id,
+            'type': n.type,
+            'priority': n.priority,
+            'title': n.title,
+            'message': n.message,
+            'reference_table': n.reference_table,
+            'reference_id': n.reference_id,
+            'is_read': n.is_read,
+            'created_at': n.created_at,
+        } for n in notifications]
+ 
+        return Response(data)
+ 
+ 
+class NotificationDetailView(APIView):
+    """
+    GET    /api/notifications/{id}/   — full detail with reference_table/id
+    PATCH  /api/notifications/{id}/read/  — mark as read (separate route, see urls.py)
+    DELETE /api/notifications/{id}/   — dismiss
+    """
+ 
+    def get(self, request, pk):
+        try:
+            n = Notification.objects.get(pk=pk)
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        return Response({
+            'id': n.id,
+            'type': n.type,
+            'priority': n.priority,
+            'title': n.title,
+            'message': n.message,
+            'reference_table': n.reference_table,
+            'reference_id': n.reference_id,
+            'is_read': n.is_read,
+            'created_at': n.created_at,
+            'read_at': n.read_at,
+            'expires_at': n.expires_at,
+        })
+ 
+    def delete(self, request, pk):
+        try:
+            n = Notification.objects.get(pk=pk)
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+        n.delete()
+        return Response({'message': 'Notification dismissed'}, status=status.HTTP_204_NO_CONTENT)
+ 
+ 
+class NotificationMarkReadView(APIView):
+    """PATCH /api/notifications/{id}/read/ — sets is_read=True, read_at=now."""
+ 
+    def patch(self, request, pk):
+        try:
+            n = Notification.objects.get(pk=pk)
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+        n.is_read = True
+        n.read_at = dj_timezone.now()
+        n.save()
+ 
+        return Response({
+            'id': n.id, 'is_read': n.is_read, 'read_at': n.read_at,
+        })
+from django.http import JsonResponse
+
+def api_status(request):
+    return JsonResponse({
+        "status": "working"
     })

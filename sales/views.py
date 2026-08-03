@@ -1,74 +1,112 @@
+import io
+...
+from django.http import HttpResponse
+...
+from openpyxl import Workbook
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
 import os
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
+from decimal import Decimal
+
+import pandas as pd
+
 from django.db import transaction
-from rest_framework.decorators import api_view, permission_classes, parser_classes
-from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.permissions import IsAuthenticated
+from django.db.models import Sum, OuterRef, Subquery
+from django.utils import timezone
+
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics
-from rest_framework.views import APIView
-from django.utils import timezone
-import pandas as pd
-from users.models import SystemConfig
-from .models import UploadLog, DailyBillSummary, ItemSalesRecord
-from .serializers import UploadLogSerializer, DailyBillSerializer, ItemSalesSerializer
-from sales.services.excel_parser import parse_item_sales_pdf
-from inventory.models import PurchaseBatch, StockLedger
-from decimal import Decimal
-from django.db.models import Sum
-from sales.models import ItemSalesRecord
-from products.models import Product
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
 
+from products.models import Product
+from users.models import SystemConfig
+from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore, ReorderRecommendation
+
+from .models import (
+    UploadLog,
+    DailyBillSummary,
+    ItemSalesRecord,
+)
+
+from .serializers import (
+    UploadLogSerializer,
+    DailyBillSerializer,
+    ItemSalesSerializer,
+)
+
+from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore
+from suppliers.models import Supplier
+from suppliers.views import _compute_scorecard
+
+from inventory.services.lifecycle import get_latest_lifecycle
+
+# =========================================================
+# HELPERS
+# =========================================================
 
 def validate_bill_row(row):
-    """Validate a single bill row from the daily bills data."""
+    """
+    Validate a single bill row from daily bills data.
+    """
+
     errors = []
+
     try:
         final = float(row.get('Final Amount', 0) or 0)
         discount = float(row.get('Amount', 0) or 0)
+
     except (ValueError, TypeError):
         return ['Could not parse amount values']
 
     if final <= 0:
-        errors.append(f"Non-positive final amount: {final}")
+        errors.append(
+            f"Non-positive final amount: {final}"
+        )
+
     if discount > final and final > 0:
-        errors.append(f"Discount ({discount}) exceeds final amount — possible credit note")
+        errors.append(
+            f"Discount ({discount}) exceeds final amount"
+        )
+
     if 0 < final < 10:
-        errors.append(f"Suspiciously small amount: {final} — possible artifact")
+        errors.append(
+            f"Suspiciously small amount: {final}"
+        )
+
     return errors
 
 
-# ─────────────────────────────────────────────────────────────────
-# Pipeline 5 — Item Ledger PDF Upload
+# =========================================================
+# ITEM LEDGER PDF UPLOAD
 # POST /api/sales/upload/item-ledger/
-# ─────────────────────────────────────────────────────────────────
+# =========================================================
+
 class ItemLedgerPDFUploadView(APIView):
-    """
-    POST /api/sales/upload/item-ledger/
-    Upload Item Ledger PDF (item.pdf from easyAcc).
 
-    File structure (confirmed from real item.pdf — 59 pages):
-      - Product name on each page: "Item No : RATTHI 400g"
-      - Table columns: Date | Bill No | Customer | Bill Type | IN | OUT | Balance
-      - Date format: YYYY/MM/DD
-      - Only rows where Bill Type contains "CASH SALE" are processed
-      - OPENING STOCK rows are skipped
-      - Multiple bills per day are aggregated into one daily total
-      - Unit price is NOT in this file — looked up from Product.unit_price
-      - seen_bills set prevents counting same bill twice across pages
-
-    Result: One Item_Sales_Record row per date for this product.
-    """
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
+
         file = request.FILES.get('file')
 
         if not file:
             return Response(
-                {'error': 'No file uploaded. Send file as form-data with key "file"'},
+                {
+                    'error': (
+                        'No file uploaded. '
+                        'Send file as form-data with key "file"'
+                    )
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
+
         if not file.name.endswith('.pdf'):
             return Response(
                 {'error': 'File must be a PDF'},
@@ -83,140 +121,186 @@ class ItemLedgerPDFUploadView(APIView):
         )
 
         try:
+
             import pdfplumber
             import io
+
             from collections import defaultdict
             from datetime import datetime
 
             pdf_bytes = file.read()
+
             errors = []
+
             product = None
-            daily_totals = defaultdict(float)  # {date: total_qty_sold}
-            seen_bills = set()  # (date, bill_no) — prevents double-counting across pages
+
+            daily_totals = defaultdict(float)
+
+            seen_bills = set()
 
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-                for page_num, page in enumerate(pdf.pages):
+
+                for page in pdf.pages:
+
                     text = page.extract_text()
+
                     if not text:
                         continue
 
-                    # ── Extract product name from "Item No : RATTHI 400g" ──
+                    # -------------------------------------------------
+                    # Extract Product Name
+                    # -------------------------------------------------
+
                     if product is None:
+
                         for line in text.split('\n'):
+
                             if 'Item No' in line and ':' in line:
-                                product_name = line.split(':', 1)[1].strip()
-                                # PDF sometimes has "2117 RATTHI 400g" but
-                                # DB has "RATTHI 400g" — strip leading number
+
+                                product_name = (
+                                    line.split(':', 1)[1].strip()
+                                )
+
                                 parts = product_name.split(' ', 1)
+
                                 if parts[0].isdigit() and len(parts) > 1:
                                     product_name = parts[1].strip()
+
                                 try:
+
                                     product = Product.objects.get(
                                         product_name=product_name
                                     )
+
                                 except Product.DoesNotExist:
+
                                     upload_log.status = 'FAILED'
+
                                     upload_log.error_message = (
-                                        f'Product not found: "{product_name}". '
-                                        f'Upload Item Master first.'
+                                        f'Product not found: '
+                                        f'"{product_name}"'
                                     )
+
                                     upload_log.save()
+
                                     return Response(
                                         {
                                             'error': (
-                                                f'Product "{product_name}" not in Product table. '
-                                                f'Upload Item Master Excel first.'
+                                                f'Product '
+                                                f'"{product_name}" '
+                                                f'not found'
                                             )
                                         },
                                         status=status.HTTP_400_BAD_REQUEST
                                     )
+
                                 break
 
-                    # ── Extract rows using text lines ─────────────────────
-                    # Each data line looks like:
-                    # 2025/02/04 221.000 0104900 CASH SALE GENARAL 0.000 1.000
-                    # parts[0]=date  parts[1]=balance  parts[2]=bill_no
-                    # parts[3]=CASH  parts[4]=SALE  parts[-1]=OUT qty
+                    # -------------------------------------------------
+                    # Extract Sales Rows
+                    # -------------------------------------------------
+
                     for line in text.split('\n'):
+
                         parts = line.strip().split()
+
                         if len(parts) < 5:
                             continue
 
-                        # First part must be a date YYYY/MM/DD
                         date_val = parts[0]
-                        try:
-                            sale_date = datetime.strptime(
-                                date_val, '%Y/%m/%d'
-                            ).date()
-                        except ValueError:
-                            continue  # not a data row — skip silently
 
-                        # Must be a CASH SALE row
+                        try:
+
+                            sale_date = datetime.strptime(
+                                date_val,
+                                '%Y/%m/%d'
+                            ).date()
+
+                        except ValueError:
+                            continue
+
                         if 'CASH' not in line or 'SALE' not in line:
                             continue
+                        # parts[0]=date, parts[1]=actual bill number, parts[2]='CASH' (literal word)
+                        # Using parts[2] here previously caused every row's "bill_no" to be the string
+                        # "CASH", making all same-day sales look like duplicate bills and get skipped.
+                        bill_no = parts[1]
 
-                        # Bill number is 3rd part (index 2)
-                        bill_no = parts[2]
+                       
 
-                        # Skip if we already processed this exact bill
-                        bill_key = (sale_date, bill_no)
-                        if bill_key in seen_bills:
-                            continue
-                        seen_bills.add(bill_key)
-
-                        # Collect all numeric values from this line
                         numeric_parts = []
+
                         for p in parts:
+
                             try:
                                 numeric_parts.append(float(p))
+
                             except ValueError:
                                 continue
 
-                        # Need at least 2 numbers
                         if len(numeric_parts) < 2:
                             continue
 
-                        # Last number = OUT quantity sold
-                        qty_out = numeric_parts[-1]
+                        # Row format: ... IN OUT Balance  (3 trailing numbers)
+                        # OUT is second-to-last; last is the cumulative running Balance, not a transaction qty
+                        qty_out = numeric_parts[-2] if len(numeric_parts) >= 2 else numeric_parts[-1]
 
                         if qty_out > 0:
                             daily_totals[sale_date] += qty_out
 
-            # ── Product not found in PDF at all ──────────────────────────
+            # ---------------------------------------------------------
+            # Product Not Found
+            # ---------------------------------------------------------
+
             if product is None:
+
                 upload_log.status = 'FAILED'
+
                 upload_log.error_message = (
-                    'Could not find "Item No :" line in PDF. '
-                    'Check that this is a valid easyAcc item ledger PDF.'
+                    'Could not extract product name from PDF'
                 )
+
                 upload_log.save()
+
                 return Response(
-                    {'error': 'Could not extract product name from PDF'},
+                    {
+                        'error': (
+                            'Could not extract product name from PDF'
+                        )
+                    },
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # ── Insert one Item_Sales_Record per date ─────────────────────
+            # ---------------------------------------------------------
+            # Insert Records
+            # ---------------------------------------------------------
+
             inserted = 0
-            skipped  = 0
-            unit_price = float(product.unit_price)
+            skipped = 0
+
+            unit_price = float(product.unit_price or 0)
 
             for sale_date, total_qty in sorted(daily_totals.items()):
+
                 qty = int(total_qty)
+
                 if qty <= 0:
                     continue
 
-                # Duplicate guard — skip if record already exists
                 already_exists = ItemSalesRecord.objects.filter(
                     product=product,
                     sale_date=sale_date
                 ).exists()
 
                 if already_exists:
+
                     skipped += 1
+
                     errors.append(
-                        f'{sale_date}: Record already exists for '
-                        f'"{product.product_name}" — skipped'
+                        f'{sale_date}: '
+                        f'Record already exists'
                     )
+
                     continue
 
                 ItemSalesRecord.objects.create(
@@ -227,66 +311,82 @@ class ItemLedgerPDFUploadView(APIView):
                     total_amount=round(qty * unit_price, 2),
                     upload=upload_log
                 )
+
                 inserted += 1
 
-            # ── Update system config sync date ────────────────────────────
+            # ---------------------------------------------------------
+            # Update Sync Date
+            # ---------------------------------------------------------
+
             SystemConfig.objects.update_or_create(
                 key='last_item_ledger_sync',
                 defaults={
                     'value': str(timezone.now().date()),
-                    'description': 'Last item ledger PDF sync date'
+                    'description': (
+                        'Last item ledger PDF sync date'
+                    )
                 }
             )
 
-            # ── Finalise log ──────────────────────────────────────────────
+            # ---------------------------------------------------------
+            # Final Upload Status
+            # ---------------------------------------------------------
+
             if inserted == 0 and skipped == 0:
                 upload_log.status = 'FAILED'
+
             elif errors:
                 upload_log.status = 'PARTIAL'
+
             else:
                 upload_log.status = 'SUCCESS'
 
             upload_log.error_message = '\n'.join(errors)[:2000]
+
             upload_log.save()
 
             return Response({
-                'message'        : 'Item Ledger PDF upload complete',
-                'product'        : product.product_name,
-                'dates_inserted' : inserted,
-                'dates_skipped'  : skipped,
-                'upload_log_id'  : upload_log.id,
-                'errors'         : errors[:10]
+                'message': 'Item Ledger PDF upload complete',
+                'product': product.product_name,
+                'dates_inserted': inserted,
+                'dates_skipped': skipped,
+                'upload_log_id': upload_log.id,
+                'errors': errors[:10]
             }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+
             upload_log.status = 'FAILED'
+
             upload_log.error_message = str(e)[:2000]
+
             upload_log.save()
+
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
 
-# ─────────────────────────────────────────────────────────────────
-# Pipeline 2 — Daily Bills PDF Upload
+# =========================================================
+# DAILY BILLS PDF UPLOAD
 # POST /api/sales/upload/daily-bills/
-# ─────────────────────────────────────────────────────────────────
+# =========================================================
+
 class DailyBillsUploadView(APIView):
-    """
-    POST /api/sales/upload/daily-bills/
-    Upload Daily Bill Summary PDF.
-    NOTE: Amount column = discount. Final Amount = actual revenue.
-    """
+
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
+
         file = request.FILES.get('file')
+
         if not file:
             return Response(
                 {'error': 'No file uploaded'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
         if not file.name.endswith('.pdf'):
             return Response(
                 {'error': 'File must be a PDF'},
@@ -301,108 +401,173 @@ class DailyBillsUploadView(APIView):
         )
 
         try:
+
             import pdfplumber
             import io
+
             pdf_bytes = file.read()
-            inserted    = 0
-            skipped     = 0
+
+            inserted = 0
+            skipped = 0
+
             bill_errors = []
 
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+
                 for page in pdf.pages:
+
                     tables = page.extract_tables()
+
                     for table in tables:
-                        for row in table[1:]:  # skip header row
+
+                        for row in table[1:]:
+
                             if not row or len(row) < 4:
                                 continue
+
                             try:
+
                                 bill_data = {
-                                    'Date'        : row[0],
-                                    'Bill No'     : row[1],
-                                    'Customer'    : row[2],
-                                    'Amount'      : row[3],
-                                    'Final Amount': row[4] if len(row) > 4 else 0,
+                                    'Date': row[0],
+                                    'Bill No': row[1],
+                                    'Customer': row[2],
+                                    'Amount': row[3],
+                                    'Final Amount': (
+                                        row[4] if len(row) > 4 else 0
+                                    ),
                                 }
 
-                                row_errors = validate_bill_row(bill_data)
+                                row_errors = validate_bill_row(
+                                    bill_data
+                                )
+
                                 if row_errors:
+
                                     bill_errors.append(
-                                        f"Bill {bill_data['Bill No']}: {row_errors}"
+                                        f"Bill "
+                                        f"{bill_data['Bill No']}: "
+                                        f"{row_errors}"
                                     )
+
                                     skipped += 1
+
                                     continue
 
                                 DailyBillSummary.objects.create(
                                     sale_date=bill_data['Date'],
-                                    bill_no=str(bill_data['Bill No']),
-                                    customer_name=str(bill_data['Customer'] or ''),
-                                    discount=float(bill_data['Amount'] or 0),
-                                    final_amount=float(bill_data['Final Amount'] or 0),
+                                    bill_no=str(
+                                        bill_data['Bill No']
+                                    ),
+                                    customer_name=str(
+                                        bill_data['Customer'] or ''
+                                    ),
+                                    discount=float(
+                                        bill_data['Amount'] or 0
+                                    ),
+                                    final_amount=float(
+                                        bill_data['Final Amount'] or 0
+                                    ),
                                     gross_amount=(
-                                        float(bill_data['Amount'] or 0) +
-                                        float(bill_data['Final Amount'] or 0)
+                                        float(
+                                            bill_data['Amount'] or 0
+                                        )
+                                        +
+                                        float(
+                                            bill_data['Final Amount'] or 0
+                                        )
                                     ),
                                     upload=upload_log,
-                                    is_flagged=len(row_errors) > 0
+                                    is_flagged=False
                                 )
+
                                 inserted += 1
 
                             except Exception as e:
-                                skipped += 1
-                                bill_errors.append(f'Row parse error: {str(e)}')
 
-            upload_log.status = 'SUCCESS' if skipped == 0 else 'PARTIAL'
-            upload_log.error_message = '\n'.join(bill_errors)[:2000]
+                                skipped += 1
+
+                                bill_errors.append(
+                                    f'Row parse error: {str(e)}'
+                                )
+
+            upload_log.status = (
+                'SUCCESS'
+                if skipped == 0
+                else 'PARTIAL'
+            )
+
+            upload_log.error_message = (
+                '\n'.join(bill_errors)[:2000]
+            )
+
             upload_log.save()
 
             return Response({
-                'message'       : 'Daily bills upload complete',
-                'inserted'      : inserted,
-                'skipped'       : skipped,
-                'upload_log_id' : upload_log.id,
-                'errors'        : bill_errors[:10]
+                'message': 'Daily bills upload complete',
+                'inserted': inserted,
+                'skipped': skipped,
+                'upload_log_id': upload_log.id,
+                'errors': bill_errors[:10]
             }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+
             upload_log.status = 'FAILED'
+
             upload_log.error_message = str(e)[:2000]
+
             upload_log.save()
+
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
 
-# ─────────────────────────────────────────────────────────────────
-# Upload Log
-# ─────────────────────────────────────────────────────────────────
+# =========================================================
+# UPLOAD LOG APIs
+# =========================================================
+
 class UploadLogListView(generics.ListAPIView):
-    """GET /api/sales/upload-log/"""
-    queryset = UploadLog.objects.all().order_by('-upload_date')
+
+    queryset = UploadLog.objects.all().order_by(
+        '-upload_date'
+    )
+
     serializer_class = UploadLogSerializer
 
 
 class UploadLogDetailView(generics.RetrieveAPIView):
-    """GET /api/sales/upload-log/{id}/"""
+
     queryset = UploadLog.objects.all()
+
     serializer_class = UploadLogSerializer
 
 
-# ─────────────────────────────────────────────────────────────────
-# Item Sales Records
-# ─────────────────────────────────────────────────────────────────
+# =========================================================
+# ITEM SALES APIs
+# =========================================================
+
 class ItemSalesListView(generics.ListAPIView):
-    """GET /api/sales/item-sales/"""
+
     serializer_class = ItemSalesSerializer
 
     def get_queryset(self):
-        queryset = ItemSalesRecord.objects.all().order_by('-sale_date')
-        product = self.request.query_params.get('product')
+
+        queryset = ItemSalesRecord.objects.all().order_by(
+            "-sale_date"
+        )
+
+        product = self.request.query_params.get("product")
+
         if product:
-            queryset = queryset.filter(product__id=product)
+            queryset = queryset.filter(
+                product__id=product
+            )
+
         return queryset
     
-
+    
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def sales_summary(request):
@@ -628,3 +793,625 @@ def expiry_summary(request):
         'batches_7_to_14_days': [_serialize_batch(b) for b in batches_7_14.order_by('expiry_date')],
         'batches_14_to_30_days': [_serialize_batch(b) for b in batches_14_30.order_by('expiry_date')],
     })
+
+class DailyBillsListView(generics.ListAPIView):
+    """
+    GET /api/sales/daily-bills/
+
+    Get Daily_Bill_Summary data.
+
+    Optional query params:
+        ?date_from=YYYY-MM-DD
+        ?date_to=YYYY-MM-DD
+    """
+
+    serializer_class = DailyBillSerializer
+
+    def get_queryset(self):
+
+        queryset = DailyBillSummary.objects.all().order_by(
+            "-sale_date"
+        )
+
+        date_from = self.request.query_params.get("date_from")
+        date_to = self.request.query_params.get("date_to")
+
+        if date_from:
+            queryset = queryset.filter(
+                sale_date__gte=date_from
+            )
+
+        if date_to:
+            queryset = queryset.filter(
+                sale_date__lte=date_to
+            )
+
+        return queryset
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def profit_summary(request):
+    """
+    GET /api/analytics/profit-summary/
+
+    Single summary object for the dashboard profit KPI card.
+    Default: last 30 days.
+
+    Response:
+        total_revenue           float
+        total_cost              float  (WAC-based)
+        total_profit            float
+        overall_margin_percent  float
+        period                  {date_from, date_to}
+    """
+    raw_to   = request.query_params.get('date_to')
+    raw_from = request.query_params.get('date_from')
+
+    try:
+        date_to = datetime.strptime(raw_to, '%Y-%m-%d').date() if raw_to else date.today()
+    except ValueError:
+        return Response({'error': 'Invalid date_to format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from = datetime.strptime(raw_from, '%Y-%m-%d').date() if raw_from else date_to - timedelta(days=30)
+    except ValueError:
+        return Response({'error': 'Invalid date_from format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if date_from > date_to:
+        return Response({'error': 'date_from must be before date_to.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    records = ItemSalesRecord.objects.filter(
+        sale_date__gte=date_from,
+        sale_date__lte=date_to,
+    )
+
+    store_totals = records.aggregate(
+        total_revenue=Sum('total_amount'),
+    )
+    total_revenue = float(store_totals['total_revenue'] or 0)
+
+    # WAC cost calculation
+    per_product = records.values('product_id').annotate(
+        units=Sum('quantity_sold')
+    )
+    product_ids  = [r['product_id'] for r in per_product]
+    products_map = {
+        p.id: p for p in Product.objects.filter(id__in=product_ids)
+    }
+
+    total_cost = 0.0
+    for row in per_product:
+        product = products_map.get(row['product_id'])
+        if not product:
+            continue
+        wac = float(product.avg_cost_price or product.cost_price or 0)
+        total_cost += row['units'] * wac
+
+    total_profit = total_revenue - total_cost
+    margin_pct   = round((total_profit / total_revenue * 100), 2) if total_revenue > 0 else 0.0
+
+    return Response({
+        'total_revenue':          round(total_revenue, 2),
+        'total_cost':             round(total_cost, 2),
+        'total_profit':           round(total_profit, 2),
+        'overall_margin_percent': margin_pct,
+        'period': {
+            'date_from': str(date_from),
+            'date_to':   str(date_to),
+        }
+    })
+
+
+# F16 — Report Export (API Design Doc v3.1 §21.1)
+#
+# GET /api/reports/sales/?format=excel|pdf&date_from=&date_to=
+# GET /api/reports/profit/?format=excel|pdf&date_from=&date_to=
+# GET /api/reports/inventory/?format=excel|pdf
+#
+# Excel via openpyxl (already in requirements.txt). PDF via reportlab
+# (pure Python — no system-level deps like weasyprint needs, safer
+# across everyone's machine). ⚠ reportlab is NOT yet in
+# requirements.txt — add `reportlab` and run
+# `pip install reportlab` before testing this.
+#
+# Deliberately NOT reusing sales_summary()/profit_summary() directly —
+# those are dashboard KPI-card endpoints with an agreed response shape
+# (totals + top 5 only, per the Week 4-5 plan with Lavanya). A report
+# export needs every product, not top 5, so the per-product rows are
+# rebuilt here rather than risk changing that already-agreed contract.
+#
+# Export events are logged to Upload_Log with upload_type='EXPORT',
+# per the note in API Design Doc v3.1 §21.
+# =========================================================
+
+def _report_date_range(request):
+    """Same default as sales_summary()/profit_summary(): last 30 days."""
+    to_str = request.query_params.get('date_to')
+    from_str = request.query_params.get('date_from')
+
+    date_to = date.fromisoformat(to_str) if to_str else date.today()
+    date_from = date.fromisoformat(from_str) if from_str else date_to - timedelta(days=30)
+
+    if date_from > date_to:
+        raise ValueError('date_from must be on or before date_to.')
+    return date_from, date_to
+
+
+def _sales_and_profit_rows(date_from, date_to):
+    """
+    Per-product breakdown for the date range — ALL products, not top 5.
+    Same WAC method as sales_summary()/profit_summary()
+    (Product.avg_cost_price, falls back to cost_price).
+    """
+    records = ItemSalesRecord.objects.filter(
+        sale_date__gte=date_from, sale_date__lte=date_to,
+    )
+
+    per_product = (
+        records
+        .values('product_id')
+        .annotate(units=Sum('quantity_sold'), revenue=Sum('total_amount'))
+        .order_by('-revenue')
+    )
+
+    product_ids = [row['product_id'] for row in per_product]
+    products_map = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
+
+    rows = []
+    for row in per_product:
+        product = products_map.get(row['product_id'])
+        if not product:
+            continue  # orphaned sales record — same guard as sales_summary()
+
+        units = row['units'] or 0
+        revenue = float(row['revenue'] or 0)
+        wac = float(product.avg_cost_price or product.cost_price or 0)
+        cost = units * wac
+        profit = revenue - cost
+        margin_pct = round(profit / revenue * 100, 1) if revenue > 0 else 0.0
+
+        rows.append({
+            'product_name': product.product_name,
+            'sku_code': product.sku_code or '',
+            'units_sold': units,
+            'revenue': round(revenue, 2),
+            'cost': round(cost, 2),
+            'profit': round(profit, 2),
+            'margin_pct': margin_pct,
+        })
+    return rows
+
+
+def _inventory_rows():
+    """Same current-stock logic as StockSnapshotView (inventory app)."""
+    rows = []
+    for product in Product.objects.filter(is_active=True):
+        current_stock = PurchaseBatch.objects.filter(
+            product=product, status='ACTIVE'
+        ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
+
+        reorder = product.reorder_threshold or 0
+        if current_stock == 0:
+            stock_status = 'OUT OF STOCK'
+        elif current_stock <= reorder:
+            stock_status = 'LOW STOCK'
+        else:
+            stock_status = 'AVAILABLE'
+
+        rows.append({
+            'product_name': product.product_name,
+            'sku_code': product.sku_code or '',
+            'current_stock': current_stock,
+            'reorder_threshold': reorder,
+            'stock_status': stock_status,
+            'avg_cost_price': str(product.avg_cost_price or 0),
+        })
+    return rows
+
+
+def _log_export(request, filename):
+    UploadLog.objects.create(
+        file_name=filename,
+        upload_type='EXPORT',
+        status='SUCCESS',
+        uploaded_by=request.user.id if request.user and request.user.is_authenticated else None,
+    )
+
+
+def _excel_response(filename, headers, rows):
+    wb = Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for row in rows:
+        ws.append(list(row))
+
+    for i, header in enumerate(headers, start=1):
+        col_letter = ws.cell(row=1, column=i).column_letter
+        widths = [len(str(header))] + [len(str(r[i - 1])) for r in rows] if rows else [len(str(header))]
+        ws.column_dimensions[col_letter].width = min(max(widths) + 2, 40)
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    response = HttpResponse(
+        buffer.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _pdf_response(filename, title, headers, rows):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = [Paragraph(title, styles['Title']), Spacer(1, 12)]
+
+    if rows:
+        table_data = [headers] + [list(row) for row in rows]
+    else:
+        table_data = [headers, ['No data for this period'] + [''] * (len(headers) - 1)]
+
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f4f4f4')]),
+    ]))
+    elements.append(table)
+    doc.build(elements)
+    buffer.seek(0)
+
+    response = HttpResponse(buffer.read(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def sales_report_export(request):
+    """GET /api/reports/sales/?format=excel|pdf&date_from=&date_to="""
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from, date_to = _report_date_range(request)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _sales_and_profit_rows(date_from, date_to)
+    headers = ['Product Name', 'SKU', 'Units Sold', 'Revenue']
+    rows = [(r['product_name'], r['sku_code'], r['units_sold'], r['revenue']) for r in data]
+
+    filename_base = f'sales_report_{date_from}_to_{date_to}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        title = f'Sales Report ({date_from} to {date_to})'
+        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def profit_report_export(request):
+    """GET /api/reports/profit/?format=excel|pdf&date_from=&date_to="""
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from, date_to = _report_date_range(request)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _sales_and_profit_rows(date_from, date_to)
+    headers = ['Product Name', 'SKU', 'Units Sold', 'Revenue', 'Cost', 'Profit', 'Margin %']
+    rows = [
+        (r['product_name'], r['sku_code'], r['units_sold'], r['revenue'], r['cost'], r['profit'], r['margin_pct'])
+        for r in data
+    ]
+
+    filename_base = f'profit_report_{date_from}_to_{date_to}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        title = f'Profit Report ({date_from} to {date_to})'
+        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def inventory_report_export(request):
+    """GET /api/reports/inventory/?format=excel|pdf"""
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = _inventory_rows()
+    headers = ['Product Name', 'SKU', 'Current Stock', 'Reorder Threshold', 'Status', 'Avg Cost Price']
+    rows = [
+        (r['product_name'], r['sku_code'], r['current_stock'], r['reorder_threshold'], r['stock_status'], r['avg_cost_price'])
+        for r in data
+    ]
+
+    today = date.today()
+    filename_base = f'inventory_report_{today}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Inventory Report ({today})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/health-scores/?format=excel|pdf&status=
+#
+# No date range — health scores are calculated on-demand (not
+# date-windowed), same as GET /api/health-scores/. Same status
+# filter and same ordering (-calculated_date, overall_score) as
+# HealthScoreListView, for consistency with that existing endpoint.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def health_score_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Latest-per-product dedup — same Subquery pattern as HealthScoreListView,
+    # kept in sync after Nipuni's fix (PR #11) so this export doesn't show
+    # the pre-fix 9x-inflated duplicate rows.
+    latest_ids = (
+        InventoryHealthScore.objects
+        .filter(product_id=OuterRef('product_id'))
+        .order_by('-calculated_date', '-id')
+        .values('id')[:1]
+    )
+    queryset = InventoryHealthScore.objects.filter(
+        id__in=Subquery(latest_ids)
+    ).select_related('product').order_by('overall_score')
+
+    status_filter = request.query_params.get('status')
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+
+    headers = [
+        'Product Name', 'SKU', 'Velocity', 'Margin', 'Expiry Risk',
+        'Stock Duration', 'Rating', 'Overall Score', 'Status',
+        'Recommended Action', 'Calculated Date',
+    ]
+    rows = [
+        (
+            r.product.product_name, r.product.sku_code or '',
+            str(r.velocity_score), str(r.margin_score), str(r.expiry_risk_score),
+            str(r.stock_duration_score),
+            str(r.rating_score) if r.rating_score is not None else 'N/A',
+            str(r.overall_score), r.status, r.recommended_action or '',
+            str(r.calculated_date),
+        )
+        for r in queryset
+    ]
+
+    filename_base = f'health_score_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Health Score Report ({date.today()})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/supplier/?format=excel|pdf
+#
+# Reuses _compute_scorecard() from suppliers app directly — same
+# logic already tested via GET /api/suppliers/scorecard-summary/,
+# not reimplemented here. Missing components (no data yet for that
+# supplier) show as 'N/A', same convention as the Health Score export.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def supplier_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    scores = [_compute_scorecard(s) for s in Supplier.objects.all()]
+    scores.sort(key=lambda s: (s['overall_score'] is None, -(s['overall_score'] or 0)))
+
+    headers = [
+        'Supplier Name', 'Delivery Accuracy', 'Price Stability',
+        'Return Acceptance Rate', 'Avg Product Quality', 'Overall Score',
+    ]
+    rows = []
+    for s in scores:
+        c = s['components']
+        rows.append((
+            s['supplier_name'],
+            c.get('delivery_accuracy', 'N/A'),
+            c.get('price_stability', 'N/A'),
+            c.get('return_acceptance_rate', 'N/A'),
+            c.get('avg_product_quality', 'N/A'),
+            s['overall_score'] if s['overall_score'] is not None else 'N/A',
+        ))
+
+    filename_base = f'supplier_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Supplier Performance Report ({date.today()})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/lifecycle/?format=excel|pdf&status=
+#
+# Reuses get_latest_lifecycle() from inventory.services.lifecycle
+# directly — same function backing GET /api/lifecycle/ and
+# GET /api/lifecycle/declining/, not reimplemented here. Already
+# de-duplicated to one record per product (Nipuni's Subquery fix).
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def lifecycle_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    status_filter = request.query_params.get('status')
+    data = get_latest_lifecycle(status_filter=status_filter)
+
+    headers = ['Product Name', 'Status', 'Sales Velocity', 'Recommendation', 'Calculated Date']
+    rows = [
+        (r['product_name'], r['status'], r['sales_velocity'], r['recommendation'], r['calculated_date'])
+        for r in data
+    ]
+
+    filename_base = f'lifecycle_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Product Lifecycle Report ({date.today()})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/loss/?format=excel|pdf&date_from=&date_to=
+#
+# Lists individual loss records for the date range (same filter fields
+# as LossRecordView/LossSummaryView in inventory app). This is the
+# detailed row-level export — aggregate totals (gross_expiry_loss,
+# recovered_amount, net_loss) already exist separately via
+# GET /api/losses/summary/, not duplicated here.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def loss_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        date_from, date_to = _report_date_range(request)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    queryset = LossRecord.objects.select_related('product').filter(
+        loss_date__gte=date_from, loss_date__lte=date_to,
+    ).order_by('-loss_date')
+
+    headers = ['Product Name', 'SKU', 'Loss Type', 'Quantity', 'Loss Value', 'Loss Date', 'Notes']
+    rows = [
+        (
+            r.product.product_name, r.product.sku_code or '',
+            r.loss_type, r.loss_quantity, str(r.loss_value),
+            str(r.loss_date), r.notes or '',
+        )
+        for r in queryset
+    ]
+
+    filename_base = f'loss_report_{date_from}_to_{date_to}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        title = f'Loss Report ({date_from} to {date_to})'
+        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/reports/reorder/?format=excel|pdf&urgency=&status=
+#
+# Deliberately does its OWN "latest per product" dedup here (same
+# Subquery pattern as lifecycle_analytics()), independent of whatever
+# write-side/read-side fix Nipuni applies to ReorderCalculateView /
+# ReorderRecommendationListView. This way the export is correct
+# regardless of which fix lands — if the write side gets fixed later,
+# deduping an already-clean table is harmless; if it doesn't, this
+# export still shows accurate current data.
+#
+# "Latest per product" here means the most recent recommendation
+# regardless of status — so an already-actioned (ORDERED/IGNORED)
+# recommendation correctly stays visible until a newer calculation
+# run replaces it, rather than showing a stale duplicate.
+# ─────────────────────────────────────────────────────────────────
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def reorder_report_export(request):
+    fmt = request.query_params.get('format', 'excel').lower()
+    if fmt not in ('excel', 'pdf'):
+        return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
+
+    latest_ids = (
+        ReorderRecommendation.objects
+        .filter(product_id=OuterRef('product_id'))
+        .order_by('-calculation_date', '-id')
+        .values('id')[:1]
+    )
+    queryset = ReorderRecommendation.objects.filter(
+        id__in=Subquery(latest_ids)
+    ).select_related('product', 'supplier').order_by('product__product_name')
+
+    urgency_filter = request.query_params.get('urgency')
+    status_filter = request.query_params.get('status')
+    if urgency_filter:
+        queryset = queryset.filter(urgency=urgency_filter)
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+
+    headers = [
+        'Product Name', 'SKU', 'Supplier', 'Current Stock', 'Avg Daily Sales',
+        'Days of Stock', 'Suggested Qty', 'Estimated Cost', 'Urgency',
+        'Status', 'Calculation Date',
+    ]
+    rows = [
+        (
+            r.product.product_name, r.product.sku_code or '',
+            r.supplier.supplier_name if r.supplier else 'N/A',
+            r.current_stock, str(r.avg_daily_sales), r.days_of_stock,
+            r.suggested_quantity, str(r.estimated_cost), r.urgency,
+            r.status, str(r.calculation_date),
+        )
+        for r in queryset
+    ]
+
+    filename_base = f'reorder_report_{date.today()}'
+    if fmt == 'excel':
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        logged_name = f'{filename_base}.xlsx'
+    else:
+        response = _pdf_response(f'{filename_base}.pdf', f'Reorder Recommendations Report ({date.today()})', headers, rows)
+        logged_name = f'{filename_base}.pdf'
+
+    _log_export(request, logged_name)
+    return response
