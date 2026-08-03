@@ -82,3 +82,31 @@ class SystemConfig(models.Model):
 
     def __str__(self):
         return f"{self.key} = {self.value}"
+
+# ─────────────────────────────────────────────────────────────────
+# F15 — Account lockout (API Design Doc v3.1 §4.1)
+#
+# Deliberately NOT built on AppUser — that table is orphaned, nothing
+# in the real login flow (TokenObtainPairView, staff JWT) reads from
+# or writes to it. failed_login_count/locked_until living there would
+# never actually enforce anything. This ties to the REAL auth user
+# (settings.AUTH_USER_MODEL) that /api/auth/login/ actually checks.
+#
+# get_or_create() is used everywhere this is read, not a signal —
+# so existing accounts (including the superuser) get a row lazily on
+# their next login attempt, with safe defaults. No migration-time
+# risk to any existing account.
+# ─────────────────────────────────────────────────────────────────
+class UserLoginSecurity(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='login_security'
+    )
+    failed_login_count = models.IntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'user_login_security'
+
+    def __str__(self):
+        return f"{self.user.username} security"
