@@ -2,10 +2,16 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth.models import User, Group
+from django.utils import timezone
+from datetime import timedelta
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework.exceptions import AuthenticationFailed, APIException
 from .audit import log_action
 from .models import SystemConfig
 from .models import AuditLog
+from .models import UserLoginSecurity
 
 
 # ============================================================
@@ -370,3 +376,100 @@ class AuditLogDetailView(APIView):
             'ip_address': log.ip_address,
             'timestamp': log.timestamp,
         })
+
+
+# ─────────────────────────────────────────────────────────────────
+# F15 — Account lockout (API Design Doc v3.1 §4.1)
+#
+# 3 failed attempts → locked for 15 minutes, HTTP 423 with locked_until.
+# Ties to UserLoginSecurity (real auth User), not the orphaned AppUser
+# table — see model comment in users/models.py for why.
+#
+# NOTE: TokenObtainSerializer.validate() raises rest_framework's own
+# AuthenticationFailed (not rest_framework_simplejwt's own subclass of
+# it) — catching the wrong one here silently breaks the whole feature,
+# since the except clause just never matches. Confirmed by testing the
+# actual 3-failed-attempts flow, not just reading the code.
+# ─────────────────────────────────────────────────────────────────
+
+class AccountLocked(APIException):
+    status_code = 423
+    default_detail = 'Account locked due to too many failed login attempts.'
+    default_code = 'account_locked'
+
+
+class LockoutTokenObtainPairSerializer(TokenObtainPairSerializer):
+    LOCKOUT_MAX_ATTEMPTS = 3
+    LOCKOUT_DURATION_MINUTES = 15
+
+    def validate(self, attrs):
+        username = attrs.get(self.username_field)
+        try:
+            user = User.objects.get(**{self.username_field: username})
+        except User.DoesNotExist:
+            user = None
+
+        if user:
+            security, _ = UserLoginSecurity.objects.get_or_create(user=user)
+            if security.locked_until and security.locked_until > timezone.now():
+                raise AccountLocked(detail={
+                    'error': 'Account locked due to too many failed login attempts.',
+                    'locked_until': security.locked_until,
+                })
+
+        try:
+            data = super().validate(attrs)
+        except AuthenticationFailed:
+            if user:
+                security, _ = UserLoginSecurity.objects.get_or_create(user=user)
+                security.failed_login_count += 1
+                if security.failed_login_count >= self.LOCKOUT_MAX_ATTEMPTS:
+                    security.locked_until = timezone.now() + timedelta(minutes=self.LOCKOUT_DURATION_MINUTES)
+                security.save()
+            raise
+
+        # Successful login — reset the counter
+        if user:
+            security, _ = UserLoginSecurity.objects.get_or_create(user=user)
+            security.failed_login_count = 0
+            security.locked_until = None
+            security.save()
+
+        return data
+
+
+class LockoutTokenObtainPairView(TokenObtainPairView):
+    serializer_class = LockoutTokenObtainPairSerializer
+
+
+class UnlockUserView(APIView):
+    """
+    POST /api/users/<id>/unlock/  — Admin only.
+    Resets failed_login_count to 0 and clears locked_until.
+    """
+    def post(self, request, pk):
+        if not (request.user.is_superuser or request.user.groups.filter(name='ADMIN').exists()):
+            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            target = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        security, _ = UserLoginSecurity.objects.get_or_create(user=target)
+        old_data = {
+            'failed_login_count': security.failed_login_count,
+            'locked_until': str(security.locked_until) if security.locked_until else None,
+        }
+        security.failed_login_count = 0
+        security.locked_until = None
+        security.save()
+
+        log_action(
+            user=request.user, action='UNLOCK', table_name='user_login_security',
+            record_id=target.id, old_value=old_data,
+            new_value={'failed_login_count': 0, 'locked_until': None},
+            request=request,
+        )
+
+        return Response({'message': f'Account for {target.username} unlocked successfully.'})
