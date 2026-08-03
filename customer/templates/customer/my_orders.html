@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Orders | SmartDeals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #333; }
+
+        nav {
+            background: #1a73e8; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        nav .nav-links a { color: white; text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+        nav .nav-links a:hover { text-decoration: underline; }
+        nav .logout-btn {
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            padding: 7px 16px; border-radius: 20px; margin-left: 20px;
+            cursor: pointer; font-size: 0.9rem;
+        }
+
+        .demo-banner {
+            background: #fff3cd; border-bottom: 1px solid #ffc107;
+            color: #856404; padding: 8px 24px;
+            font-size: 0.88rem; text-align: center;
+        }
+
+        .page { padding: 24px; }
+
+        .page-title {
+            font-size: 1.3rem; font-weight: 700;
+            margin-bottom: 20px; color: #222;
+        }
+
+        .order-card {
+            background: white; border-radius: 12px;
+            padding: 18px 20px; margin-bottom: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            display: flex; justify-content: space-between;
+            align-items: flex-start; gap: 16px;
+        }
+
+        .order-info .reference {
+            font-size: 0.82rem; color: #888; margin-bottom: 4px;
+        }
+        .order-info .product-name {
+            font-size: 1rem; font-weight: 700; color: #222; margin-bottom: 6px;
+        }
+        .order-info .details {
+            font-size: 0.85rem; color: #666; display: flex; gap: 14px; flex-wrap: wrap;
+        }
+        .order-info .details span { display: flex; align-items: center; gap: 4px; }
+
+        .order-right { text-align: right; flex-shrink: 0; }
+        .order-right .total {
+            font-size: 1.1rem; font-weight: 700; color: #1a73e8; margin-bottom: 8px;
+        }
+
+        .status-badge {
+            display: inline-block; padding: 4px 12px;
+            border-radius: 12px; font-size: 0.78rem; font-weight: 600;
+        }
+        .status-PENDING   { background: #f0f0f0; color: #666; }
+        .status-CONFIRMED { background: #e8f0fe; color: #1a73e8; }
+        .status-READY     { background: #e6f4ea; color: #1e7e34; }
+        .status-COMPLETED { background: #e8eaed; color: #444; }
+        .status-CANCELLED { background: #fce8e6; color: #c5221f; }
+
+        @media (max-width: 480px) {
+            .order-card { flex-direction: column; }
+            .order-right { text-align: left; }
+            nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <div class="nav-links">
+        <a href="/customer/products/">Products</a>
+        <a href="/customer/chatbot/">Chat</a>
+        <a href="/customer/my-orders/">My Orders</a>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+</nav>
+
+
+<div class="page">
+    <div class="page-title">📋 My Orders</div>
+    <div id="ordersList"></div>
+</div>
+
+<script>
+    const slotLabel = {
+        MORNING:   '🌅 Morning',
+        AFTERNOON: '☀️ Afternoon',
+        EVENING:   '🌙 Evening'
+    };
+
+    function renderOrders() {
+        const list = document.getElementById('ordersList');
+
+        // Read orders from sessionStorage
+        const savedOrders = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+
+        console.log('Orders in storage:', savedOrders); // check in F12
+
+        if (savedOrders.length === 0) {
+            list.innerHTML = `
+                <div style="text-align:center; padding:60px; color:#888;">
+                    <div style="font-size:3rem; margin-bottom:12px;">📋</div>
+                    <p style="font-size:1rem; margin-bottom:8px;">No orders yet.</p>
+                    <p style="font-size:0.88rem;">
+                        Go to <a href="/customer/products/"
+                        style="color:#1a73e8;">Products</a> and place your first order!
+                    </p>
+                </div>`;
+            return;
+        }
+
+        list.innerHTML = savedOrders.map(o => `
+            <div class="order-card">
+                <div class="order-info">
+                    <div class="reference">📄 ${o.ref}</div>
+                    <div class="product-name">${o.product}</div>
+                    <div class="details">
+                        <span>📦 Qty: ${o.qty}</span>
+                        <span>📅 ${o.date}</span>
+                        <span>${slotLabel[o.slot] || o.slot}</span>
+                    </div>
+                </div>
+                <div class="order-right">
+                    <div class="total">${o.total}</div>
+                    <span class="status-badge status-${o.status}">${o.status}</span>
+                </div>
+            </div>`).join('');
+    }
+
+    function logout() {
+        // ── Keep orders before clearing session ──
+        const orders = sessionStorage.getItem('myOrders');
+        sessionStorage.clear();
+        if (orders) sessionStorage.setItem('myOrders', orders);
+        window.location.href = '/customer/login/';
+    }
+
+    renderOrders();
+</script>
+
+</body>
+</html>

@@ -433,9 +433,10 @@
     }
 
     function orderProduct(id, name) {
-        alert(`Order form coming soon!\nProduct: ${name}\nID: ${id}`);
+    window.location.href =
+        `/customer/order/?product=${id}&name=${encodeURIComponent(name)}`;
     }
-
+    
     // Load on start
     renderProducts(demoProducts);
 </script>

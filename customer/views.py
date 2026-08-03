@@ -20,3 +20,6 @@ def register_page(request):
 
 def order_form(request):
     return render(request, 'customer/order_form.html')
+
+def my_orders(request):
+    return render(request, 'customer/my_orders.html')
