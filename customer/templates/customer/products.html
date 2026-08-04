@@ -428,10 +428,11 @@
     });
 
     function logout() {
+    const orders = sessionStorage.getItem('myOrders');
     sessionStorage.clear();
+    if (orders) sessionStorage.setItem('myOrders', orders);
     window.location.href = '/customer/login/';
-    }
-
+}
     function orderProduct(id, name) {
     window.location.href =
         `/customer/order/?product=${id}&name=${encodeURIComponent(name)}`;

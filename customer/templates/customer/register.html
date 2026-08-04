@@ -52,16 +52,13 @@
     <div class="success-msg" id="successMsg"></div>
 
     <label>Full Name</label>
-    <input type="text" id="name" placeholder="Your full name">
+    <input type="text" id="name" placeholder="Your full name e.g. Chalani">
 
     <label>Email</label>
     <input type="email" id="email" placeholder="you@email.com">
 
-    <label>Phone Number</label>
-    <input type="tel" id="phone" placeholder="07XXXXXXXX">
-
     <label>Password</label>
-    <input type="password" id="password" placeholder="Min 8 characters">
+    <input type="password" id="password" placeholder="Min 6 characters">
 
     <label>Confirm Password</label>
     <input type="password" id="confirmPassword" placeholder="Repeat your password">
@@ -75,50 +72,50 @@
     async function doRegister() {
         const name            = document.getElementById('name').value.trim();
         const email           = document.getElementById('email').value.trim();
-        const phone           = document.getElementById('phone').value.trim();
         const password        = document.getElementById('password').value;
         const confirmPassword = document.getElementById('confirmPassword').value;
         const btn             = document.getElementById('registerBtn');
 
         hideMessages();
 
-        // Validation
-        if (!name || !email || !phone || !password || !confirmPassword) {
+        if (!name || !email || !password || !confirmPassword) {
             showError('Please fill in all fields.'); return;
         }
         if (password !== confirmPassword) {
             showError('Passwords do not match.'); return;
         }
-        if (password.length < 8) {
-            showError('Password must be at least 8 characters.'); return;
+        if (password.length < 6) {
+            showError('Password must be at least 6 characters.'); return;
         }
 
-        btn.disabled = true;
+        btn.disabled    = true;
         btn.textContent = 'Creating account...';
 
         try {
             const res = await fetch('/api/customer-auth/register/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, email, phone, password })
+                body: JSON.stringify({ name, email, password })
             });
 
             const data = await res.json();
+            console.log('Register response:', data);
 
             if (res.ok) {
+                // Token is directly data.access (not nested)
                 sessionStorage.setItem('jwt', data.access);
-                sessionStorage.setItem('customerName', name);
+                sessionStorage.setItem('customerName', data.name);
                 showSuccess('Account created! Redirecting...');
                 setTimeout(() => window.location.href = '/customer/products/', 1500);
             } else {
-                showError(data.detail || data.email?.[0] || 'Registration failed. Please try again.');
+                showError(data.error || 'Registration failed. Please try again.');
             }
-
         } catch (err) {
+            console.error('Register error:', err);
             showError('Connection error. Please try again.');
         }
 
-        btn.disabled = false;
+        btn.disabled    = false;
         btn.textContent = 'Create Account';
     }
 
@@ -131,7 +128,7 @@
         el.textContent = msg; el.style.display = 'block';
     }
     function hideMessages() {
-        document.getElementById('errorMsg').style.display = 'none';
+        document.getElementById('errorMsg').style.display   = 'none';
         document.getElementById('successMsg').style.display = 'none';
     }
 </script>

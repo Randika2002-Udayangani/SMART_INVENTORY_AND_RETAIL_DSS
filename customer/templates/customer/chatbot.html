@@ -304,7 +304,17 @@
                             <div class="pprice">
                                 <s>Rs ${p.price}</s> →
                                 <span class="pdiscount">Rs ${p.discounted}</span>
-                                (${p.discount}% off) · Exp: ${p.expiry}
+                                (${p.discount}% off)
+                            </div>
+                            <div style="margin-top:4px;">
+                                <span style="background:#e6f4ea; color:#1e7e34;
+                                    font-size:0.75rem; padding:2px 8px;
+                                    border-radius:10px; font-weight:600;">
+                                    ✅ Available
+                                </span>
+                                <span style="color:#e65100; font-size:0.78rem; margin-left:8px;">
+                                    ⏰ Exp: ${p.expiry}
+                                </span>
                             </div>
                         </div>
                         <button class="order-link"
@@ -368,9 +378,11 @@
     });
 
     function logout() {
-        sessionStorage.clear();
-        window.location.href = '/customer/login/';
-    }
+    const orders = sessionStorage.getItem('myOrders');
+    sessionStorage.clear();
+    if (orders) sessionStorage.setItem('myOrders', orders);
+    window.location.href = '/customer/login/';
+}
 
     // Welcome message on load
     window.onload = () => {

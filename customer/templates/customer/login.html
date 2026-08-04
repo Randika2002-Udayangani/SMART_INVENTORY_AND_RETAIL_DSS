@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Customer Login</title>
@@ -15,7 +16,6 @@
             align-items: center;
             min-height: 100vh;
         }
-
         .card {
             background: white;
             padding: 40px;
@@ -110,7 +110,6 @@
 </div>
 
 <script>
-    // If already logged in, skip login page
     if (sessionStorage.getItem('jwt')) {
         window.location.href = '/customer/products/';
     }
@@ -118,18 +117,15 @@
     async function doLogin() {
         const email    = document.getElementById('email').value.trim();
         const password = document.getElementById('password').value;
-        const errorMsg = document.getElementById('errorMsg');
         const btn      = document.getElementById('loginBtn');
 
-        // Basic validation
         if (!email || !password) {
             showError('Please enter both email and password.');
             return;
         }
 
-        btn.disabled = true;
+        btn.disabled    = true;
         btn.textContent = 'Logging in...';
-        errorMsg.style.display = 'none';
 
         try {
             const res = await fetch('/api/customer-auth/login/', {
@@ -139,30 +135,31 @@
             });
 
             const data = await res.json();
+            console.log('Login response:', data);
 
             if (res.ok) {
+                // Token is directly data.access (not nested)
                 sessionStorage.setItem('jwt', data.access);
-                sessionStorage.setItem('customerName', data.name || 'Customer');
+                sessionStorage.setItem('customerName', data.name);
                 window.location.href = '/customer/products/';
             } else {
-                showError(data.detail || 'Wrong email or password. Please try again.');
+                showError(data.error || 'Wrong email or password.');
             }
-
         } catch (err) {
-            showError('Connection error. Please check your internet and try again.');
+            console.error('Login error:', err);
+            showError('Connection error. Please check server is running.');
         }
 
-        btn.disabled = false;
+        btn.disabled    = false;
         btn.textContent = 'Login';
     }
 
     function showError(msg) {
         const el = document.getElementById('errorMsg');
-        el.textContent = msg;
+        el.textContent   = msg;
         el.style.display = 'block';
     }
 
-    // Allow Enter key to submit
     document.addEventListener('keypress', e => {
         if (e.key === 'Enter') doLogin();
     });
