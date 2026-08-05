@@ -1,11 +1,3 @@
-# ============================================================
-# REPLACE products/urls.py with this — adds the recalculate-wac/
-# route. No ordering conflict with products/<int:pk>/ since
-# Django requires an exact full-path match — "products/5/" never
-# matches "products/5/recalculate-wac/" regardless of which is
-# registered first. Placed before <int:pk> anyway for convention.
-# ============================================================
-
 from django.urls import path
 from . import views
 
@@ -23,13 +15,13 @@ urlpatterns = [
     path('zones/', views.StoreZoneListCreateView.as_view(), name='zone-list'),
     path('zones/<int:pk>/', views.StoreZoneDetailView.as_view(), name='zone-detail'),
 
-    # Products — specific URLs FIRST, generic <int:pk> LAST (Risk R12)
+    # Products
     path('products/', views.ProductListCreateView.as_view(), name='product-list'),
     path('products/import/', views.ItemMasterUploadView.as_view(), name='item-master-upload'),
-    path('products/<int:pk>/availability/', views.ProductAvailabilityView.as_view(), name='product-availability'),
     path('products/<int:pk>/recalculate-wac/', views.RecalculateWACView.as_view(), name='product-recalculate-wac'),
     path('products/<int:pk>/', views.ProductDetailView.as_view(), name='product-detail'),
 
-
-    path('products/reclassify/', views.ReclassifyProductsView.as_view(), name='products-reclassify'),
+    # Commented out — views not yet implemented
+    # path('products/<int:pk>/availability/', views.ProductAvailabilityView.as_view(), name='product-availability'),
+    # path('products/reclassify/', views.ReclassifyProductsView.as_view(), name='products-reclassify'),
 ]

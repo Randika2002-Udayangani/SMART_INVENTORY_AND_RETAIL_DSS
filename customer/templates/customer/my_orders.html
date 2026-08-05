@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Orders | SmartDeals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #333; }
+
+        /* ── Nav ── */
+        nav {
+            background: #1a73e8; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        nav .nav-links a { color: white; text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+        nav .nav-links a:hover { text-decoration: underline; }
+        nav .logout-btn {
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            padding: 7px 16px; border-radius: 20px; margin-left: 20px;
+            cursor: pointer; font-size: 0.9rem;
+        }
+
+        /* ── Page ── */
+        .page { padding: 24px; max-width: 800px; margin: 0 auto; }
+
+        .page-header {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-bottom: 20px;
+        }
+        .page-title { font-size: 1.3rem; font-weight: 700; color: #222; }
+        .order-count {
+            font-size: 0.85rem; background: #e8f0fe;
+            color: #1a73e8; padding: 4px 12px;
+            border-radius: 12px; font-weight: 500;
+        }
+
+        /* ── Order Card ── */
+        .order-card {
+            background: white; border-radius: 12px;
+            padding: 18px 20px; margin-bottom: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            display: flex; justify-content: space-between;
+            align-items: flex-start; gap: 16px;
+            transition: transform 0.2s;
+        }
+        .order-card:hover { transform: translateY(-2px); }
+
+        .order-info .reference {
+            font-size: 0.82rem; color: #888; margin-bottom: 4px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .order-info .product-name {
+            font-size: 1rem; font-weight: 700;
+            color: #222; margin-bottom: 8px;
+        }
+        .order-info .details {
+            font-size: 0.85rem; color: #666;
+            display: flex; gap: 14px; flex-wrap: wrap;
+        }
+        .order-info .details span {
+            display: flex; align-items: center; gap: 4px;
+        }
+
+        .order-right { text-align: right; flex-shrink: 0; }
+        .order-right .total {
+            font-size: 1.1rem; font-weight: 700;
+            color: #1a73e8; margin-bottom: 8px;
+        }
+
+        /* ── Status badges — all 5 ── */
+        .status-badge {
+            display: inline-block; padding: 5px 14px;
+            border-radius: 12px; font-size: 0.78rem; font-weight: 600;
+        }
+        .status-PENDING   { background: #f0f0f0; color: #666; }
+        .status-CONFIRMED { background: #e8f0fe; color: #1a73e8; }
+        .status-READY     { background: #e6f4ea; color: #1e7e34; }
+        .status-COMPLETED { background: #e8eaed; color: #444; }
+        .status-CANCELLED { background: #fce8e6; color: #c5221f; }
+
+        /* ── Loading state ── */
+        .loading-state {
+            text-align: center; padding: 60px 20px; color: #888;
+        }
+        .loading-state .spinner {
+            width: 40px; height: 40px; border: 4px solid #e8f0fe;
+            border-top: 4px solid #1a73e8; border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Empty state ── */
+        .empty-state {
+            text-align: center; padding: 60px 20px; color: #888;
+        }
+        .empty-state .icon { font-size: 3.5rem; margin-bottom: 16px; }
+        .empty-state h3 { font-size: 1.1rem; color: #444; margin-bottom: 8px; }
+        .empty-state p { font-size: 0.9rem; margin-bottom: 20px; }
+        .empty-state a {
+            background: #1a73e8; color: white; text-decoration: none;
+            padding: 10px 24px; border-radius: 8px; font-size: 0.95rem;
+        }
+
+        /* ── Mobile ── */
+        @media (max-width: 480px) {
+            .order-card { flex-direction: column; }
+            .order-right { text-align: left; }
+            nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
+            .page { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <div class="nav-links">
+        <a href="/customer/products/">Products</a>
+        <a href="/customer/chatbot/">Chat with Us</a>
+        <a href="/customer/my-orders/">My Orders</a>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+</nav>
+
+<!-- Page -->
+<div class="page">
+    <div class="page-header">
+        <div class="page-title">📋 My Orders</div>
+        <span class="order-count" id="orderCount"></span>
+    </div>
+    <div id="ordersList"></div>
+</div>
+
+<script>
+    const token     = sessionStorage.getItem('jwt');
+    const slotLabel = {
+        MORNING:   '🌅 Morning',
+        AFTERNOON: '☀️ Afternoon',
+        EVENING:   '🌙 Evening'
+    };
+
+    // ── Show loading state ────────────────────────────────────────
+    function showLoading() {
+        document.getElementById('ordersList').innerHTML = `
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading your orders...</p>
+            </div>`;
+        document.getElementById('orderCount').textContent = '';
+    }
+
+    // ── Show empty state ─────────────────────────────────────────
+    function showEmpty() {
+        document.getElementById('ordersList').innerHTML = `
+            <div class="empty-state">
+                <div class="icon">📋</div>
+                <h3>No orders yet</h3>
+                <p>You haven't placed any orders yet.<br>
+                   Browse our near-expiry deals and grab a bargain!</p>
+                <a href="/customer/products/">Browse Products</a>
+            </div>`;
+        document.getElementById('orderCount').textContent = '0 orders';
+    }
+
+    // ── Render order cards ────────────────────────────────────────
+    function renderOrders(orders) {
+        const list = document.getElementById('ordersList');
+
+        if (orders.length === 0) {
+            showEmpty();
+            return;
+        }
+
+        document.getElementById('orderCount').textContent =
+            `${orders.length} order${orders.length > 1 ? 's' : ''}`;
+
+        list.innerHTML = orders.map(o => `
+            <div class="order-card">
+                <div class="order-info">
+                    <div class="reference">
+                        📄 ${o.ref || o.reference || o.order_reference || 'N/A'}
+                    </div>
+                    <div class="product-name">
+                        ${o.product || o.product_name || o.item || 'Product'}
+                    </div>
+                    <div class="details">
+                        <span>📦 Qty: ${o.qty || o.quantity || 1}</span>
+                        <span>📅 ${o.date || o.pickup_date || 'N/A'}</span>
+                        <span>${slotLabel[o.slot || o.pickup_time_slot] || o.slot || ''}</span>
+                    </div>
+                </div>
+                <div class="order-right">
+                    <div class="total">
+                        ${o.total || o.total_price || ''}
+                    </div>
+                    <span class="status-badge status-${o.status || 'PENDING'}">
+                        ${o.status || 'PENDING'}
+                    </span>
+                </div>
+            </div>`).join('');
+    }
+
+    // ── Load orders ───────────────────────────────────────────────
+    async function loadOrders() {
+        showLoading();
+
+        // Try real API first
+        try {
+            const res = await fetch('/api/orders/list/', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            if (res.ok) {
+                const data    = await res.json();
+                const orders  = Array.isArray(data) ? data : (data.results || []);
+                renderOrders(orders);
+                return;
+            }
+        } catch (err) {
+            console.log('API not ready yet, using sessionStorage');
+        }
+
+        // Fallback to sessionStorage orders placed via order form
+        const saved = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+        renderOrders(saved);
+    }
+
+    function logout() {
+        const orders = sessionStorage.getItem('myOrders');
+        sessionStorage.clear();
+        if (orders) sessionStorage.setItem('myOrders', orders);
+        window.location.href = '/customer/login/';
+    }
+    
+    // ── Start ─────────────────────────────────────────────────────
+    loadOrders();
+</script>
+
+</body>
+</html>

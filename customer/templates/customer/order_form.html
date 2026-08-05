@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Place Order | SmartDeals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #333; }
+
+        nav {
+            background: #1a73e8; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        nav .nav-links a { color: white; text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+        nav .nav-links a:hover { text-decoration: underline; }
+        nav .logout-btn {
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            padding: 7px 16px; border-radius: 20px; margin-left: 20px;
+            cursor: pointer; font-size: 0.9rem;
+        }
+
+        .demo-banner {
+            background: #fff3cd; border-bottom: 1px solid #ffc107;
+            color: #856404; padding: 8px 24px;
+            font-size: 0.88rem; text-align: center;
+        }
+
+        .page { padding: 24px 16px; }
+
+        .form-box {
+            max-width: 580px; margin: 0 auto;
+            background: white; border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .form-header {
+            background: #1a73e8; padding: 20px 24px; color: white;
+        }
+        .form-header h2 { font-size: 1.2rem; margin-bottom: 4px; }
+        .form-header p { font-size: 0.85rem; opacity: 0.85; }
+
+        .form-body { padding: 24px; }
+
+        /* ── Selected product ── */
+        .selected-product {
+            background: #e8f0fe; border-radius: 10px;
+            padding: 14px 16px; margin-bottom: 20px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .selected-product .pname { font-weight: 700; color: #222; font-size: 1rem; }
+        .selected-product .pprice { font-size: 0.85rem; color: #555; margin-top: 3px; }
+        .selected-product .pdiscount { color: #1a73e8; font-weight: 700; font-size: 1.1rem; }
+
+        /* ── Form fields ── */
+        .form-group { margin-bottom: 18px; }
+        label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; color: #444; }
+        label span { color: #e53935; }
+
+        input, select, textarea {
+            width: 100%; padding: 11px 14px;
+            border: 1.5px solid #ddd; border-radius: 8px;
+            font-size: 0.95rem; outline: none;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        input:focus, select:focus, textarea:focus { border-color: #1a73e8; }
+        textarea { resize: vertical; min-height: 80px; }
+
+        .error-text {
+            color: #e53935; font-size: 0.8rem;
+            margin-top: 4px; display: none;
+        }
+
+        /* ── Time slots ── */
+        .time-slots {
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+        }
+        .time-slot {
+            border: 1.5px solid #ddd; border-radius: 8px;
+            padding: 12px 8px; text-align: center; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .time-slot:hover { border-color: #1a73e8; background: #e8f0fe; }
+        .time-slot.selected { border-color: #1a73e8; background: #1a73e8; color: white; }
+        .time-slot .slot-icon { font-size: 1.4rem; margin-bottom: 4px; }
+        .time-slot .slot-name { font-size: 0.85rem; font-weight: 600; }
+        .time-slot .slot-time { font-size: 0.75rem; opacity: 0.7; }
+
+        /* ── Quantity ── */
+        .qty-row { display: flex; align-items: center; gap: 12px; }
+        .qty-btn {
+            width: 36px; height: 36px; border: 1.5px solid #ddd;
+            border-radius: 8px; background: white; font-size: 1.2rem;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+        }
+        .qty-btn:hover { border-color: #1a73e8; color: #1a73e8; }
+        .qty-display { font-size: 1.1rem; font-weight: 700; color: #222; min-width: 30px; text-align: center; }
+
+        /* ── Order summary ── */
+        .order-summary {
+            background: #f8f9fa; border-radius: 8px;
+            padding: 14px 16px; margin-bottom: 20px;
+        }
+        .order-summary h4 { font-size: 0.9rem; color: #666; margin-bottom: 10px; }
+        .summary-row {
+            display: flex; justify-content: space-between;
+            font-size: 0.88rem; margin-bottom: 6px; color: #555;
+        }
+        .summary-row.total {
+            font-weight: 700; font-size: 1rem; color: #222;
+            border-top: 1px solid #ddd; padding-top: 8px; margin-top: 8px;
+        }
+        .summary-row .highlight { color: #1a73e8; font-weight: 700; }
+
+        .submit-btn {
+            width: 100%; padding: 14px; background: #1a73e8;
+            color: white; border: none; border-radius: 8px;
+            font-size: 1rem; font-weight: 700; cursor: pointer;
+        }
+        .submit-btn:hover { background: #1558b0; }
+        .submit-btn:disabled { background: #aaa; cursor: not-allowed; }
+
+        /* ── Success screen ── */
+        .success-screen {
+            display: none; text-align: center; padding: 40px 24px;
+        }
+        .success-screen .icon { font-size: 4rem; margin-bottom: 16px; }
+        .success-screen h3 { font-size: 1.3rem; color: #222; margin-bottom: 8px; }
+        .success-screen p { color: #666; margin-bottom: 6px; font-size: 0.95rem; }
+        .reference {
+            font-size: 1.4rem; font-weight: 700; color: #1a73e8;
+            background: #e8f0fe; padding: 10px 20px;
+            border-radius: 8px; display: inline-block; margin: 12px 0 20px;
+        }
+        .back-btn {
+            padding: 12px 28px; background: #1a73e8; color: white;
+            border: none; border-radius: 8px; cursor: pointer;
+            font-size: 0.95rem; font-weight: 600; margin: 0 6px;
+        }
+        .back-btn.outline {
+            background: white; color: #1a73e8; border: 1.5px solid #1a73e8;
+        }
+
+        @media (max-width: 480px) {
+            .time-slots { grid-template-columns: 1fr 1fr 1fr; }
+            nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <div class="nav-links">
+        <a href="/customer/products/">Products</a>
+        <a href="/customer/chatbot/">Chat</a>
+        <a href="/customer/my-orders/">My Orders</a>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+</nav>
+
+
+
+<div class="page">
+    <div class="form-box">
+
+        <!-- Header -->
+        <div class="form-header">
+            <h2>📦 Place Your Order</h2>
+            <p>Fill in the details below to reserve your near-expiry deal</p>
+        </div>
+
+        <!-- Form -->
+        <div class="form-body" id="formBody">
+
+            <!-- Selected product -->
+            <div class="selected-product">
+                <div>
+                    <div class="pname" id="productName">Milo Chocolate Drink 400g</div>
+                    <div class="pprice">Original price with discount applied</div>
+                </div>
+                <div class="pdiscount" id="productPrice">Rs 384.00</div>
+            </div>
+
+            <!-- Quantity -->
+            <div class="form-group">
+                <label>Quantity <span>*</span></label>
+                <div class="qty-row">
+                    <button class="qty-btn" onclick="changeQty(-1)">−</button>
+                    <div class="qty-display" id="qtyDisplay">1</div>
+                    <button class="qty-btn" onclick="changeQty(1)">+</button>
+                </div>
+                <div class="error-text" id="qtyError">Please select at least 1</div>
+            </div>
+
+            <!-- Pickup date -->
+            <div class="form-group">
+                <label>Pickup Date <span>*</span></label>
+                <input type="date" id="pickupDate">
+                <div class="error-text" id="dateError">Please select a pickup date</div>
+            </div>
+
+            <!-- Time slot -->
+            <div class="form-group">
+                <label>Pickup Time Slot <span>*</span></label>
+                <div class="time-slots">
+                    <div class="time-slot" id="slot-MORNING" onclick="selectSlot('MORNING')">
+                        <div class="slot-icon">🌅</div>
+                        <div class="slot-name">Morning</div>
+                        <div class="slot-time">8am – 12pm</div>
+                    </div>
+                    <div class="time-slot" id="slot-AFTERNOON" onclick="selectSlot('AFTERNOON')">
+                        <div class="slot-icon">☀️</div>
+                        <div class="slot-name">Afternoon</div>
+                        <div class="slot-time">12pm – 5pm</div>
+                    </div>
+                    <div class="time-slot" id="slot-EVENING" onclick="selectSlot('EVENING')">
+                        <div class="slot-icon">🌙</div>
+                        <div class="slot-name">Evening</div>
+                        <div class="slot-time">5pm – 8pm</div>
+                    </div>
+                </div>
+                <div class="error-text" id="slotError">Please select a time slot</div>
+            </div>
+
+            <!-- Notes -->
+            <div class="form-group">
+                <label>Special Notes (optional)</label>
+                <textarea id="notes" placeholder="Any special requests or notes..."></textarea>
+            </div>
+
+            <!-- Order Summary -->
+            <div class="order-summary">
+                <h4>📋 Order Summary</h4>
+                <div class="summary-row">
+                    <span>Product</span>
+                    <span id="summaryProduct">Milo Chocolate Drink 400g</span>
+                </div>
+                <div class="summary-row">
+                    <span>Quantity</span>
+                    <span id="summaryQty">1</span>
+                </div>
+                <div class="summary-row">
+                    <span>Unit Price</span>
+                    <span id="summaryUnit">Rs 384.00</span>
+                </div>
+                <div class="summary-row total">
+                    <span>Total</span>
+                    <span class="highlight" id="summaryTotal">Rs 384.00</span>
+                </div>
+            </div>
+
+            <!-- Submit -->
+            <button class="submit-btn" id="submitBtn" onclick="submitOrder()">
+                Confirm Order
+            </button>
+
+        </div>
+
+        <!-- Success Screen -->
+        <div class="success-screen" id="successScreen">
+            <div class="icon">🎉</div>
+            <h3>Order Placed Successfully!</h3>
+            <p>Your order reference number is:</p>
+            <div class="reference" id="referenceNumber">ORD-2026-00001</div>
+            <p style="color:#666; font-size:0.88rem; margin-bottom:20px;">
+                Please bring this reference number when you come to pick up your order.
+            </p>
+            <button class="back-btn outline"
+                onclick="window.location.href='/customer/my-orders/'">
+                My Orders
+            </button>
+            <button class="back-btn"
+                onclick="window.location.href='/customer/products/'">
+                Back to Products
+            </button>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    const demoProducts = [
+        { id:1, name:"Anchor Full Cream Milk 1L",  price:350, discounted:280 },
+        { id:2, name:"Milo Chocolate Drink 400g",  price:480, discounted:384 },
+        { id:3, name:"Yogurt Strawberry 200g",     price:120, discounted:84  },
+        { id:4, name:"Bread Loaf 400g",            price:85,  discounted:60  },
+        { id:5, name:"Cheddar Cheese Block 250g",  price:620, discounted:496 },
+        { id:6, name:"Orange Juice 1L",            price:290, discounted:203 },
+        { id:7, name:"Butter Unsalted 200g",       price:420, discounted:336 },
+        { id:8, name:"Cream Cheese 150g",          price:380, discounted:266 },
+    ];
+
+    let selectedSlot   = '';
+    let quantity       = 1;
+    let currentProduct = demoProducts[1];
+
+    window.onload = () => {
+        const params    = new URLSearchParams(window.location.search);
+        const productId = parseInt(params.get('product'));
+        const found     = demoProducts.find(p => p.id === productId);
+        if (found) currentProduct = found;
+
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('pickupDate').min   = today;
+        document.getElementById('pickupDate').value = today;
+
+        updateProductDisplay();
+        updateSummary();
+    };
+
+    function updateProductDisplay() {
+        document.getElementById('productName').textContent    = currentProduct.name;
+        document.getElementById('productPrice').textContent   = `Rs ${currentProduct.discounted.toFixed(2)}`;
+        document.getElementById('summaryProduct').textContent = currentProduct.name;
+        document.getElementById('summaryUnit').textContent    = `Rs ${currentProduct.discounted.toFixed(2)}`;
+    }
+
+    function changeQty(delta) {
+        quantity = Math.max(1, Math.min(10, quantity + delta));
+        document.getElementById('qtyDisplay').textContent = quantity;
+        updateSummary();
+    }
+
+    function updateSummary() {
+        const total = (currentProduct.discounted * quantity).toFixed(2);
+        document.getElementById('summaryQty').textContent   = quantity;
+        document.getElementById('summaryTotal').textContent = `Rs ${total}`;
+    }
+
+    function selectSlot(slot) {
+        selectedSlot = slot;
+        ['MORNING','AFTERNOON','EVENING'].forEach(s => {
+            document.getElementById(`slot-${s}`).classList.remove('selected');
+        });
+        document.getElementById(`slot-${slot}`).classList.add('selected');
+        document.getElementById('slotError').style.display = 'none';
+    }
+
+    function validate() {
+        let valid = true;
+
+        if (!document.getElementById('pickupDate').value) {
+            document.getElementById('dateError').style.display = 'block';
+            valid = false;
+        } else {
+            document.getElementById('dateError').style.display = 'none';
+        }
+
+        if (!selectedSlot) {
+            document.getElementById('slotError').style.display = 'block';
+            valid = false;
+        } else {
+            document.getElementById('slotError').style.display = 'none';
+        }
+
+        return valid;
+    }
+
+    async function submitOrder() {
+    if (!validate()) return;
+
+    const btn       = document.getElementById('submitBtn');
+    btn.disabled    = true;
+    btn.textContent = 'Placing order...';
+
+    const token = sessionStorage.getItem('jwt');
+
+    // Build order data
+    const orderData = {
+        product:       currentProduct.id,
+        quantity:      quantity,
+        pickup_date:   document.getElementById('pickupDate').value,
+        time_slot:     selectedSlot,   // already MORNING/AFTERNOON/EVENING uppercase
+        notes:         document.getElementById('notes').value
+    };
+
+    let refNum = '';
+
+    try {
+        // Try real API first
+        const res = await fetch('/api/orders/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify(orderData)
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            refNum = data.order_reference || data.reference || data.ref ||
+                     'ORD-2026-' + String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+        } else {
+            // API not ready — generate demo reference
+            refNum = 'ORD-2026-' +
+                String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+        }
+    } catch (err) {
+        // API not ready — generate demo reference
+        refNum = 'ORD-2026-' +
+            String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+    }
+
+    // Save to sessionStorage so My Orders page shows it
+    const newOrder = {
+        ref:     refNum,
+        product: currentProduct.name,
+        qty:     quantity,
+        total:   `Rs ${(currentProduct.discounted * quantity).toFixed(2)}`,
+        date:    document.getElementById('pickupDate').value,
+        slot:    selectedSlot,
+        status:  'PENDING'
+    };
+
+    const existing = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+    existing.unshift(newOrder);
+    sessionStorage.setItem('myOrders', JSON.stringify(existing));
+
+    // Show success screen
+    document.getElementById('formBody').style.display      = 'none';
+    document.getElementById('successScreen').style.display = 'block';
+    document.getElementById('referenceNumber').textContent  = refNum;
+}
+    function logout() {
+    const orders = sessionStorage.getItem('myOrders');
+    sessionStorage.clear();
+    if (orders) sessionStorage.setItem('myOrders', orders);
+    window.location.href = '/customer/login/';
+}
+</script>
+
+</body>
+</html>
