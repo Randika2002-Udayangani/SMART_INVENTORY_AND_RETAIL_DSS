@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile | SmartDeals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; }
+
+        nav {
+            background: #1a73e8; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        nav .nav-links a { color: white; text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+        nav .logout-btn {
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            padding: 7px 16px; border-radius: 20px; margin-left: 20px; cursor: pointer;
+        }
+
+        .page { padding: 24px; max-width: 500px; margin: 0 auto; }
+
+        .profile-box {
+            background: white; border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1); overflow: hidden;
+        }
+
+        .profile-header {
+            background: #1a73e8; padding: 24px;
+            text-align: center; color: white;
+        }
+        .profile-header .avatar {
+            width: 70px; height: 70px; background: rgba(255,255,255,0.2);
+            border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-size: 2rem; margin: 0 auto 12px;
+        }
+        .profile-header h2 { font-size: 1.2rem; }
+        .profile-header p { font-size: 0.85rem; opacity: 0.85; }
+
+        .profile-body { padding: 24px; }
+
+        .form-group { margin-bottom: 18px; }
+        label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; color: #444; }
+        input {
+            width: 100%; padding: 11px 14px; border: 1.5px solid #ddd;
+            border-radius: 8px; font-size: 0.95rem; outline: none;
+        }
+        input:focus { border-color: #1a73e8; }
+        input:disabled { background: #f8f9fa; color: #666; }
+
+        .btn-row { display: flex; gap: 10px; }
+        .edit-btn {
+            flex: 1; padding: 12px; background: #1a73e8; color: white;
+            border: none; border-radius: 8px; cursor: pointer; font-size: 0.95rem; font-weight: 600;
+        }
+        .edit-btn:hover { background: #1558b0; }
+        .cancel-btn {
+            flex: 1; padding: 12px; background: white; color: #666;
+            border: 1.5px solid #ddd; border-radius: 8px; cursor: pointer; font-size: 0.95rem;
+        }
+
+        .success-msg { color: #1e7e34; font-size: 0.88rem; margin-bottom: 12px; display: none; text-align: center; }
+        .error-msg { color: #c5221f; font-size: 0.88rem; margin-bottom: 12px; display: none; text-align: center; }
+
+        @media (max-width: 480px) {
+            nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <div class="nav-links">
+        <a href="/customer/products/">Products</a>
+        <a href="/customer/chatbot/">Chat with Us</a>
+        <a href="/customer/my-orders/">My Orders</a>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+</nav>
+
+<div class="page">
+    <div class="profile-box">
+        <div class="profile-header">
+            <div class="avatar">👤</div>
+            <h2 id="headerName">My Profile</h2>
+            <p id="headerEmail">Loading...</p>
+        </div>
+
+        <div class="profile-body">
+            <div class="success-msg" id="successMsg"></div>
+            <div class="error-msg"   id="errorMsg"></div>
+
+            <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" id="name" disabled>
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="email" disabled>
+            </div>
+            <div class="form-group">
+                <label>Phone</label>
+                <input type="tel" id="phone" disabled>
+            </div>
+
+            <div class="btn-row">
+                <button class="edit-btn" id="editBtn" onclick="toggleEdit()">Edit Profile</button>
+                <button class="cancel-btn" id="cancelBtn" onclick="cancelEdit()" style="display:none">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const token   = sessionStorage.getItem('jwt');
+    let isEditing = false;
+    let original  = {};
+
+    if (!token) window.location.href = '/customer/login/';
+
+    // ── Load profile ─────────────────────────────────────────────
+    async function loadProfile() {
+        try {
+            const res = await fetch('/api/customer-auth/profile/', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                original = data;
+                document.getElementById('name').value         = data.name  || '';
+                document.getElementById('email').value        = data.email || '';
+                document.getElementById('phone').value        = data.phone || '';
+                document.getElementById('headerName').textContent  = data.name  || 'Customer';
+                document.getElementById('headerEmail').textContent = data.email || '';
+            }
+        } catch (err) {
+            console.error('Profile load error:', err);
+        }
+    }
+
+    // ── Toggle edit mode ─────────────────────────────────────────
+    function toggleEdit() {
+        if (!isEditing) {
+            // Enable editing
+            document.getElementById('name').disabled  = false;
+            document.getElementById('phone').disabled = false;
+            document.getElementById('editBtn').textContent = 'Save Changes';
+            document.getElementById('cancelBtn').style.display = 'block';
+            isEditing = true;
+        } else {
+            // Save changes
+            saveProfile();
+        }
+    }
+
+    function cancelEdit() {
+        document.getElementById('name').value         = original.name  || '';
+        document.getElementById('email').value        = original.email || '';
+        document.getElementById('phone').value        = original.phone || '';
+        document.getElementById('name').disabled  = true;
+        document.getElementById('phone').disabled = true;
+        document.getElementById('editBtn').textContent = 'Edit Profile';
+        document.getElementById('cancelBtn').style.display = 'none';
+        isEditing = false;
+    }
+
+    // ── Save profile ─────────────────────────────────────────────
+    async function saveProfile() {
+        const name  = document.getElementById('name').value.trim();
+        const phone = document.getElementById('phone').value.trim();
+
+        try {
+            const res = await fetch('/api/customer-auth/profile/', {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ name, phone })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                original = data;
+                sessionStorage.setItem('customerName', data.name);
+                document.getElementById('headerName').textContent = data.name;
+                showSuccess('Profile updated successfully!');
+                cancelEdit();
+            } else {
+                const err = await res.json();
+                showError(err.error || 'Update failed.');
+            }
+        } catch (err) {
+            showError('Connection error. Please try again.');
+        }
+    }
+
+    function showSuccess(msg) {
+        const el = document.getElementById('successMsg');
+        el.textContent = msg; el.style.display = 'block';
+        setTimeout(() => el.style.display = 'none', 3000);
+    }
+    function showError(msg) {
+        const el = document.getElementById('errorMsg');
+        el.textContent = msg; el.style.display = 'block';
+    }
+
+    function logout() {
+        const orders = sessionStorage.getItem('myOrders');
+        sessionStorage.clear();
+        if (orders) sessionStorage.setItem('myOrders', orders);
+        window.location.href = '/customer/login/';
+    }
+
+    loadProfile();
+</script>
+</body>
+</html>

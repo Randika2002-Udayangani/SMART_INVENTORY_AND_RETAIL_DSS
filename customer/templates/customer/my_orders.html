@@ -111,6 +111,32 @@
             nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
             .page { padding: 16px; }
         }
+
+        .timeline {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-top: 12px; padding: 12px 0;
+        }
+        .timeline-step {
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+            flex: 1; position: relative;
+        }
+        .timeline-step:not(:last-child)::after {
+            content: ''; position: absolute;
+            top: 14px; left: 50%; width: 100%;
+            height: 2px; background: #ddd; z-index: 0;
+        }
+        .timeline-step.done::after { background: #1a73e8; }
+        .step-dot {
+            width: 28px; height: 28px; border-radius: 50%;
+            background: #ddd; display: flex; align-items: center;
+            justify-content: center; font-size: 0.7rem; z-index: 1;
+            font-weight: 700; color: white;
+        }
+        .timeline-step.done .step-dot { background: #1a73e8; }
+        .timeline-step.current .step-dot { background: #1a73e8; box-shadow: 0 0 0 4px #e8f0fe; }
+        .step-label { font-size: 0.7rem; color: #888; text-align: center; }
+        .timeline-step.done .step-label,
+        .timeline-step.current .step-label { color: #1a73e8; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -200,31 +226,77 @@
                     <span class="status-badge status-${o.status || 'PENDING'}">
                         ${o.status || 'PENDING'}
                     </span>
+                    ${(o.status === 'PENDING') ? `
+                    <button onclick="cancelOrder(${o.id || null}, '${o.ref || ''}')"
+                        style="margin-top:8px; width:100%; padding:6px;
+                        background:white; color:#c5221f; border:1.5px solid #c5221f;
+                        border-radius:6px; cursor:pointer; font-size:0.82rem;">
+                        Cancel Order
+                    </button>` : ''}
                 </div>
             </div>`).join('');
+    }
+
+    async function cancelOrder(orderId, ref) {
+        if (!confirm('Are you sure you want to cancel this order?')) return;
+
+        // If no real ID — cancel from sessionStorage only
+        if (!orderId) {
+            const saved = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+            const updated = saved.map(o =>
+                o.ref === ref ? { ...o, status: 'CANCELLED' } : o
+            );
+            sessionStorage.setItem('myOrders', JSON.stringify(updated));
+            loadOrders();
+            return;
+        }
+
+        // Try real API
+        try {
+            const res = await fetch(`/api/orders/${orderId}/status/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ status: 'CANCELLED' })
+            });
+
+            if (res.ok) {
+                loadOrders();
+            } else {
+                alert('Could not cancel order. Please try again.');
+            }
+        } catch (err) {
+            alert('Connection error. Please try again.');
+        }
     }
 
     // ── Load orders ───────────────────────────────────────────────
     async function loadOrders() {
         showLoading();
 
-        // Try real API first
+        const token = sessionStorage.getItem('jwt');
+
         try {
             const res = await fetch('/api/orders/list/', {
                 headers: { 'Authorization': 'Bearer ' + token }
             });
 
             if (res.ok) {
-                const data    = await res.json();
-                const orders  = Array.isArray(data) ? data : (data.results || []);
-                renderOrders(orders);
-                return;
+                const data   = await res.json();
+                const orders = Array.isArray(data) ? data : (data.results || []);
+
+                if (orders.length > 0) {
+                    renderOrders(orders);
+                    return;
+                }
             }
         } catch (err) {
-            console.log('API not ready yet, using sessionStorage');
+            console.log('API not ready, using sessionStorage');
         }
 
-        // Fallback to sessionStorage orders placed via order form
+        // ── Always fallback to sessionStorage ──
         const saved = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
         renderOrders(saved);
     }
@@ -234,6 +306,21 @@
         sessionStorage.clear();
         if (orders) sessionStorage.setItem('myOrders', orders);
         window.location.href = '/customer/login/';
+    }
+
+    function getTimeline(status) {
+        const steps = ['PENDING', 'CONFIRMED', 'READY', 'COMPLETED'];
+        const currentIndex = steps.indexOf(status);
+        if (status === 'CANCELLED') return '';
+
+        return `
+            <div class="timeline">
+                ${steps.map((step, i) => `
+                    <div class="timeline-step ${i < currentIndex ? 'done' : ''} ${i === currentIndex ? 'current' : ''}">
+                        <div class="step-dot">${i < currentIndex ? '✓' : i + 1}</div>
+                        <div class="step-label">${step}</div>
+                    </div>`).join('')}
+            </div>`;
     }
     
     // ── Start ─────────────────────────────────────────────────────

@@ -23,3 +23,9 @@ def order_form(request):
 
 def my_orders(request):
     return render(request, 'customer/my_orders.html')
+
+def profile_page(request):
+    return render(request, 'customer/profile.html')
+
+def product_detail_page(request):
+    return render(request, 'customer/product_detail.html')

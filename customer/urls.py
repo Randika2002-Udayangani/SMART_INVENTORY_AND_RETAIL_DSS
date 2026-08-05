@@ -10,4 +10,6 @@ urlpatterns = [
     path('register/', views.register_page, name='customer-register'),
     path('order/', views.order_form, name='order-form'),
     path('my-orders/', views.my_orders, name='my-orders'),
+    path('profile/', views.profile_page, name='customer-profile'),
+    path('product/', views.product_detail_page, name='product-detail'),
 ]

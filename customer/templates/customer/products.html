@@ -205,81 +205,26 @@
 </div>
 
 <script>
+    // ── Auth check ──────────────────────────────────────────────
+    const token = sessionStorage.getItem('jwt');
+    if (!token) window.location.href = '/customer/login/';
+
+    // Show customer name
+    const customerName = sessionStorage.getItem('customerName') || 'Customer';
+    document.querySelector('.welcome-bar span').textContent = customerName;
+
+    // ── Demo products (for suggestions + fallback) ───────────────
     const demoProducts = [
-        {
-            id: 1,
-            product_name: "Anchor Full Cream Milk 1L",
-            sku_code: "MLK001",
-            unit_price: 350.00,
-            discounted_price: 280.00,
-            expiry_date: "2026-07-25",
-            discount_pct: 20
-        },
-        {
-            id: 2,
-            product_name: "Milo Chocolate Drink 400g",
-            sku_code: "MLO002",
-            unit_price: 480.00,
-            discounted_price: 384.00,
-            expiry_date: "2026-07-22",
-            discount_pct: 20
-        },
-        {
-            id: 3,
-            product_name: "Yogurt Strawberry 200g",
-            sku_code: "YGT003",
-            unit_price: 120.00,
-            discounted_price: 84.00,
-            expiry_date: "2026-07-20",
-            discount_pct: 30
-        },
-        {
-            id: 4,
-            product_name: "Bread Loaf 400g",
-            sku_code: "BRD004",
-            unit_price: 85.00,
-            discounted_price: 60.00,
-            expiry_date: "2026-07-19",
-            discount_pct: 29
-        },
-        {
-            id: 5,
-            product_name: "Cheddar Cheese Block 250g",
-            sku_code: "CHS005",
-            unit_price: 620.00,
-            discounted_price: 496.00,
-            expiry_date: "2026-07-23",
-            discount_pct: 20
-        },
-        {
-            id: 6,
-            product_name: "Orange Juice 1L",
-            sku_code: "JUS006",
-            unit_price: 290.00,
-            discounted_price: 203.00,
-            expiry_date: "2026-07-21",
-            discount_pct: 30
-        },
-        {
-            id: 7,
-            product_name: "Butter Unsalted 200g",
-            sku_code: "BTR007",
-            unit_price: 420.00,
-            discounted_price: 336.00,
-            expiry_date: "2026-07-24",
-            discount_pct: 20
-        },
-        {
-            id: 8,
-            product_name: "Cream Cheese 150g",
-            sku_code: "CRM008",
-            unit_price: 380.00,
-            discounted_price: 266.00,
-            expiry_date: "2026-07-20",
-            discount_pct: 30
-        }
+        { id:1, product_name:"Anchor Full Cream Milk 1L",  sku_code:"MLK001", unit_price:350.00, discounted_price:280.00, expiry_date:"2026-07-25", discount_pct:20 },
+        { id:2, product_name:"Milo Chocolate Drink 400g",  sku_code:"MLO002", unit_price:480.00, discounted_price:384.00, expiry_date:"2026-07-22", discount_pct:20 },
+        { id:3, product_name:"Yogurt Strawberry 200g",     sku_code:"YGT003", unit_price:120.00, discounted_price:84.00,  expiry_date:"2026-07-20", discount_pct:30 },
+        { id:4, product_name:"Bread Loaf 400g",            sku_code:"BRD004", unit_price:85.00,  discounted_price:60.00,  expiry_date:"2026-07-19", discount_pct:29 },
+        { id:5, product_name:"Cheddar Cheese Block 250g",  sku_code:"CHS005", unit_price:620.00, discounted_price:496.00, expiry_date:"2026-07-23", discount_pct:20 },
+        { id:6, product_name:"Orange Juice 1L",            sku_code:"JUS006", unit_price:290.00, discounted_price:203.00, expiry_date:"2026-07-21", discount_pct:30 },
+        { id:7, product_name:"Butter Unsalted 200g",       sku_code:"BTR007", unit_price:420.00, discounted_price:336.00, expiry_date:"2026-07-24", discount_pct:20 },
+        { id:8, product_name:"Cream Cheese 150g",          sku_code:"CRM008", unit_price:380.00, discounted_price:266.00, expiry_date:"2026-07-20", discount_pct:30 },
     ];
-    
+
     // ── Auto suggestions ─────────────────────────────────────────
     let activeSuggestionIndex = -1;
 
@@ -289,29 +234,27 @@
 
         if (!query) {
             dropdown.style.display = 'none';
-            dropdown.innerHTML = '';
-            activeSuggestionIndex = -1;
+            dropdown.innerHTML     = '';
+            activeSuggestionIndex  = -1;
             return;
         }
 
-        // Filter matching products
         const matches = demoProducts.filter(p =>
             p.product_name.toLowerCase().includes(query)
-        ).slice(0, 6); // max 6 suggestions
+        ).slice(0, 6);
 
         if (matches.length === 0) {
             dropdown.style.display = 'none';
             return;
         }
 
-        // Highlight matching part
         dropdown.innerHTML = matches.map((p, i) => {
             const name  = p.product_name;
             const index = name.toLowerCase().indexOf(query);
             const highlighted = index >= 0
                 ? name.slice(0, index) +
-                `<span class="match">${name.slice(index, index + query.length)}</span>` +
-                name.slice(index + query.length)
+                  `<span class="match">${name.slice(index, index + query.length)}</span>` +
+                  name.slice(index + query.length)
                 : name;
 
             return `
@@ -325,7 +268,7 @@
                 </div>`;
         }).join('');
 
-        activeSuggestionIndex = -1;
+        activeSuggestionIndex  = -1;
         dropdown.style.display = 'block';
     }
 
@@ -335,11 +278,8 @@
         filterProducts();
     }
 
-    function setActiveIndex(index) {
-        activeSuggestionIndex = index;
-    }
+    function setActiveIndex(index) { activeSuggestionIndex = index; }
 
-    // ── Keyboard navigation (up/down/enter/escape) ───────────────
     function handleSearchKey(event) {
         const dropdown = document.getElementById('suggestionsDropdown');
         const items    = dropdown.querySelectorAll('.suggestion-item');
@@ -347,11 +287,9 @@
         if (event.key === 'ArrowDown') {
             activeSuggestionIndex = Math.min(activeSuggestionIndex + 1, items.length - 1);
             updateActiveItem(items);
-
         } else if (event.key === 'ArrowUp') {
             activeSuggestionIndex = Math.max(activeSuggestionIndex - 1, 0);
             updateActiveItem(items);
-
         } else if (event.key === 'Enter') {
             if (activeSuggestionIndex >= 0 && items[activeSuggestionIndex]) {
                 items[activeSuggestionIndex].click();
@@ -359,10 +297,9 @@
                 filterProducts();
                 dropdown.style.display = 'none';
             }
-
         } else if (event.key === 'Escape') {
-            dropdown.style.display = 'none';
-            activeSuggestionIndex = -1;
+            dropdown.style.display   = 'none';
+            activeSuggestionIndex    = -1;
         }
     }
 
@@ -372,15 +309,16 @@
         });
     }
 
-    // ── Close dropdown when clicking outside ─────────────────────
     document.addEventListener('click', function(e) {
         const wrapper  = document.querySelector('.search-wrapper');
         const dropdown = document.getElementById('suggestionsDropdown');
         if (wrapper && !wrapper.contains(e.target)) {
             dropdown.style.display = 'none';
-            activeSuggestionIndex = -1;
+            activeSuggestionIndex  = -1;
         }
     });
+
+    // ── Render products ──────────────────────────────────────────
     function renderProducts(products) {
         const grid  = document.getElementById('productGrid');
         const count = document.getElementById('productCount');
@@ -396,50 +334,108 @@
             return;
         }
 
-        grid.innerHTML = products.map(p => `
-            <div class="product-card">
-                <div class="badge-row">
-                    <span class="badge badge-expiry">Near Expiry</span>
-                    <span class="badge badge-discount">${p.discount_pct}% OFF</span>
-                </div>
-                <div class="product-name">${p.product_name}</div>
-                <div class="expiry-date">⏰ Expires: ${p.expiry_date}</div>
-                <div class="price-row">
-                    <span class="original-price">Rs ${p.unit_price.toFixed(2)}</span>
-                    <span class="discount-price">Rs ${p.discounted_price.toFixed(2)}</span>
-                </div>
-                <button class="order-btn" onclick="orderProduct(${p.id}, '${p.product_name}')">
-                    Order Now
-                </button>
-            </div>
-        `).join('');
+        grid.innerHTML = products.map(p => {
+            const hasDiscount = p.discounted_price &&
+                parseFloat(p.discounted_price) < parseFloat(p.unit_price);
+
+            const priceHTML = hasDiscount
+                ? `<span class="original-price">Rs ${parseFloat(p.unit_price).toFixed(2)}</span>
+                   <span class="discount-price">Rs ${parseFloat(p.discounted_price).toFixed(2)}</span>`
+                : `<span class="discount-price">Rs ${parseFloat(p.unit_price || p.unit_price).toFixed(2)}</span>`;
+
+            const discountBadge = hasDiscount
+                ? `<span class="badge badge-discount">
+                    ${p.discount_pct || Math.round((1 - p.discounted_price / p.unit_price) * 100)}% OFF
+                   </span>`
+                : '';
+
+            return `
+                <div class="product-card">
+                    <div class="badge-row">
+                        <span class="badge badge-expiry">Near Expiry</span>
+                        ${discountBadge}
+                    </div>
+                    <div class="product-name">${p.product_name}</div>
+                    ${p.expiry_date ? `<div class="expiry-date">⏰ Expires: ${p.expiry_date}</div>` : ''}
+                    <div class="price-row">${priceHTML}</div>
+                    <button class="order-btn"
+                        onclick="orderProduct(${p.id}, '${p.product_name}')">
+                        Order Now
+                    </button>
+                </div>`;
+        }).join('');
     }
 
+    // ── Load products from real API ──────────────────────────────
+    async function loadProducts(search = '') {
+        const grid  = document.getElementById('productGrid');
+        const count = document.getElementById('productCount');
+
+        grid.innerHTML = `
+            <div style="grid-column:1/-1;text-align:center;padding:60px;color:#888">
+                <div style="font-size:3rem">⏳</div>
+                <p>Loading products...</p>
+            </div>`;
+        count.textContent = '';
+
+        try {
+            let url = '/api/products/';
+            if (search) url += `?search=${encodeURIComponent(search)}`;
+
+            const res = await fetch(url, {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            if (res.status === 401 || res.status === 403) {
+                // Products API needs staff token — fallback to demo products
+                console.log('Products API requires staff token, using demo data');
+                renderProducts(demoProducts);
+                return;
+            }
+
+            const data     = await res.json();
+            const products = Array.isArray(data) ? data : (data.results || []);
+
+            if (products.length === 0) {
+                // Fallback to demo products
+                renderProducts(demoProducts);
+                return;
+            }
+
+            renderProducts(products);
+
+        } catch (err) {
+            console.error('Products load error:', err);
+            renderProducts(demoProducts);
+        }
+    }
+
+    // ── Filter / Search ──────────────────────────────────────────
     function filterProducts() {
-        const query = document.getElementById('searchInput').value.toLowerCase().trim();
-        const filtered = query
-            ? demoProducts.filter(p => p.product_name.toLowerCase().includes(query))
-            : demoProducts;
-        renderProducts(filtered);
+        const query = document.getElementById('searchInput').value.trim();
+        loadProducts(query);
     }
 
     document.getElementById('searchInput').addEventListener('keypress', e => {
         if (e.key === 'Enter') filterProducts();
     });
 
-    function logout() {
-    const orders = sessionStorage.getItem('myOrders');
-    sessionStorage.clear();
-    if (orders) sessionStorage.setItem('myOrders', orders);
-    window.location.href = '/customer/login/';
-}
+    // ── Order button ─────────────────────────────────────────────
     function orderProduct(id, name) {
     window.location.href =
         `/customer/order/?product=${id}&name=${encodeURIComponent(name)}`;
     }
-    
-    // Load on start
-    renderProducts(demoProducts);
+
+    // ── Logout ───────────────────────────────────────────────────
+    function logout() {
+        const orders = sessionStorage.getItem('myOrders');
+        sessionStorage.clear();
+        if (orders) sessionStorage.setItem('myOrders', orders);
+        window.location.href = '/customer/login/';
+    }
+
+    // ── Start ────────────────────────────────────────────────────
+    loadProducts();
 </script>
 
 </body>

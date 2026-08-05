@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Detail | SmartDeals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; }
+
+        nav {
+            background: #1a73e8; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        nav .nav-links a { color: white; text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+        nav .logout-btn {
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            padding: 7px 16px; border-radius: 20px; margin-left: 20px; cursor: pointer;
+        }
+
+        .page { padding: 24px; max-width: 600px; margin: 0 auto; }
+
+        .back-link {
+            display: inline-flex; align-items: center; gap: 6px;
+            color: #1a73e8; text-decoration: none; font-size: 0.9rem;
+            margin-bottom: 16px;
+        }
+
+        .detail-box {
+            background: white; border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1); padding: 24px;
+        }
+
+        .badge-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .badge {
+            font-size: 0.75rem; padding: 4px 10px;
+            border-radius: 12px; font-weight: 600;
+        }
+        .badge-expiry  { background: #fce8e6; color: #c5221f; }
+        .badge-discount { background: #e6f4ea; color: #1e7e34; }
+
+        .product-name { font-size: 1.4rem; font-weight: 700; color: #222; margin-bottom: 8px; }
+        .product-sku  { font-size: 0.85rem; color: #999; margin-bottom: 16px; }
+
+        .info-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;
+        }
+        .info-item { background: #f8f9fa; border-radius: 8px; padding: 12px; }
+        .info-item .label { font-size: 0.78rem; color: #888; margin-bottom: 4px; }
+        .info-item .value { font-size: 1rem; font-weight: 600; color: #222; }
+
+        .price-section { margin-bottom: 24px; }
+        .original-price { text-decoration: line-through; color: #aaa; font-size: 1rem; }
+        .discount-price { color: #1a73e8; font-weight: 700; font-size: 1.6rem; }
+
+        .order-btn {
+            width: 100%; padding: 14px; background: #1a73e8; color: white;
+            border: none; border-radius: 8px; font-size: 1rem;
+            font-weight: 700; cursor: pointer;
+        }
+        .order-btn:hover { background: #1558b0; }
+
+        .loading { text-align: center; padding: 40px; color: #888; }
+
+        @media (max-width: 480px) {
+            .info-grid { grid-template-columns: 1fr; }
+            nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <div class="nav-links">
+        <a href="/customer/products/">Products</a>
+        <a href="/customer/chatbot/">Chat with Us</a>
+        <a href="/customer/my-orders/">My Orders</a>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+</nav>
+
+<div class="page">
+    <a class="back-link" href="/customer/products/">← Back to Products</a>
+    <div id="detailContent">
+        <div class="loading">⏳ Loading product details...</div>
+    </div>
+</div>
+
+<script>
+    const token = sessionStorage.getItem('jwt');
+    if (!token) window.location.href = '/customer/login/';
+
+    const params    = new URLSearchParams(window.location.search);
+    const productId = params.get('id');
+
+    async function loadProduct() {
+        if (!productId) {
+            window.location.href = '/customer/products/';
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/products/${productId}/`, {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            if (!res.ok) {
+                window.location.href = '/customer/products/';
+                return;
+            }
+
+            const p = await res.json();
+
+            const hasDiscount = p.discounted_price &&
+                parseFloat(p.discounted_price) < parseFloat(p.unit_price);
+
+            const discountPct = hasDiscount
+                ? Math.round((1 - p.discounted_price / p.unit_price) * 100)
+                : 0;
+
+            document.getElementById('detailContent').innerHTML = `
+                <div class="detail-box">
+                    <div class="badge-row">
+                        <span class="badge badge-expiry">Near Expiry</span>
+                        ${hasDiscount ? `<span class="badge badge-discount">${discountPct}% OFF</span>` : ''}
+                    </div>
+                    <div class="product-name">${p.product_name}</div>
+                    ${p.sku_code ? `<div class="product-sku">SKU: ${p.sku_code}</div>` : ''}
+
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="label">Expiry Date</div>
+                            <div class="value">⏰ ${p.expiry_date || 'Soon'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="label">Category</div>
+                            <div class="value">${p.category || 'General'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="label">Brand</div>
+                            <div class="value">${p.brand || 'N/A'}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="label">Availability</div>
+                            <div class="value" style="color:#1e7e34">✅ In Stock</div>
+                        </div>
+                    </div>
+
+                    <div class="price-section">
+                        ${hasDiscount
+                            ? `<div class="original-price">Rs ${parseFloat(p.unit_price).toFixed(2)}</div>
+                               <div class="discount-price">Rs ${parseFloat(p.discounted_price).toFixed(2)}</div>`
+                            : `<div class="discount-price">Rs ${parseFloat(p.unit_price).toFixed(2)}</div>`
+                        }
+                    </div>
+
+                    <button class="order-btn"
+                        onclick="window.location.href='/customer/order/?product=${p.id}'">
+                        Order Now
+                    </button>
+                </div>`;
+
+        } catch (err) {
+            document.getElementById('detailContent').innerHTML =
+                '<div class="loading">Could not load product. Please try again.</div>';
+        }
+    }
+
+    function logout() {
+        const orders = sessionStorage.getItem('myOrders');
+        sessionStorage.clear();
+        if (orders) sessionStorage.setItem('myOrders', orders);
+        window.location.href = '/customer/login/';
+    }
+
+    loadProduct();
+</script>
+</body>
+</html>
