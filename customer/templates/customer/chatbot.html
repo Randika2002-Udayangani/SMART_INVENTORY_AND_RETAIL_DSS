@@ -1,0 +1,23 @@
+{% extends 'customer/base.html' %}
+
+{% block content %}
+
+
+<h2>Chatbot</h2>
+
+<div class="chat-box">
+    <div class="message bot">Hello! How can I help?</div>
+</div>
+
+<input type="text" placeholder="Type message...">
+<button>Send</button>
+
+<button onclick="sendMessage()">Send</button>
+
+<script>
+function sendMessage(){
+    alert("Mock chatbot response");
+}
+</script>
+
+{% endblock %}
