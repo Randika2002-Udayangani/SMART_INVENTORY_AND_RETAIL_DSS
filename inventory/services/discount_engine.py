@@ -225,7 +225,7 @@ def calculate_discounts():
 
         # ── Pick the best action — highest recovery value wins ───────────────
         scenarios = {
-            'SELL_DISCOUNT':     recovery_sell,
+            'DISCOUNT':     recovery_sell,
             'RETURN': recovery_return,
             'DISCARD':           recovery_discard,
         }
