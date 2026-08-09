@@ -54,33 +54,57 @@ from inventory.services.lifecycle import get_latest_lifecycle
 def validate_bill_row(row):
     """
     Validate a single bill row from daily bills data.
+
+    NOTE: as of the text-extraction rewrite (Aug 2026), this takes
+    'gross_amount', 'discount', 'final_amount' — NOT the old
+    'Amount'/'Final Amount' keys. The old contract silently treated
+    the report's "Amount" column (gross, pre-discount) as if it were
+    the discount value, which meant the discount>final check below
+    was comparing the wrong pair of numbers. Renamed for clarity
+    since this is the only call site.
+
+    Returns (errors, warnings) — NOT a single flat list:
+        errors   — genuinely invalid data (unparseable, non-positive
+                   final amount, discount exceeding gross). The row
+                   is skipped and NOT inserted.
+        warnings — real, valid bills that are just unusual (e.g. a
+                   small final amount — a single loose item or a
+                   bag charge really can be Rs. 2). These bills ARE
+                   inserted, with is_flagged=True, so they stay in
+                   the revenue totals and remain visible for manager
+                   review instead of silently vanishing from
+                   DailyBillSummary. Revenue accuracy against the
+                   PDF's own printed totals takes priority over
+                   filtering out bills that are merely unusual.
     """
 
     errors = []
+    warnings = []
 
     try:
-        final = float(row.get('Final Amount', 0) or 0)
-        discount = float(row.get('Amount', 0) or 0)
+        gross    = float(row.get('gross_amount', 0) or 0)
+        discount = float(row.get('discount', 0) or 0)
+        final    = float(row.get('final_amount', 0) or 0)
 
     except (ValueError, TypeError):
-        return ['Could not parse amount values']
+        return ['Could not parse amount values'], []
 
     if final <= 0:
         errors.append(
             f"Non-positive final amount: {final}"
         )
 
-    if discount > final and final > 0:
+    if discount > gross and gross > 0:
         errors.append(
-            f"Discount ({discount}) exceeds final amount"
+            f"Discount ({discount}) exceeds gross amount ({gross})"
         )
 
     if 0 < final < 10:
-        errors.append(
+        warnings.append(
             f"Suspiciously small amount: {final}"
         )
 
-    return errors
+    return errors, warnings
 
 
 # =========================================================
@@ -404,6 +428,8 @@ class DailyBillsUploadView(APIView):
 
             import pdfplumber
             import io
+            import re
+            from datetime import datetime as _dt
 
             pdf_bytes = file.read()
 
@@ -412,83 +438,153 @@ class DailyBillsUploadView(APIView):
 
             bill_errors = []
 
+            # ── Row pattern: DATE  BILL_NO  CUSTOMER  AMOUNT  DIS.  FINAL_AMOUNT
+            # Customer names can contain spaces ("SACHINI IMASHA",
+            # "THARUSHI WATHSALA") so the customer group is non-greedy
+            # and the match anchors on the 3 trailing numeric fields,
+            # which are always plain decimals (no currency symbols) in
+            # the real easyAcc export.
+            BILL_ROW = re.compile(
+                r'^(\d{4}/\d{2}/\d{2})\s+'      # 1: date
+                r'(\d{5,8})\s+'                  # 2: bill_no
+                r'(.+?)\s+'                       # 3: customer
+                r'([\d,]+\.\d{2})\s+'            # 4: gross amount
+                r'([\d,]+\.\d{2})\s+'            # 5: discount
+                r'([\d,]+\.\d{2})\s*$'           # 6: final amount
+            )
+
+            # Section headers appear on their own line with no
+            # trailing numbers — e.g. "CASH SALE" / "CREDIT SALE".
+            # Subtotal lines repeat the same words WITH numbers
+            # attached (e.g. "CASH SALE 55.00 325337.87") and must
+            # NOT be mistaken for a new section header.
+            SECTION_HEADER = re.compile(
+                r'^(CASH SALE|CREDIT SALE)\s*$', re.IGNORECASE
+            )
+
+            PAYMENT_TYPE_MAP = {
+                'CASH SALE':   'CASH',
+                'CREDIT SALE': 'CREDIT',
+            }
+
+            rows_seen = 0
+            current_payment_type = ''
+
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
 
                 for page in pdf.pages:
 
-                    tables = page.extract_tables()
+                    text = page.extract_text() or ''
 
-                    for table in tables:
+                    for line in text.split('\n'):
 
-                        for row in table[1:]:
+                        line = line.strip()
 
-                            if not row or len(row) < 4:
+                        if not line:
+                            continue
+
+                        header_match = SECTION_HEADER.match(line)
+                        if header_match:
+                            current_payment_type = PAYMENT_TYPE_MAP[
+                                header_match.group(1).upper()
+                            ]
+                            continue
+
+                        row_match = BILL_ROW.match(line)
+                        if not row_match:
+                            # Column header row, subtotal/grand-total
+                            # lines, and page numbers all fall through
+                            # here harmlessly — none of them match the
+                            # strict 6-field bill pattern.
+                            continue
+
+                        rows_seen += 1
+
+                        (date_str, bill_no, customer,
+                         gross_str, discount_str, final_str) = row_match.groups()
+
+                        try:
+                            sale_date = _dt.strptime(
+                                date_str, '%Y/%m/%d'
+                            ).date()
+
+                            bill_data = {
+                                'gross_amount': gross_str.replace(',', ''),
+                                'discount':     discount_str.replace(',', ''),
+                                'final_amount': final_str.replace(',', ''),
+                            }
+
+                            row_errors, row_warnings = validate_bill_row(bill_data)
+
+                            if row_errors:
+                                bill_errors.append(
+                                    f"Bill {bill_no}: {row_errors}"
+                                )
+                                skipped += 1
                                 continue
 
-                            try:
-
-                                bill_data = {
-                                    'Date': row[0],
-                                    'Bill No': row[1],
-                                    'Customer': row[2],
-                                    'Amount': row[3],
-                                    'Final Amount': (
-                                        row[4] if len(row) > 4 else 0
-                                    ),
-                                }
-
-                                row_errors = validate_bill_row(
-                                    bill_data
-                                )
-
-                                if row_errors:
-
-                                    bill_errors.append(
-                                        f"Bill "
-                                        f"{bill_data['Bill No']}: "
-                                        f"{row_errors}"
-                                    )
-
-                                    skipped += 1
-
-                                    continue
-
-                                DailyBillSummary.objects.create(
-                                    sale_date=bill_data['Date'],
-                                    bill_no=str(
-                                        bill_data['Bill No']
-                                    ),
-                                    customer_name=str(
-                                        bill_data['Customer'] or ''
-                                    ),
-                                    discount=float(
-                                        bill_data['Amount'] or 0
-                                    ),
-                                    final_amount=float(
-                                        bill_data['Final Amount'] or 0
-                                    ),
-                                    gross_amount=(
-                                        float(
-                                            bill_data['Amount'] or 0
-                                        )
-                                        +
-                                        float(
-                                            bill_data['Final Amount'] or 0
-                                        )
-                                    ),
-                                    upload=upload_log,
-                                    is_flagged=False
-                                )
-
-                                inserted += 1
-
-                            except Exception as e:
-
-                                skipped += 1
-
+                            if row_warnings:
+                                # Real, valid bill — just unusual (e.g.
+                                # a small final amount). Insert it and
+                                # flag it for manager review rather than
+                                # discarding it: revenue totals should
+                                # still reconcile against the PDF's own
+                                # printed figures.
                                 bill_errors.append(
-                                    f'Row parse error: {str(e)}'
+                                    f"Bill {bill_no}: {row_warnings} "
+                                    f"(inserted, flagged for review)"
                                 )
+
+                            DailyBillSummary.objects.create(
+                                sale_date=sale_date,
+                                bill_no=bill_no,
+                                customer_name=customer,
+                                gross_amount=float(bill_data['gross_amount']),
+                                discount=float(bill_data['discount']),
+                                final_amount=float(bill_data['final_amount']),
+                                payment_type=current_payment_type,
+                                upload=upload_log,
+                                is_flagged=bool(row_warnings),
+                                is_full_discount=(
+                                    float(bill_data['discount'])
+                                    >= float(bill_data['gross_amount'])
+                                    and float(bill_data['gross_amount']) > 0
+                                ),
+                            )
+
+                            inserted += 1
+
+                        except Exception as e:
+
+                            skipped += 1
+
+                            bill_errors.append(
+                                f'Bill {bill_no}: parse error: {str(e)}'
+                            )
+
+            if rows_seen == 0:
+                # Nothing matched the bill-row pattern at all — this
+                # is a structural extraction failure (wrong format,
+                # unexpected layout), NOT a day with zero bills.
+                # Marking it SUCCESS here would hide a broken parse
+                # behind an indistinguishable "quiet day" result.
+                upload_log.status = 'FAILED'
+                upload_log.error_message = (
+                    'No bill rows could be parsed from this PDF. '
+                    'Expected lines like '
+                    '"YYYY/MM/DD BILLNO CUSTOMER AMOUNT DIS. FINAL". '
+                    'Check the file format matches the easyAcc '
+                    'Daily Sales Report layout.'
+                )[:2000]
+                upload_log.save()
+
+                return Response({
+                    'message': 'Daily bills upload failed — no bill rows found',
+                    'inserted': 0,
+                    'skipped': 0,
+                    'upload_log_id': upload_log.id,
+                    'errors': [upload_log.error_message],
+                }, status=status.HTTP_400_BAD_REQUEST)
 
             upload_log.status = (
                 'SUCCESS'
