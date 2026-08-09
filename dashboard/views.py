@@ -38,3 +38,6 @@ def suppliers(request):
 
 def products(request):
     return render(request, 'dashboard/products.html')
+
+def inventory(request):
+    return render(request, 'dashboard/inventory.html')

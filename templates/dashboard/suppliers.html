@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suppliers — Smart Inventory DSS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
+        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
+        .btn-primary { background:#2d6a4f; border:none; }
+        .btn-primary:hover { background:#1b4332; }
+        .card { border-radius:12px; border:1px solid #e2e8f0; }
+    </style>
+</head>
+<body>
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-0 fw-bold">Suppliers</h4>
+        <small class="text-muted">Samanala Super Mart — supplier master records</small>
+    </div>
+    <div>
+        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+    </div>
+</div>
+
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between mb-3">
+        <input type="text" id="supSearch" class="form-control form-control-sm" style="width:280px;" placeholder="Search supplier name..." onkeyup="renderSuppliers()">
+        <button class="btn btn-primary btn-sm" onclick="showAddForm()">+ Add Supplier</button>
+    </div>
+
+    <!-- Add/Edit Form (hidden by default) -->
+    <div id="supForm" class="card p-4 mb-3" style="display:none;">
+        <h6 class="fw-bold mb-3" id="formTitle">Add Supplier</h6>
+        <input type="hidden" id="supId">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Supplier Name</label>
+                <input type="text" id="supName" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Email</label>
+                <input type="email" id="supEmail" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Contact Number</label>
+                <input type="text" id="supPhone" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Lead Time (days)</label>
+                <input type="number" id="supLeadTime" class="form-control">
+            </div>
+            <div class="col-md-12">
+                <label class="form-label">Return Policy</label>
+                <input type="text" id="supReturnPolicy" class="form-control">
+            </div>
+        </div>
+        <div class="mt-3">
+            <button class="btn btn-primary" onclick="saveSupplier()">Save</button>
+            <button class="btn btn-outline-secondary" onclick="hideForm()">Cancel</button>
+        </div>
+        <div id="supMsg" class="mt-3"></div>
+    </div>
+
+    <div class="card p-4">
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr><th>Name</th><th>Email</th><th>Contact</th><th>Lead Time</th><th>Return Policy</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="supBody">
+                <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const token = sessionStorage.getItem('access_token');
+if (!token) { window.location.href = '/dashboard/login/'; }
+
+function doLogout() {
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
+    window.location.href = '/dashboard/login/';
+}
+
+let allSuppliers = [];
+
+function extractArray(data) {
+    if (Array.isArray(data)) return data;
+    return data.results ?? data.suppliers ?? data.data ?? [];
+}
+
+async function loadSuppliers() {
+    try {
+        const res = await fetch('/api/suppliers/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        allSuppliers = extractArray(data);
+        renderSuppliers();
+    } catch(e) {
+        document.getElementById('supBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Could not load suppliers.</td></tr>';
+    }
+}
+
+function renderSuppliers() {
+    const search = document.getElementById('supSearch').value.toLowerCase();
+    const rows = allSuppliers.filter(s => (s.name ?? s.supplier_name ?? '').toLowerCase().includes(search));
+    const tbody = document.getElementById('supBody');
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No suppliers found.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map(s => `
+        <tr>
+            <td style="font-weight:600">${s.name ?? s.supplier_name ?? '—'}</td>
+            <td>${s.email ?? '—'}</td>
+            <td>${s.contact_number ?? s.phone ?? '—'}</td>
+            <td>${s.lead_time_days ?? '—'} days</td>
+            <td>${s.return_policy ?? '—'}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-secondary" onclick='editSupplier(${JSON.stringify(s)})'>Edit</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function showAddForm() {
+    document.getElementById('formTitle').innerText = 'Add Supplier';
+    document.getElementById('supId').value = '';
+    document.getElementById('supName').value = '';
+    document.getElementById('supEmail').value = '';
+    document.getElementById('supPhone').value = '';
+    document.getElementById('supLeadTime').value = '';
+    document.getElementById('supReturnPolicy').value = '';
+    document.getElementById('supMsg').innerHTML = '';
+    document.getElementById('supForm').style.display = 'block';
+}
+
+function editSupplier(s) {
+    document.getElementById('formTitle').innerText = 'Edit Supplier';
+    document.getElementById('supId').value = s.id ?? s.supplier_id ?? '';
+    document.getElementById('supName').value = s.name ?? s.supplier_name ?? '';
+    document.getElementById('supEmail').value = s.email ?? '';
+    document.getElementById('supPhone').value = s.contact_number ?? s.phone ?? '';
+    document.getElementById('supLeadTime').value = s.lead_time_days ?? '';
+    document.getElementById('supReturnPolicy').value = s.return_policy ?? '';
+    document.getElementById('supMsg').innerHTML = '';
+    document.getElementById('supForm').style.display = 'block';
+}
+
+function hideForm() {
+    document.getElementById('supForm').style.display = 'none';
+}
+
+async function saveSupplier() {
+    const id = document.getElementById('supId').value;
+    const body = {
+        name: document.getElementById('supName').value,
+        email: document.getElementById('supEmail').value,
+        contact_number: document.getElementById('supPhone').value,
+        lead_time_days: Number(document.getElementById('supLeadTime').value),
+        return_policy: document.getElementById('supReturnPolicy').value
+    };
+    const msgBox = document.getElementById('supMsg');
+
+    if (!body.name || (!body.email && !body.contact_number) || !body.lead_time_days) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Name, lead time, and at least one contact method (email or phone) are required.</div>';
+        return;
+    }
+
+    try {
+        const url = id ? `/api/suppliers/${id}/` : '/api/suppliers/';
+        const method = id ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+            method,
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (res.ok) {
+            msgBox.innerHTML = '<div class="alert alert-success py-2">Saved successfully.</div>';
+            loadSuppliers();
+            setTimeout(hideForm, 1000);
+        } else {
+            const err = await res.json().catch(() => ({}));
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${JSON.stringify(err)}</div>`;
+        }
+    } catch(e) {
+        msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
+    }
+}
+
+loadSuppliers();
+</script>
+</body>
+</html>
