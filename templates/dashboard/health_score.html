@@ -134,7 +134,7 @@ function renderTable() {
     }
     tbody.innerHTML = rows.map(r => `
         <tr>
-            <td style="font-weight:600">${r.product_name ?? r.name ?? '—'}</td>
+           <td style="font-weight:600">${r.product__product_name ?? r.product_name ?? '—'}</td>
             <td>${r.category ?? '—'}</td>
             <td>${r.velocity_score ?? '—'}</td>
             <td>${r.margin_score ?? '—'}</td>

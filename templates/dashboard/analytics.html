@@ -123,7 +123,7 @@ async function loadAll() {
 
     // Load profit summary
     try {
-        const res = await fetch(`/api/analytics/profit/?date_from=${dateFrom}&date_to=${dateTo}`, {
+        const res = await fetch(`/api/analytics/profit-summary/?date_from=${dateFrom}&date_to=${dateTo}`, {
             headers: { 'Authorization': 'Bearer ' + token }
         });
         const data = await res.json();
