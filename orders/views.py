@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 
-from core.models import AuditLog
+from users.models import AuditLog
 from products.models import Product
 
 from inventory.services.stock import get_available_stock
@@ -638,10 +638,12 @@ class OrderListView(APIView):
 
 
 class OrderStatusUpdateView(APIView):
-
-    authentication_classes = [
-        CustomerJWTAuthentication
-    ]
+    # No authentication_classes override — falls back to
+    # DEFAULT_AUTHENTICATION_CLASSES (staff JWTAuthentication) +
+    # DEFAULT_PERMISSION_CLASSES (IsAuthenticated). Per API Design
+    # Doc §17.1 this endpoint is Staff/Manager/Admin, not Customer —
+    # a customer cancels their own order via DELETE, they don't drive
+    # status transitions here.
 
     def put(self, request, pk):
 

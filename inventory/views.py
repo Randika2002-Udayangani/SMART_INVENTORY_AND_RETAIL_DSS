@@ -1,4 +1,5 @@
-from datetime import date, timedelta    
+from datetime import date, timedelta  
+from users.permissions import IsManagerOrAdmin  
 from decimal import Decimal
 from users.audit import log_action
 
@@ -27,6 +28,7 @@ from .serializers import (
 )
 from sales.models import ItemSalesRecord
 from inventory.services.reorder_logic import get_urgency
+
 
 from inventory.services.reorder_logic import check_reorder_needs
 
@@ -416,6 +418,8 @@ class OutOfStockView(APIView):
 # ═════════════════════════════════════════════════════════════════
 
 class LifecycleCalculateView(APIView):
+    permission_classes = [IsManagerOrAdmin]
+
     def post(self, request):
         from inventory.services.lifecycle import run_lifecycle_calculation
         result = run_lifecycle_calculation()
@@ -774,6 +778,7 @@ class HealthScoreCalculateView(APIView):
     Delegates to services.calculate_health_scores() for logic.
     Also calculates Category_Health_Score aggregates.
     """
+    permission_classes = [IsManagerOrAdmin]
 
     def post(self, request):
         from inventory.services.health_score import calculate_health_scores
@@ -1164,7 +1169,12 @@ class DiscountRuleListCreateView(APIView):
     GET  /api/discount-rules/   — all tiered discount rules
     POST /api/discount-rules/   — create a new rule tier. Admin/Manager.
     """
- 
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsManagerOrAdmin()]
+        return [IsAuthenticated()]
+
     def get(self, request):
         rules = DiscountRule.objects.all().order_by('days_from_expiry_min')
         return Response(DiscountRuleSerializer(rules, many=True).data)
@@ -1175,7 +1185,7 @@ class DiscountRuleListCreateView(APIView):
         # created_by is a legacy AppUser FK, not the real auth_user table —
         # left null here, same gap as everywhere else in this codebase that
         # still references AppUser instead of settings.AUTH_USER_MODEL.
-        rule = serializer.save(created_by=None)
+        rule = serializer.save(created_by=request.user)
  
         log_action(
             user=request.user, action='CREATE', table_name='discount_rule',
@@ -1194,6 +1204,7 @@ class DiscountRuleDetailView(APIView):
           DiscountRecommendation rows, so deactivation is PATCH-only,
           there is no DELETE.
     """
+    permission_classes = [IsManagerOrAdmin]
  
     def get_object(self, pk):
         try:
@@ -1267,7 +1278,8 @@ class DiscountRecommendationDetailView(APIView):
     Manager marks a recommendation APPLIED or IGNORED.
     Body: {"status": "APPLIED"}  or  {"status": "IGNORED"}
     """
- 
+    permission_classes = [IsManagerOrAdmin]
+
     def patch(self, request, pk):
         try:
             rec = DiscountRecommendation.objects.get(pk=pk)
@@ -1283,7 +1295,7 @@ class DiscountRecommendationDetailView(APIView):
  
         old_value = {'status': rec.status}
         rec.status = new_status
-        rec.reviewed_by = None  # AppUser FK — left null, same gap as elsewhere
+        rec.reviewed_by = request.user
         rec.reviewed_at = dj_timezone.now()
         rec.save()
  
@@ -1298,6 +1310,7 @@ class DiscountRecommendationDetailView(APIView):
 
 
 class DiscountCalculateView(APIView):
+    permission_classes = [IsManagerOrAdmin]
 
     def post(self, request):
         from inventory.services.discount_engine import calculate_discounts
@@ -1486,7 +1499,7 @@ class ReorderRecommendationDetailView(APIView):
  
         old_value = {'status': rec.status}
         rec.status = new_status
-        rec.actioned_by = None  # AppUser FK gap — same issue flagged elsewhere
+        rec.actioned_by = request.user
         rec.save()
  
         log_action(
