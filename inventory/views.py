@@ -491,7 +491,7 @@ class LossRecordView(APIView):
             queryset = queryset.filter(loss_date__lte=date_to)
 
         data = queryset.values(
-            'id', 'product', 'batch', 'loss_type',
+            'id', 'product', 'product__product_name', 'batch', 'loss_type',
             'loss_quantity', 'loss_value', 'loss_date', 'notes'
         )
         return Response(list(data))
