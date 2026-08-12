@@ -179,7 +179,7 @@ def calculate_health_scores():
         avg_cost   = float(product.avg_cost_price or 0)
         if unit_price > 0:
             margin_pct   = ((unit_price - avg_cost) / unit_price) * 100
-            margin_score = min(margin_pct * 2.5, 100)
+            margin_score = max(min(margin_pct * 2.5, 100), 0.0)
         else:
             margin_score = 0.0
 
