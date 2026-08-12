@@ -841,7 +841,7 @@ async function fetchLowStockCount() {
             headers: { 'Authorization': 'Bearer ' + token }
         });
         const data = await res.json();
-        const count = Array.isArray(data) ? data.length : 0;
+        const count = typeof data.count === 'number' ? data.count : (Array.isArray(data) ? data.length : 0);
         document.getElementById('lowStock').innerText = count;
         document.getElementById('lowStockFooter').innerText = count + ' products below threshold';
 
@@ -856,7 +856,7 @@ async function fetchExpiringCount() {
             headers: { 'Authorization': 'Bearer ' + token }
         });
         const data = await res.json();
-        const count = Array.isArray(data) ? data.length : 0;
+        const count = typeof data.count === 'number' ? data.count : (Array.isArray(data) ? data.length : 0);
         document.getElementById('expiringSoon').innerText = count;
     } catch(e) {}
 }
@@ -935,14 +935,18 @@ fetchExpirySummary();
 // FETCH — Monthly Sales Trend
 async function fetchMonthlySales() {
     const token = sessionStorage.getItem('access_token');
-    const months = [
-        {label:'Jan', from:'2026-01-01', to:'2026-01-31'},
-        {label:'Feb', from:'2026-02-01', to:'2026-02-28'},
-        {label:'Mar', from:'2026-03-01', to:'2026-03-31'},
-        {label:'Apr', from:'2026-04-01', to:'2026-04-30'},
-        {label:'May', from:'2026-05-01', to:'2026-05-31'},
-        {label:'Jun', from:'2026-06-01', to:'2026-06-30'}
-    ];
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const months = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const year = d.getFullYear();
+        const month = d.getMonth();
+        const from = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+        const lastDay = new Date(year, month + 1, 0).getDate();
+        const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        months.push({ label: monthNames[month], from, to });
+    }
     try {
         const results = await Promise.all(months.map(m =>
             fetch(`/api/reports/sales-summary/?date_from=${m.from}&date_to=${m.to}`, {
@@ -950,6 +954,7 @@ async function fetchMonthlySales() {
             }).then(r => r.json()).then(d => d.total_sales_revenue ?? 0)
         ));
         if (window.trendChart) {
+            window.trendChart.data.labels = months.map(m => m.label);
             window.trendChart.data.datasets[0].data = results;
             window.trendChart.update();
         }

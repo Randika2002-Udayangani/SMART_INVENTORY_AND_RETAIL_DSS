@@ -121,7 +121,7 @@ async function loadAll() {
     const dateFrom = document.getElementById('dateFrom').value;
     const dateTo = document.getElementById('dateTo').value;
 
-    // Load profit summary
+    // Load profit summary (KPI cards only — this endpoint has no product breakdown yet)
     try {
         const res = await fetch(`/api/analytics/profit-summary/?date_from=${dateFrom}&date_to=${dateTo}`, {
             headers: { 'Authorization': 'Bearer ' + token }
@@ -130,41 +130,22 @@ async function loadAll() {
         document.getElementById('totalRevenue').innerText = 'Rs ' + Number(data.total_revenue ?? 0).toLocaleString();
         document.getElementById('totalCost').innerText = 'Rs ' + Number(data.total_cost ?? 0).toLocaleString();
         document.getElementById('totalProfit').innerText = 'Rs ' + Number(data.total_profit ?? 0).toLocaleString();
-        document.getElementById('margin').innerText = (data.profit_margin_pct ?? 0).toFixed(1) + '%';
+        document.getElementById('margin').innerText = (data.overall_margin_percent ?? data.profit_margin_pct ?? 0).toFixed(1) + '%';
 
-        const products = data.products ?? [];
-        document.getElementById('analyticsBody').innerHTML = products.length > 0 ?
-            products.map(p => `
-                <tr>
-                    <td>${p.product_name ?? '—'}</td>
-                    <td>${p.qty_sold ?? '—'}</td>
-                    <td>Rs ${Number(p.revenue ?? 0).toLocaleString()}</td>
-                    <td>Rs ${Number(p.profit ?? 0).toLocaleString()}</td>
-                    <td>${(p.margin_pct ?? 0).toFixed(1)}%</td>
-                </tr>
-            `).join('') :
-            '<tr><td colspan="5" class="text-center text-muted">No data found.</td></tr>';
+        // Product-level breakdown endpoint not available yet on the backend — show placeholder
+        document.getElementById('analyticsBody').innerHTML =
+            '<tr><td colspan="5" class="text-center text-muted">Product-level breakdown not available yet — backend endpoint pending.</td></tr>';
 
-        // Update profit chart
-        const top5 = products.slice(0, 5);
         if (profitChart) profitChart.destroy();
-        profitChart = new Chart(document.getElementById('profitChart'), {
-            type: 'bar',
-            data: {
-                labels: top5.map(p => p.product_name),
-                datasets: [{ label: 'Profit (Rs)', data: top5.map(p => p.profit ?? 0), backgroundColor: '#2d6a4f' }]
-            },
-            options: { responsive: true, plugins: { legend: { display: false } } }
-        });
     } catch(e) {
         document.getElementById('analyticsBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted">Could not load data.</td></tr>';
     }
-
-    // Load sales trend
+    // Load sales trend (endpoint not built yet on backend — show empty chart, don't break the page)
     try {
         const tRes = await fetch(`/api/analytics/sales-trend/?period=monthly&months=6`, {
             headers: { 'Authorization': 'Bearer ' + token }
         });
+        if (!tRes.ok) throw new Error('sales-trend endpoint not available');
         const tData = await tRes.json();
         const labels = tData.map ? tData.map(d => d.period ?? d.label) : [];
         const values = tData.map ? tData.map(d => d.revenue ?? d.total_sales_revenue ?? 0) : [];
@@ -178,7 +159,30 @@ async function loadAll() {
             },
             options: { responsive: true }
         });
-    } catch(e) {}
+    } catch(e) {
+        // Sales trend endpoint not available yet — silently skip chart, KPI cards above still work fine
+    }// Load sales trend (endpoint not built yet on backend — show empty chart, don't break the page)
+    try {
+        const tRes = await fetch(`/api/analytics/sales-trend/?period=monthly&months=6`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!tRes.ok) throw new Error('sales-trend endpoint not available');
+        const tData = await tRes.json();
+        const labels = tData.map ? tData.map(d => d.period ?? d.label) : [];
+        const values = tData.map ? tData.map(d => d.revenue ?? d.total_sales_revenue ?? 0) : [];
+
+        if (trendChart) trendChart.destroy();
+        trendChart = new Chart(document.getElementById('trendChart'), {
+            type: 'line',
+            data: {
+                labels: labels.length > 0 ? labels : ['Jan','Feb','Mar','Apr','May','Jun'],
+                datasets: [{ label: 'Revenue (Rs)', data: values.length > 0 ? values : [0,0,0,0,0,0], borderColor: '#2d6a4f', tension: 0.4, fill: false }]
+            },
+            options: { responsive: true }
+        });
+    } catch(e) {
+        // Sales trend endpoint not available yet — silently skip chart, KPI cards above still work fine
+    }
 }
 
 loadAll();
