@@ -809,7 +809,7 @@ class HealthScoreListView(APIView):
         )
         queryset = InventoryHealthScore.objects.filter(
             id__in=Subquery(latest_ids)
-        ).select_related('product').order_by('overall_score')
+        ).select_related('product', 'product__category').order_by('overall_score')
  
         status_filter = request.query_params.get('status')
         product_filter = request.query_params.get('product')
@@ -821,6 +821,7 @@ class HealthScoreListView(APIView):
  
         data = queryset.values(
             'id', 'product', 'product__product_name', 'product__sku_code',
+            'product__category__category_name',
             'velocity_score', 'margin_score',
             'expiry_risk_score', 'stock_duration_score', 'rating_score',
             'overall_score', 'status', 'recommended_action',
@@ -1004,10 +1005,11 @@ class HealthScoreHistoryView(APIView):
  
         queryset = InventoryHealthScore.objects.filter(
             product=product
-        ).select_related('product').order_by('-calculated_date')
+        ).select_related('product', 'product__category').order_by('-calculated_date')
  
         data = queryset.values(
             'id', 'product', 'product__product_name', 'product__sku_code',
+            'product__category__category_name',
             'velocity_score', 'margin_score',
             'expiry_risk_score', 'stock_duration_score', 'rating_score',
             'overall_score', 'status', 'recommended_action',
