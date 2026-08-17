@@ -1116,16 +1116,39 @@ def _log_export(request, filename):
     )
 
 
-def _excel_response(filename, headers, rows):
+def _excel_response(filename, headers, rows, summary=None):
+    """
+    summary: optional list of (label, value) tuples rendered as a
+    small key/value block above the main table — lets a manager read
+    totals straight from the exported file without the dashboard open.
+    Default None keeps every other report export (inventory, health
+    score, supplier, lifecycle, loss, reorder) unchanged.
+    """
+    from openpyxl.styles import Font
+
     wb = Workbook()
     ws = wb.active
+
+    if summary:
+        for label, value in summary:
+            ws.append([label, value])
+        ws.append([])  # blank separator row
+        for i in range(1, len(summary) + 1):
+            ws.cell(row=i, column=1).font = Font(bold=True)
+
+    header_row_idx = ws.max_row + 1
     ws.append(headers)
+    for cell in ws[header_row_idx]:
+        cell.font = Font(bold=True)
+
     for row in rows:
         ws.append(list(row))
 
     for i, header in enumerate(headers, start=1):
-        col_letter = ws.cell(row=1, column=i).column_letter
-        widths = [len(str(header))] + [len(str(r[i - 1])) for r in rows] if rows else [len(str(header))]
+        col_letter = ws.cell(row=header_row_idx, column=i).column_letter
+        widths = [len(str(header))] + [len(str(r[i - 1])) for r in rows]
+        if summary and i <= 2:
+            widths += [len(str(s[i - 1])) for s in summary]
         ws.column_dimensions[col_letter].width = min(max(widths) + 2, 40)
 
     buffer = io.BytesIO()
@@ -1140,11 +1163,25 @@ def _excel_response(filename, headers, rows):
     return response
 
 
-def _pdf_response(filename, title, headers, rows):
+def _pdf_response(filename, title, headers, rows, summary=None):
+    """summary: same optional (label, value) list as _excel_response."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
     elements = [Paragraph(title, styles['Title']), Spacer(1, 12)]
+
+    if summary:
+        summary_table = Table(
+            [[label, str(value)] for label, value in summary],
+            colWidths=[150, 320]
+        )
+        summary_table.setStyle(TableStyle([
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        elements.append(summary_table)
+        elements.append(Spacer(1, 16))
 
     if rows:
         table_data = [headers] + [list(row) for row in rows]
@@ -1185,13 +1222,38 @@ def sales_report_export(request):
     headers = ['Product Name', 'SKU', 'Units Sold', 'Revenue']
     rows = [(r['product_name'], r['sku_code'], r['units_sold'], r['revenue']) for r in data]
 
+    # ── Summary block ──────────────────────────────────────────────
+    # Best/worst by units_sold — same convention as GET
+    # /api/reports/sales-summary/ (agreed with Lavanya, week 4-5 plan),
+    # even though the table rows themselves stay sorted by revenue.
+    total_units = sum(r['units_sold'] for r in data)
+    total_revenue = sum(r['revenue'] for r in data)
+    product_count = len(data)
+
+    if data:
+        by_units = sorted(data, key=lambda r: r['units_sold'], reverse=True)
+        best, worst = by_units[0], by_units[-1]
+        best_label = f"{best['product_name']} ({best['units_sold']} units, Rs. {best['revenue']:,.2f})"
+        worst_label = f"{worst['product_name']} ({worst['units_sold']} units, Rs. {worst['revenue']:,.2f})"
+    else:
+        best_label = worst_label = 'N/A'
+
+    summary = [
+        ('Date Range', f'{date_from} to {date_to}'),
+        ('Total Units Sold', total_units),
+        ('Total Sales Revenue', f'Rs. {total_revenue:,.2f}'),
+        ('Best Selling Product', best_label),
+        ('Worst Selling Product', worst_label),
+        ('Product Count', product_count),
+    ]
+
     filename_base = f'sales_report_{date_from}_to_{date_to}'
     if fmt == 'excel':
-        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows, summary=summary)
         logged_name = f'{filename_base}.xlsx'
     else:
         title = f'Sales Report ({date_from} to {date_to})'
-        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows)
+        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows, summary=summary)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
