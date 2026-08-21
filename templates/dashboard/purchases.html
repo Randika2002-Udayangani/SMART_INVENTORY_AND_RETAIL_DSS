@@ -142,6 +142,15 @@
 const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
 
+document.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab === 'purchases' || tab === 'batches' || tab === 'expiring' || tab === 'new') {
+        const btn = document.querySelector(`.nav-link[onclick*="'${tab}'"]`);
+        if (btn) switchTab(tab, btn);
+    }
+});
+
 function doLogout() {
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('refresh_token');

@@ -47,6 +47,3 @@ def audit_log(request):
 
 def user_management(request):
     return render(request, 'dashboard/user_management.html')
-
-def inventory(request):
-    return render(request, 'dashboard/inventory.html')

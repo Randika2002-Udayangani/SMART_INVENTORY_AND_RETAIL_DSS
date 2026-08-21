@@ -18,5 +18,4 @@ urlpatterns = [
     path('system-config/', views.system_config, name='system_config'),
     path('audit-log/', views.audit_log, name='audit_log'),
     path('users/', views.user_management, name='user_management'),
-    path('inventory/', views.inventory, name='inventory'),
 ]

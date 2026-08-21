@@ -1,4 +1,9 @@
-# Lavanya — Week 7 Frontend Dashboard Tasks
+# Randika — Dashboard Widget and Admin-Page Work
+
+This branch contains Randika's dashboard widget and administration-page work.
+The checklist below is retained as historical context for the frontend tasks
+that were coordinated with Lavanya; it is not a continuation of Lavanya's
+personal task list.
 
 ## ✅ Completed
 - [x] 5. `dashboard/views.py` — Added view functions for all new pages

@@ -84,10 +84,10 @@
         <div class="card p-4">
             <table class="table table-hover">
                 <thead class="table-light">
-                    <tr><th>Product</th><th>SKU</th><th>Current Stock</th><th>Reorder Threshold</th><th>Status</th><th>Detail</th></tr>
+                    <tr><th>Product</th><th>Category</th><th>Brand</th><th>SKU</th><th>Current Stock</th><th>Reorder Threshold</th><th>Status</th><th>Detail</th></tr>
                 </thead>
                 <tbody id="stockBody">
-                    <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -191,7 +191,7 @@ async function loadStock() {
 
         renderStock();
     } catch(e) {
-        document.getElementById('stockBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Could not load stock data.</td></tr>';
+        document.getElementById('stockBody').innerHTML = '<tr><td colspan="8" class="text-center text-muted">Could not load stock data.</td></tr>';
     }
 }
 
@@ -212,7 +212,7 @@ function renderStock() {
 
     const tbody = document.getElementById('stockBody');
     if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No products match.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No products match.</td></tr>';
         return;
     }
     tbody.innerHTML = rows.map(p => {
@@ -221,6 +221,8 @@ function renderStock() {
         return `
         <tr>
             <td style="font-weight:600">${p.product_name ?? p.name ?? '—'}</td>
+            <td>${p.category_name ?? '—'}</td>
+            <td>${p.brand_name ?? '—'}</td>
             <td>${p.sku_code ?? '—'}</td>
             <td>${current}</td>
             <td>${threshold}</td>
