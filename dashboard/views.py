@@ -39,5 +39,14 @@ def suppliers(request):
 def products(request):
     return render(request, 'dashboard/products.html')
 
+def system_config(request):
+    return render(request, 'dashboard/system_config.html')
+
+def audit_log(request):
+    return render(request, 'dashboard/audit_log.html')
+
+def user_management(request):
+    return render(request, 'dashboard/user_management.html')
+
 def inventory(request):
     return render(request, 'dashboard/inventory.html')

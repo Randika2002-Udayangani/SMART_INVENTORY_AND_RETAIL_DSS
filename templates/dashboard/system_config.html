@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>System Configuration - Smart Inventory DSS</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background:#f0f4f8; color:#1a2e1e; font-family:'Segoe UI',sans-serif; }
+    .page-header { background:#0f3d3e; color:#fff; padding:20px 30px; }
+    .card { border:1px solid #d8e4dc; border-radius:10px; }
+    .btn-primary { background:#2d6a4f; border:0; }
+    .muted { color:#64748b; }
+  </style>
+</head>
+<body>
+<header class="page-header d-flex justify-content-between align-items-center">
+  <div><h4 class="mb-1">System Configuration</h4><small>Operational values used by decision-support rules</small></div>
+  <div><a href="/dashboard/" class="btn btn-light btn-sm me-2">Dashboard</a><button onclick="logout()" class="btn btn-danger btn-sm">Logout</button></div>
+</header>
+<main class="container-fluid p-4">
+  <div id="message" class="alert d-none"></div>
+  <div class="card bg-white p-4">
+    <div class="d-flex justify-content-between align-items-center mb-3"><div><h5 class="mb-1">Configuration values</h5><div class="muted">Only administrators can save changes.</div></div><button class="btn btn-outline-secondary btn-sm" onclick="loadConfig()">Refresh</button></div>
+    <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Key</th><th>Value</th><th>Description</th><th>Updated</th><th></th></tr></thead><tbody id="configBody"><tr><td colspan="5" class="text-center muted">Loading...</td></tr></tbody></table></div>
+  </div>
+</main>
+<script>
+const token = sessionStorage.getItem('access_token');
+if (!token) location.href = '/dashboard/login/';
+function logout() { sessionStorage.clear(); location.href = '/dashboard/login/'; }
+function showMessage(text, type='success') { const el=document.getElementById('message'); el.className='alert alert-'+type; el.textContent=text; }
+async function api(url, options={}) { const headers=new Headers(options.headers||{}); headers.set('Authorization','Bearer '+token); const r=await fetch(url,{...options,headers}); const data=await r.json().catch(()=>({})); if(!r.ok) throw new Error(data.error||'Request failed'); return data; }
+async function loadConfig() {
+  try { const rows=await api('/api/config/'); document.getElementById('configBody').innerHTML=rows.length?rows.map(c=>`<tr><td><code>${escapeHtml(c.key)}</code></td><td><input class="form-control form-control-sm" id="value-${c.key}" value="${escapeHtml(c.value)}"></td><td class="muted">${escapeHtml(c.description||'')}</td><td class="muted">${c.updated_at?new Date(c.updated_at).toLocaleString():'-'}</td><td><button class="btn btn-primary btn-sm" onclick="saveConfig('${encodeURIComponent(c.key)}')">Save</button></td></tr>`).join(''):'<tr><td colspan="5" class="text-center muted">No configuration values.</td></tr>'; } catch(e) { showMessage(e.message,'danger'); }
+}
+async function saveConfig(encodedKey) { const key=decodeURIComponent(encodedKey); try { const value=document.getElementById('value-'+key).value; await api('/api/config/'+encodeURIComponent(key)+'/',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value})}); showMessage('Configuration saved.'); loadConfig(); } catch(e) { showMessage(e.message,'danger'); } }
+function escapeHtml(value) { return String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c])); }
+loadConfig();
+</script>
+</body>
+</html>
