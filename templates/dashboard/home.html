@@ -270,14 +270,14 @@
   </div>
   <nav class="sb-nav">
     <div class="sb-sec">Overview</div>
-    <a href="/dashboard/" class="active"><i class="bi bi-grid-1x2"></i> Dashboard <span class="badge-pill">3</span></a>
+    <a href="/dashboard/" class="active"><i class="bi bi-grid-1x2"></i> Dashboard <span class="badge-pill" id="dashboardNavBadge">0</span></a>
     <a href="/dashboard/analytics/"><i class="bi bi-bar-chart-line"></i> Analytics</a>
 
     <div class="sb-sec">Inventory</div>
     <a href="/dashboard/inventory/"><i class="bi bi-box-seam"></i> Products</a>
     <a href="/dashboard/purchases/"><i class="bi bi-layers"></i> Batches</a>
-    <a href="#"><i class="bi bi-calendar-x"></i> Expiry Alerts</a>
-    <a href="#"><i class="bi bi-upload"></i> Sales Upload</a>
+    <a href="/dashboard/purchases/"><i class="bi bi-calendar-x"></i> Expiry Alerts</a>
+    <a href="/dashboard/sales-report/"><i class="bi bi-upload"></i> Sales Upload</a>
     <a href="/dashboard/products/"><i class="bi bi-boxes"></i> Product Management</a>
 
     <div class="sb-sec">Decision Support</div>
@@ -288,13 +288,13 @@
     <a href="/dashboard/lifecycle/"><i class="bi bi-activity"></i> Lifecycle</a>
 
     <div class="sb-sec">Operations</div>
-    <a href="#"><i class="bi bi-receipt"></i> Order Management</a>
+    <a href="/dashboard/sales-report/"><i class="bi bi-receipt"></i> Order Management</a>
     <a href="/dashboard/suppliers/"><i class="bi bi-truck"></i> Suppliers</a>
 
     <div class="sb-sec">Reports</div>
-    <a href="#" onclick="alert('Coming soon')"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
+    <a href="/dashboard/sales-report/"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
    <a href="/dashboard/sales-report/"><i class="bi bi-bar-chart"></i> Sales Report</a>
-    <a href="#"><i class="bi bi-bell"></i> Notifications <span class="badge-pill">5</span></a>
+    <a href="#notif"><i class="bi bi-bell"></i> Notifications <span class="badge-pill" id="sidebarAlertCount">0</span></a>
   </nav>
   <div class="sb-footer">
     <div class="name">Manager</div>
@@ -313,7 +313,7 @@
     </div>
     <div class="sync-badge">
       <i class="bi bi-check-circle-fill"></i>
-      Last Sync: <strong>25 Jan 2026</strong>&nbsp;·&nbsp;Stock data is snapshot-based
+      Last Sync: <strong id="syncDate">Loading...</strong>&nbsp;·&nbsp;Stock data is snapshot-based
     </div>
     <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;margin-left:10px;">
     <i class="bi bi-box-arrow-right"></i> Logout
@@ -324,29 +324,29 @@
   <div class="alert-banner">
     <div class="al-left">
       <span style="font-size:12.5px;font-weight:600;color:var(--txt);">Active Alerts:</span>
-      <span class="alert-pill ap-critical"><i class="bi bi-exclamation-octagon-fill" style="font-size:11px"></i> 2 CRITICAL — Stock-out risk</span>
-      <span class="alert-pill ap-high"><i class="bi bi-exclamation-triangle-fill" style="font-size:11px"></i> 2 HIGH — Near expiry</span>
-      <span class="alert-pill ap-medium"><i class="bi bi-info-circle-fill" style="font-size:11px"></i> 1 MEDIUM — Health decline</span>
+      <span class="alert-pill ap-critical" id="alertCritical"><i class="bi bi-exclamation-octagon-fill" style="font-size:11px"></i> 2 CRITICAL — Stock-out risk</span>
+      <span class="alert-pill ap-high" id="alertHigh"><i class="bi bi-exclamation-triangle-fill" style="font-size:11px"></i> 2 HIGH — Near expiry</span>
+      <span class="alert-pill ap-medium" id="alertMedium"><i class="bi bi-info-circle-fill" style="font-size:11px"></i> 1 MEDIUM — Health decline</span>
     </div>
     <a href="#notif" class="view-all-btn">View all &rarr;</a>
   </div>
 
-  <!-- KPI CARDS — from /api/dashboard/summary/ -->
+  <!-- KPI CARDS — populated from the existing reporting APIs -->
   <div class="kpi-grid">
 
     <!-- Sales Today -->
     <div class="kpi">
       <div class="kpi-top">
         <div class="kpi-left">
-          <div class="kpi-lbl">Total Sales Today</div>
-          <div class="kpi-val" id="totalSales">Rs 84,250</div>
+          <div class="kpi-lbl">Sales Revenue</div>
+          <div class="kpi-val" id="totalSales">—</div>
         </div>
         <span class="kpi-icon" style="color:var(--green1);"><i class="bi bi-currency-dollar"></i></span>
       </div>
-      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:74%;background:var(--green1);"></div></div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" id="salesBar" style="width:0%;background:var(--green1);"></div></div>
       <div class="kpi-footer">
-        <span class="chg up">↑ +12.4% vs yesterday</span>
-        <span>74% of daily target</span>
+        <span class="chg" id="salesPeriod">Current period</span>
+        <span>Sales revenue</span>
       </div>
     </div>
 
@@ -354,15 +354,15 @@
     <div class="kpi">
       <div class="kpi-top">
         <div class="kpi-left">
-          <div class="kpi-lbl">Total Profit Today</div>
-         <div class="kpi-val" id="totalProfit">Rs 18,930</div>
+          <div class="kpi-lbl">Gross Profit</div>
+         <div class="kpi-val" id="totalProfit">—</div>
         </div>
         <span class="kpi-icon" style="color:var(--green2);"><i class="bi bi-graph-up-arrow"></i></span>
       </div>
-      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:63%;background:var(--green2);"></div></div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" id="profitBar" style="width:0%;background:var(--green2);"></div></div>
       <div class="kpi-footer">
-        <span class="chg up">↑ +8.1% vs yesterday</span>
-        <span>63% of profit target</span>
+        <span class="chg" id="profitPeriod">Current period</span>
+        <span>Gross profit</span>
       </div>
     </div>
 
@@ -371,14 +371,14 @@
       <div class="kpi-top">
         <div class="kpi-left">
           <div class="kpi-lbl">Pending Orders</div>
-          <div class="kpi-val" id="pendingOrders">7</div>
+          <div class="kpi-val" id="pendingOrders">—</div>
         </div>
         <span class="kpi-icon" style="color:var(--amber);"><i class="bi bi-clock-history"></i></span>
       </div>
-      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:58%;background:var(--amber);"></div></div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" id="ordersBar" style="width:0%;background:var(--amber);"></div></div>
       <div class="kpi-footer">
-        <span>3 awaiting verification</span>
-        <span>7 of 12 today</span>
+        <span class="chg" id="ordersNote">Staff API unavailable</span>
+        <span>—</span>
       </div>
     </div>
 
@@ -387,14 +387,14 @@
       <div class="kpi-top">
         <div class="kpi-left">
           <div class="kpi-lbl">Low Stock Products</div>
-          <div class="kpi-val" id="lowStock">14</div>
+          <div class="kpi-val" id="lowStock">—</div>
         </div>
         <span class="kpi-icon" style="color:var(--red);"><i class="bi bi-exclamation-circle"></i></span>
       </div>
-      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:82%;background:var(--red);"></div></div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" id="lowStockBar" style="width:0%;background:var(--red);"></div></div>
       <div class="kpi-footer">
     <span class="chg down">Below reorder threshold</span>
-    <span id="lowStockFooter">14 of 17 tracked</span>
+    <span id="lowStockFooter">Loading...</span>
 </div>
     </div>
 
@@ -403,14 +403,14 @@
       <div class="kpi-top">
         <div class="kpi-left">
           <div class="kpi-lbl">Expiring (7 days)</div>
-          <div class="kpi-val" id="expiringSoon">3</div>
+          <div class="kpi-val" id="expiringSoon">—</div>
         </div>
         <span class="kpi-icon" style="color:var(--purple);"><i class="bi bi-calendar-x"></i></span>
       </div>
-      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:33%;background:var(--purple);"></div></div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" id="expiringBar" style="width:0%;background:var(--purple);"></div></div>
       <div class="kpi-footer">
         <span class="chg down">Needs urgent action</span>
-        <span>3 of 9 expiring batches</span>
+        <span id="expiringFooter">Within 7 days</span>
       </div>
     </div>
 
@@ -419,14 +419,14 @@
       <div class="kpi-top">
         <div class="kpi-left">
           <div class="kpi-lbl">Active Alerts</div>
-          <div class="kpi-val">5</div>
+          <div class="kpi-val" id="activeAlertsCount">—</div>
         </div>
         <span class="kpi-icon" style="color:var(--orange);"><i class="bi bi-bell-fill"></i></span>
       </div>
-      <div class="kpi-bar-track"><div class="kpi-bar-fill" style="width:50%;background:var(--orange);"></div></div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill" id="alertsBar" style="width:0%;background:var(--orange);"></div></div>
       <div class="kpi-footer">
-        <span class="chg down">2 critical · 2 high · 1 medium</span>
-        <span>5 unread</span>
+        <span class="chg down" id="activeAlertsBreakdown">Loading...</span>
+        <span id="activeAlertsUnread">—</span>
       </div>
     </div>
 
@@ -436,7 +436,7 @@
   <div class="two-col">
     <div class="card-box">
       <div class="card-head">
-        <div><div class="cht">Monthly Sales &amp; Profit Trend</div><div class="chs">Revenue vs profit — last 6 months · from /api/dashboard/monthly-trend/</div></div>
+        <div><div class="cht">Monthly Sales &amp; Profit Trend</div><div class="chs">Revenue vs profit — last 6 months</div></div>
         <span class="card-badge">Last 6 Months</span>
       </div>
       <div class="card-body">
@@ -445,7 +445,7 @@
     </div>
     <div class="card-box">
       <div class="card-head">
-        <div><div class="cht">Top 5 Products</div><div class="chs">By units sold this month · from /api/dashboard/top-products/</div></div>
+        <div><div class="cht">Top 5 Products</div><div class="chs">By units sold in the current period</div></div>
         <span class="card-badge">This Month</span>
       </div>
       <div class="card-body">
@@ -457,7 +457,7 @@
   <!-- EXPIRY RISK + NOTIFICATIONS -->
   <div class="two-col">
 
-    <!-- EXPIRY RISK — /api/dashboard/expiry-risk/ -->
+    <!-- EXPIRY RISK — populated from /api/reports/expiry-summary/ -->
     <div class="card-box">
       <div class="card-head">
         <div><div class="cht">Expiry Risk</div><div class="chs">Batches by expiry window · estimated loss value</div></div>
@@ -465,57 +465,23 @@
       <div class="card-body">
         <div class="expiry-buckets">
           <div class="exp-bucket eb-7">
-            <div class="eb-num" id="exp7">3</div>
+            <div class="eb-num" id="exp7">—</div>
             <div class="eb-lbl">Within 7 Days</div>
-            <div class="eb-loss">Est. loss Rs 12,400</div>
+            <div class="eb-loss" id="exp7Loss">Estimated loss —</div>
           </div>
           <div class="exp-bucket eb-14">
-            <div class="eb-num" id="exp14">6</div>
+            <div class="eb-num" id="exp14">—</div>
             <div class="eb-lbl">Within 14 Days</div>
-            <div class="eb-loss">Est. loss Rs 28,700</div>
+            <div class="eb-loss" id="exp14Loss">Estimated loss —</div>
           </div>
           <div class="exp-bucket eb-30">
-            <div class="eb-num" id="exp30">9</div>
+            <div class="eb-num" id="exp30">—</div>
             <div class="eb-lbl">Within 30 Days</div>
-            <div class="eb-loss">Est. loss Rs 51,200</div>
+            <div class="eb-loss" id="exp30Loss">Estimated loss —</div>
           </div>
         </div>
         <ul class="expiry-list" id="expiryList">
-          <li>
-            <div>
-              <div class="exp-name">Anchor Butter 200g</div>
-              <div class="exp-batch">Batch #1024 · 45 units · Rs 8,550</div>
-            </div>
-            <span class="exp-days d7">5 days</span>
-          </li>
-          <li>
-            <div>
-              <div class="exp-name">Cheese Block 200g</div>
-              <div class="exp-batch">Batch #1031 · 20 units · Rs 3,850</div>
-            </div>
-            <span class="exp-days d7">6 days</span>
-          </li>
-          <li>
-            <div>
-              <div class="exp-name">Tiara Coconut Oil</div>
-              <div class="exp-batch">Batch #1018 · 30 units · Rs 5,400</div>
-            </div>
-            <span class="exp-days d14">11 days</span>
-          </li>
-          <li>
-            <div>
-              <div class="exp-name">Maliban Cream Cracker</div>
-              <div class="exp-batch">Batch #1009 · 60 units · Rs 7,200</div>
-            </div>
-            <span class="exp-days d30">24 days</span>
-          </li>
-          <li>
-            <div>
-              <div class="exp-name">Nescafe Gold 200g</div>
-              <div class="exp-batch">Batch #1027 · 12 units · Rs 7,800</div>
-            </div>
-            <span class="exp-days d30">28 days</span>
-          </li>
+          <li><div class="exp-name">Loading expiry data...</div></li>
         </ul>
       </div>
     </div>
@@ -524,56 +490,10 @@
     <div class="card-box" id="notif">
       <div class="card-head">
         <div><div class="cht">Notifications &amp; Alerts</div><div class="chs">CRITICAL → HIGH → MEDIUM · auto-checked on login</div></div>
-        <span class="card-badge">5 Unread</span>
+        <span class="card-badge" id="notificationBadge">0 Unread</span>
       </div>
       <div class="card-body" style="padding:0 18px;">
-        <ul class="notif-list">
-          <li class="notif-item">
-            <div class="notif-dot nd-critical"></div>
-            <span class="notif-pri np-critical">Critical</span>
-            <div style="flex:1">
-              <div class="notif-txt">Stock-out risk: Anchor Milk 1L — 2 days of stock</div>
-              <div class="notif-meta">STOCK_OUT_RISK · Click to open reorder page</div>
-            </div>
-            <div class="notif-time">09:12</div>
-          </li>
-          <li class="notif-item">
-            <div class="notif-dot nd-critical"></div>
-            <span class="notif-pri np-critical">Critical</span>
-            <div style="flex:1">
-              <div class="notif-txt">Stock-out risk: Astra Butter 200g — 1 day of stock</div>
-              <div class="notif-meta">STOCK_OUT_RISK · Click to open reorder page</div>
-            </div>
-            <div class="notif-time">09:12</div>
-          </li>
-          <li class="notif-item">
-            <div class="notif-dot nd-high"></div>
-            <span class="notif-pri np-high">High</span>
-            <div style="flex:1">
-              <div class="notif-txt">Near expiry: Anchor Butter 200g — Batch #1024, 5 days, 45 units</div>
-              <div class="notif-meta">NEAR_EXPIRY · Click to open discount recommendation</div>
-            </div>
-            <div class="notif-time">09:12</div>
-          </li>
-          <li class="notif-item">
-            <div class="notif-dot nd-high"></div>
-            <span class="notif-pri np-high">High</span>
-            <div style="flex:1">
-              <div class="notif-txt">New online order: ORD-2026-00234 — Rs 18,500</div>
-              <div class="notif-meta">ONLINE_ORDER_NEW · Click to open order</div>
-            </div>
-            <div class="notif-time">08:47</div>
-          </li>
-          <li class="notif-item">
-            <div class="notif-dot nd-medium"></div>
-            <span class="notif-pri np-medium">Medium</span>
-            <div style="flex:1">
-              <div class="notif-txt">Health decline: Cheese Block 200g — score dropped 18 pts</div>
-              <div class="notif-meta">HEALTH_DECLINE · Click to view health score</div>
-            </div>
-            <div class="notif-time">Yesterday</div>
-          </li>
-        </ul>
+        <ul class="notif-list" id="notifList"></ul>
       </div>
     </div>
   </div>
@@ -592,22 +512,22 @@
     <div class="health-bands" style="margin-bottom:16px;">
       <div class="hband hb-h">
         <div class="bl">Healthy · 80–100</div>
-        <div class="bv">42</div>
+        <div class="bv" id="hbHealthy">—</div>
         <div class="bs">Monitor normally</div>
       </div>
       <div class="hband hb-w">
         <div class="bl">Watch · 60–79</div>
-        <div class="bv">18</div>
+        <div class="bv" id="hbWatch">—</div>
         <div class="bs">Keep an eye on these</div>
       </div>
       <div class="hband hb-a">
         <div class="bl">At Risk · 40–59</div>
-        <div class="bv">11</div>
+        <div class="bv" id="hbAtRisk">—</div>
         <div class="bs">Needs attention soon</div>
       </div>
       <div class="hband hb-c">
         <div class="bl">Critical · 0–39</div>
-        <div class="bv">5</div>
+        <div class="bv" id="hbCritical">—</div>
         <div class="bs">Immediate action required</div>
       </div>
     </div>
@@ -657,6 +577,71 @@
   Chart.defaults.font.family = "'DM Sans', sans-serif";
   Chart.defaults.font.size = 11.5;
 
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    }[char]));
+  }
+
+  function money(value) {
+    return 'Rs ' + Number(value || 0).toLocaleString('en-LK', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    });
+  }
+
+  async function apiFetch(url, options = {}) {
+    const token = sessionStorage.getItem('access_token');
+    const headers = new Headers(options.headers || {});
+    headers.set('Authorization', 'Bearer ' + token);
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401) {
+      sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('refresh_token');
+      window.location.href = '/dashboard/login/';
+      throw new Error('Authentication expired');
+    }
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    return response.json();
+  }
+
+  function showInlineError(elementId, message) {
+    const element = document.getElementById(elementId);
+    if (element) element.textContent = message;
+  }
+
+  const dashboardMetrics = {
+    sales: 0,
+    profit: 0,
+    lowStock: 0,
+    trackedProducts: 0,
+    expiringSoon: 0,
+    expiringThirty: 0,
+    alerts: { CRITICAL: 0, HIGH: 0, MEDIUM: 0 }
+  };
+
+  function setBar(id, percentage) {
+    const bar = document.getElementById(id);
+    if (bar) bar.style.width = `${Math.max(0, Math.min(100, percentage || 0))}%`;
+  }
+
+  function updateDashboardBars(trendRows = []) {
+    const salesValues = trendRows.map(row => Number(row.revenue || 0));
+    const profitValues = trendRows.map(row => Number(row.profit || 0));
+    const maxSales = Math.max(dashboardMetrics.sales, ...salesValues, 0);
+    const maxProfit = Math.max(dashboardMetrics.profit, ...profitValues, 0);
+    const tracked = dashboardMetrics.trackedProducts;
+    const alertTotal = Object.values(dashboardMetrics.alerts).reduce((sum, count) => sum + count, 0);
+    const alertWeight = dashboardMetrics.alerts.CRITICAL * 3 + dashboardMetrics.alerts.HIGH * 2 + dashboardMetrics.alerts.MEDIUM;
+
+    setBar('salesBar', maxSales ? dashboardMetrics.sales / maxSales * 100 : 0);
+    setBar('profitBar', maxProfit ? dashboardMetrics.profit / maxProfit * 100 : 0);
+    setBar('lowStockBar', tracked ? dashboardMetrics.lowStock / tracked * 100 : 0);
+    setBar('expiringBar', dashboardMetrics.expiringThirty ? dashboardMetrics.expiringSoon / dashboardMetrics.expiringThirty * 100 : 0);
+    setBar('alertsBar', alertTotal ? alertWeight / (alertTotal * 3) * 100 : 0);
+    setBar('ordersBar', 0);
+  }
+
   // ── Monthly Trend Chart ──────────────────────────────
   const tCtx = document.getElementById('trendChart').getContext('2d');
   const revGrad = tCtx.createLinearGradient(0,0,0,280);
@@ -666,21 +651,21 @@
   profGrad.addColorStop(0,'rgba(245,158,11,0.18)');
   profGrad.addColorStop(1,'rgba(245,158,11,0)');
 
-  new Chart(tCtx, {
+  window.trendChart = new Chart(tCtx, {
     type: 'line',
     data: {
-      labels: ['Sep','Oct','Nov','Dec','Jan','Feb'],
+      labels: [],
       datasets: [
         {
           label: 'Revenue (Rs)',
-          data: [1820000,2150000,1980000,2600000,2340000,2480000],
+          data: [],
           borderColor: '#34d17a', backgroundColor: revGrad,
           borderWidth: 2.5, pointBackgroundColor: '#34d17a',
           pointRadius: 4, pointHoverRadius: 7, tension: 0.4, fill: true
         },
         {
           label: 'Profit (Rs)',
-          data: [390000,472000,418000,595000,510000,548000],
+          data: [],
           borderColor: '#f59e0b', backgroundColor: profGrad,
           borderWidth: 2.5, pointBackgroundColor: '#f59e0b',
           pointRadius: 4, pointHoverRadius: 7, tension: 0.4, fill: true
@@ -706,13 +691,13 @@
   });
 
   // ── Top Products Chart ───────────────────────────────
-  new Chart(document.getElementById('topChart').getContext('2d'), {
+  window.topChart = new Chart(document.getElementById('topChart').getContext('2d'), {
     type: 'bar',
     data: {
-      labels: ['Anchor Milk 1L','Milo 400g','Kiri Hatti','Maliban Cream','Astra Butter'],
+      labels: [],
       datasets: [{
         label: 'Units Sold',
-        data: [320,285,240,198,176],
+        data: [],
         backgroundColor: ['rgba(34,139,87,0.80)','rgba(59,130,246,0.80)','rgba(249,115,22,0.80)','rgba(168,85,247,0.80)','rgba(234,179,8,0.80)'],
         borderColor: ['#22623a','#1d5bbf','#c2580a','#7e22ce','#a16207'],
         borderWidth: 1.5, borderRadius: 5
@@ -735,52 +720,84 @@
     }
   });
 
-  // ── Health Score Table ───────────────────────────────
-  const hsData = [
-    { name:'Anchor Milk 1L',        cat:'Dairy',     vel:95, mar:80, exp:90, score:88, status:'HEALTHY',  action:'Monitor normally' },
-    { name:'Milo 400g',             cat:'Beverages', vel:88, mar:75, exp:85, score:83, status:'HEALTHY',  action:'Monitor normally' },
-    { name:'Kiri Hatti 200g',       cat:'Dairy',     vel:72, mar:65, exp:78, score:74, status:'WATCH',    action:'Review stock levels' },
-    { name:'Maliban Cream Cracker', cat:'Biscuits',  vel:65, mar:60, exp:55, score:68, status:'WATCH',    action:'Check expiry batches' },
-    { name:'Astra Butter 200g',     cat:'Dairy',     vel:50, mar:45, exp:40, score:55, status:'AT RISK',  action:'Consider reorder & discount' },
-    { name:'Nescafe Gold 200g',     cat:'Beverages', vel:42, mar:38, exp:35, score:48, status:'AT RISK',  action:'Apply discount promotion' },
-    { name:'Cheese Block 200g',     cat:'Dairy',     vel:28, mar:22, exp:18, score:31, status:'CRITICAL', action:'Immediate discount or supplier return' },
-    { name:'Tiara Coconut Oil',     cat:'Cooking',   vel:25, mar:18, exp:20, score:29, status:'CRITICAL', action:'Immediate discount or supplier return' },
-  ];
+  // ── Health Score Table — real data, loaded from /api/health-scores/ ──
+  let hsData = [];
+  let currentHsFilter = 'all';
 
   function scoreCol(s) {
     return s>=80?'#16a34a':s>=60?'#ca8a04':s>=40?'#ea580c':'#dc2626';
   }
   function spPill(st) {
     const m = {HEALTHY:'sp-h',WATCH:'sp-w','AT RISK':'sp-a',CRITICAL:'sp-c'};
-    return `<span class="sp ${m[st]}">${st}</span>`;
+    return `<span class="sp ${m[st] || 'sp-w'}">${st}</span>`;
   }
   function miniBar(v, col) {
+    v = Number(v) || 0;
     return `<div class="bar-wrap"><div class="bar-track"><div class="bar-fill" style="width:${v}%;background:${col}"></div></div><span class="bar-num" style="color:${col}">${v}</span></div>`;
   }
 
   function renderHS(filter) {
-    const rows = filter==='all' ? hsData.filter(r=>r.status==='AT RISK'||r.status==='CRITICAL') : hsData.filter(r=>r.status===filter);
-    document.getElementById('hsTbody').innerHTML = rows.map(r=>`
+    const rows = filter === 'all' ? hsData : hsData.filter(r => r.status === filter);
+    document.getElementById('hsTbody').innerHTML = rows.length ? rows.map(r=>`
       <tr>
-        <td style="font-weight:600">${r.name}</td>
-        <td style="color:var(--muted)">${r.cat}</td>
+        <td style="font-weight:600">${escapeHtml(r.name)}</td>
+        <td style="color:var(--muted)">${escapeHtml(r.cat)}</td>
         <td>${miniBar(r.vel,'#34d17a')}</td>
         <td>${miniBar(r.mar,'#22c55e')}</td>
         <td>${miniBar(r.exp,'#f59e0b')}</td>
         <td>${miniBar(r.score, scoreCol(r.score))}</td>
         <td>${spPill(r.status)}</td>
-        <td><span class="action-txt">${r.action}</span></td>
-      </tr>`).join('');
+        <td><span class="action-txt">${escapeHtml(r.action)}</span></td>
+      </tr>`).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">No health scores match this filter.</td></tr>';
   }
-  
 
   function fhs(filter, btn) {
     document.querySelectorAll('.hf-btn').forEach(b=>b.classList.remove('on'));
     btn.classList.add('on');
+    currentHsFilter = filter;
     renderHS(filter);
   }
 
-  renderHS('AT RISK')
+  // Maps a raw /api/health-scores/ record onto the shape renderHS() expects
+  function mapHealthRow(r) {
+    return {
+      name:   r.product__product_name ?? '—',
+      cat:    r.product__category__category_name ?? '—',
+      vel:    r.velocity_score ?? 0,
+      mar:    r.margin_score ?? 0,
+      exp:    r.expiry_risk_score ?? 0,
+      score:  r.overall_score ?? 0,
+      status: r.status ?? 'WATCH',
+      action: r.recommended_action ?? '—'
+    };
+  }
+
+  function updateHealthBands(rows) {
+    const counts = { HEALTHY: 0, WATCH: 0, 'AT RISK': 0, CRITICAL: 0 };
+    rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+    document.getElementById('hbHealthy').innerText = counts.HEALTHY;
+    document.getElementById('hbWatch').innerText   = counts.WATCH;
+    document.getElementById('hbAtRisk').innerText  = counts['AT RISK'];
+    document.getElementById('hbCritical').innerText = counts.CRITICAL;
+  }
+
+  // Loads the latest saved health scores — GET /api/health-scores/ per API Design Doc v3.0 Section 13.
+  // (This loads saved scores and uses the documented health-score endpoint
+  //  runHealthCalculation() used to call, /api/analytics/health-scores/, which is
+  //  not a documented endpoint — see chat note.)
+  async function fetchHealthScores() {
+    try {
+      const data = await apiFetch('/api/health-scores/');
+        const rows = Array.isArray(data) ? data : (data.results ?? []);
+        hsData = rows.map(mapHealthRow);
+        updateHealthBands(hsData);
+        renderHS(currentHsFilter);
+    } catch(e) {
+      console.error('fetchHealthScores failed:', e);
+      showInlineError('hsTbody', 'Health scores could not be loaded.');
+    }
+  }
+
   // JWT CHECK
 function checkAuth() {
     const token = sessionStorage.getItem('access_token');
@@ -795,146 +812,196 @@ function doLogout() {
     window.location.href = '/dashboard/login/';
 }
 
+// FETCH — Notifications & Alerts panel, Active Alerts KPI card, Active Alerts banner
+async function fetchNotifications() {
+    try {
+    const data = await apiFetch('/api/notifications/');
+        const list = document.getElementById('notifList');
+        const priorityClass = { CRITICAL: 'critical', HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
+    list.innerHTML = data.length ? data.map(n => `
+            <li class="notif-item">
+                <div class="notif-dot nd-${priorityClass[n.priority] || 'medium'}"></div>
+                <span class="notif-pri np-${priorityClass[n.priority] || 'medium'}">${n.priority}</span>
+                <div style="flex:1">
+          <div class="notif-txt">${escapeHtml(n.title)}${n.message ? ' — ' + escapeHtml(n.message) : ''}</div>
+          <div class="notif-meta">${escapeHtml(n.type)} · Unread</div>
+                </div>
+                <div class="notif-time">${new Date(n.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+            </li>
+    `).join('') : '<li style="padding:24px 0;color:var(--muted);text-align:center">No unread notifications.</li>';
+    document.getElementById('notificationBadge').innerText = data.length + ' Unread';
+    document.getElementById('sidebarAlertCount').innerText = data.length;
+    document.getElementById('dashboardNavBadge').innerText = data.length;
+
+        // Active Alerts KPI card
+        document.getElementById('activeAlertsCount').innerText = data.length;
+
+        // Active Alerts banner pills + KPI footer breakdown
+        const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0 };
+        data.forEach(n => { if (counts[n.priority] !== undefined) counts[n.priority]++; });
+        dashboardMetrics.alerts = counts;
+        document.getElementById('alertCritical').innerHTML = `<i class="bi bi-exclamation-octagon-fill" style="font-size:11px"></i> ${counts.CRITICAL} CRITICAL`;
+        document.getElementById('alertHigh').innerHTML = `<i class="bi bi-exclamation-triangle-fill" style="font-size:11px"></i> ${counts.HIGH} HIGH`;
+        document.getElementById('alertMedium').innerHTML = `<i class="bi bi-info-circle-fill" style="font-size:11px"></i> ${counts.MEDIUM} MEDIUM`;
+        document.getElementById('activeAlertsBreakdown').innerText = `${counts.CRITICAL} critical · ${counts.HIGH} high · ${counts.MEDIUM} medium`;
+        document.getElementById('activeAlertsUnread').innerText = data.length + ' unread';
+        updateDashboardBars();
+    } catch(e) {
+      console.error('fetchNotifications failed:', e);
+      document.getElementById('notificationBadge').innerText = 'Unavailable';
+      document.getElementById('dashboardNavBadge').innerText = '—';
+      document.getElementById('sidebarAlertCount').innerText = '—';
+      showInlineError('notifList', 'Notifications could not be loaded.');
+    }
+}
+
 // FETCH 1 — Total Profit
 async function fetchProfitSummary() {
-    const token = sessionStorage.getItem('access_token')
     try {
-        const res = await fetch('/api/analytics/profit-summary/', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
-        if (data.total_profit !== undefined)
-            document.getElementById('totalProfit').innerText = 'Rs ' + Number(data.total_profit).toLocaleString();
-    } catch(e) {}
+    const data = await apiFetch('/api/analytics/profit-summary/');
+    dashboardMetrics.profit = Number(data.total_profit || 0);
+    document.getElementById('totalProfit').innerText = money(data.total_profit);
+    document.getElementById('profitPeriod').innerText = data.period ? `${data.period.date_from} to ${data.period.date_to}` : 'Current period';
+    updateDashboardBars();
+  } catch(e) {
+    console.error('fetchProfitSummary failed:', e);
+    showInlineError('totalProfit', 'Unavailable');
+  }
 }
 // FETCH — Total Sales
 async function fetchTotalSales() {
-    const token = sessionStorage.getItem('access_token');
     try {
-        const res = await fetch('/api/reports/sales-summary/', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
-        if (data.total_sales_revenue !== undefined)
-            document.getElementById('totalSales').innerText = 'Rs ' + Number(data.total_sales_revenue).toLocaleString();
-    } catch(e) {}
+    const data = await apiFetch('/api/reports/sales-summary/');
+    dashboardMetrics.sales = Number(data.total_sales_revenue || 0);
+    document.getElementById('totalSales').innerText = money(data.total_sales_revenue);
+    document.getElementById('salesPeriod').innerText = data.period ? `${data.period.date_from} to ${data.period.date_to}` : 'Current period';
+    updateDashboardBars();
+  } catch(e) {
+    console.error('fetchTotalSales failed:', e);
+    showInlineError('totalSales', 'Unavailable');
+  }
 }
 
 // FETCH 2 — Pending Orders
 async function fetchPendingOrders() {
-    const token = sessionStorage.getItem('access_token');
-    try {
-        const res = await fetch('/api/orders/', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
-        const count = Array.isArray(data) ? data.filter(o => o.status === 'PENDING').length : 0;
-        document.getElementById('pendingOrders').innerText = count;
-    } catch(e) {}
+  // The current orders API is customer-authenticated and has no staff GET endpoint.
+  document.getElementById('pendingOrders').innerText = '—';
+  document.getElementById('ordersNote').innerText = 'Staff API unavailable';
+  setBar('ordersBar', 0);
 }
 
 // FETCH 3 — Low Stock
 async function fetchLowStockCount() {
-    const token = sessionStorage.getItem('access_token');
     try {
-        const res = await fetch('/api/inventory/low-stock/', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
-        const count = typeof data.count === 'number' ? data.count : (Array.isArray(data) ? data.length : 0);
+    const [data, stockData] = await Promise.all([
+      apiFetch('/api/inventory/low-stock/'),
+      apiFetch('/api/inventory/stock/')
+    ]);
+    const count = Number(data.count || 0);
+    dashboardMetrics.lowStock = count;
+    dashboardMetrics.trackedProducts = Number(stockData.count || 0);
         document.getElementById('lowStock').innerText = count;
-        document.getElementById('lowStockFooter').innerText = count + ' products below threshold';
+    document.getElementById('lowStockFooter').innerText = count + ' products below threshold';
+    updateDashboardBars();
 
-    } catch(e) {}
+  } catch(e) {
+    console.error('fetchLowStockCount failed:', e);
+    showInlineError('lowStock', 'Unavailable');
+    showInlineError('lowStockFooter', 'Stock data unavailable');
+  }
 }
 
 // FETCH 4 — Expiring Soon
 async function fetchExpiringCount() {
-    const token = sessionStorage.getItem('access_token');
     try {
-        const res = await fetch('/api/batches/expiring-soon/?days=30', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
-        const count = typeof data.count === 'number' ? data.count : (Array.isArray(data) ? data.length : 0);
+    const data = await apiFetch('/api/batches/expiring-soon/?days=7');
+    const count = Number(data.count || 0);
+    dashboardMetrics.expiringSoon = count;
         document.getElementById('expiringSoon').innerText = count;
-    } catch(e) {}
+    document.getElementById('expiringFooter').innerText = `${count} batch${count === 1 ? '' : 'es'} within 7 days`;
+    updateDashboardBars();
+  } catch(e) {
+    console.error('fetchExpiringCount failed:', e);
+    showInlineError('expiringSoon', 'Unavailable');
+    showInlineError('expiringFooter', 'Expiry data unavailable');
+  }
 }
 // FETCH — Expiry Risk Widget
 async function fetchExpirySummary() {
-    const token = sessionStorage.getItem('access_token');
     try {
-        const res = await fetch('/api/reports/expiry-summary/', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
-        if (data.expiring_in_7_days !== undefined)
-            document.getElementById('exp7').innerText = data.expiring_in_7_days;
-        if (data.expiring_in_7_to_14_days !== undefined)
-            document.getElementById('exp14').innerText = data.expiring_in_7_to_14_days;
-        if (data.expiring_in_14_to_30_days !== undefined)
-            document.getElementById('exp30').innerText = data.expiring_in_14_to_30_days;
-        if (data.batches && Array.isArray(data.batches)) {
-            const list = document.getElementById('expiryList');
-            list.innerHTML = data.batches.map(b => `
+    const data = await apiFetch('/api/reports/expiry-summary/');
+    const windows = [
+      { count: 'expiring_in_7_days', items: 'batches_7_days', number: 'exp7', loss: 'exp7Loss', css: 'd7' },
+      { count: 'expiring_in_7_to_14_days', items: 'batches_7_to_14_days', number: 'exp14', loss: 'exp14Loss', css: 'd14' },
+      { count: 'expiring_in_14_to_30_days', items: 'batches_14_to_30_days', number: 'exp30', loss: 'exp30Loss', css: 'd30' }
+    ];
+    const batches = [];
+    windows.forEach(window => {
+      const items = Array.isArray(data[window.items]) ? data[window.items] : [];
+      document.getElementById(window.number).innerText = Number(data[window.count] || 0);
+      const estimatedLoss = items.reduce((sum, batch) => sum + Number(batch.estimated_loss || 0), 0);
+      document.getElementById(window.loss).innerText = `Estimated loss ${money(estimatedLoss)}`;
+      items.forEach(batch => batches.push({ ...batch, css: window.css }));
+    });
+    dashboardMetrics.expiringThirty = Number(data.total_expiring_in_30_days ||
+      windows.reduce((sum, window) => sum + Number(data[window.count] || 0), 0));
+    updateDashboardBars();
+    const list = document.getElementById('expiryList');
+    list.innerHTML = batches.length ? batches.slice(0, 8).map(b => `
                 <li>
                     <div>
-                        <div class="exp-name">${b.product_name}</div>
-                        <div class="exp-batch">Batch #${b.batch_id} · ${b.remaining_quantity} units · Rs ${b.estimated_loss}</div>
+            <div class="exp-name">${escapeHtml(b.product_name || 'Unknown product')}</div>
+            <div class="exp-batch">Batch #${escapeHtml(b.batch_id || b.id)} · ${Number(b.remaining_quantity || 0)} units · ${money(b.estimated_loss)}</div>
                     </div>
-                    <span class="exp-days">${b.days_until_expiry} days</span>
+          <span class="exp-days ${b.css}">${b.days_until_expiry} days</span>
                 </li>
-            `).join('');
-        }
-    } catch(e) {}
+      `).join('') : '<li><div class="exp-name">No batches expiring within 30 days.</div></li>';
+  } catch(e) {
+    console.error('fetchExpirySummary failed:', e);
+    showInlineError('expiryList', 'Expiry data could not be loaded.');
+  }
 }
 
-// Run Health Calculation
+async function fetchSyncDate() {
+  try {
+    const data = await apiFetch('/api/inventory/stock/');
+    document.getElementById('syncDate').innerText = data.last_sync_date || 'Not synced yet';
+  } catch(e) {
+    console.error('fetchSyncDate failed:', e);
+    document.getElementById('syncDate').innerText = 'Unavailable';
+  }
+}
+
+// Run Health Calculation — triggers recalculation, then reloads the real scores
 async function runHealthCalculation(btn) {
     btn.innerHTML = '&#x23F3; Calculating...';
     btn.disabled = true;
-    const token = sessionStorage.getItem('access_token');
     try {
-        const res = await fetch('/api/health-scores/calculate/', {
+      await apiFetch('/api/health-scores/calculate/', {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token }
         });
-        if (res.ok) {
-            // Fetch real data after calculation
-            const hsRes = await fetch('/api/analytics/health-scores/', {
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
-            const hsData = await hsRes.json();
-            const tbody = document.getElementById('hsTbody');
-            const rows = Array.isArray(hsData) ? hsData : (hsData.results ?? []);
-            const filtered = rows.filter(r => r.status === 'AT RISK' || r.status === 'CRITICAL');
-            tbody.innerHTML = filtered.map(r => `
-                <tr>
-                    <td style="font-weight:600">${r.product_name ?? r.name ?? '—'}</td>
-                    <td style="color:var(--muted)">${r.category ?? '—'}</td>
-                    <td>${miniBar(r.velocity_score,'#34d17a')}</td>
-                    <td>${miniBar(r.margin_score,'#22c55e')}</td>
-                    <td>${miniBar(r.expiry_risk_score,'#f59e0b')}</td>
-                    <td>${miniBar(r.overall_score, scoreCol(r.overall_score))}</td>
-                    <td>${spPill(r.status)}</td>
-                    <td><span class="action-txt">${r.recommended_action ?? '—'}</span></td>
-                </tr>
-            `).join('');
-        }
-    } catch(e) {}
+      await fetchHealthScores();
+    } catch(e) {
+      console.error('runHealthCalculation failed:', e);
+      alert('Health calculation could not be completed.');
+    }
     btn.innerHTML = '&#9654; Run Health Calculation';
     btn.disabled = false;
 }
+
 // Run all fetches
+fetchNotifications();
 fetchProfitSummary();
 fetchTotalSales();
 fetchPendingOrders();
 fetchLowStockCount();
 fetchExpiringCount();
 fetchExpirySummary();
+fetchSyncDate();
+fetchHealthScores();
+
 // FETCH — Monthly Sales Trend
 async function fetchMonthlySales() {
-    const token = sessionStorage.getItem('access_token');
     const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const months = [];
     const now = new Date();
@@ -948,34 +1015,50 @@ async function fetchMonthlySales() {
         months.push({ label: monthNames[month], from, to });
     }
     try {
-        const results = await Promise.all(months.map(m =>
-            fetch(`/api/reports/sales-summary/?date_from=${m.from}&date_to=${m.to}`, {
-                headers: { 'Authorization': 'Bearer ' + token }
-            }).then(r => r.json()).then(d => d.total_sales_revenue ?? 0)
-        ));
+        const results = await Promise.all(months.map(async m => {
+          const data = await apiFetch(`/api/reports/sales-summary/?date_from=${m.from}&date_to=${m.to}`);
+          return {
+            revenue: Number(data.total_sales_revenue || 0),
+            profit: Number(data.gross_profit || 0)
+          };
+        }));
         if (window.trendChart) {
             window.trendChart.data.labels = months.map(m => m.label);
-            window.trendChart.data.datasets[0].data = results;
+          window.trendChart.data.datasets[0].data = results.map(r => r.revenue);
+          window.trendChart.data.datasets[1].data = results.map(r => r.profit);
             window.trendChart.update();
         }
-    } catch(e) {}
+        updateDashboardBars(results);
+      } catch(e) {
+        console.error('fetchMonthlySales failed:', e);
+        window.trendChart.data.labels = ['No data'];
+        window.trendChart.data.datasets.forEach(dataset => { dataset.data = [0]; });
+        window.trendChart.update();
+      }
 }
 
 // FETCH — Top 5 Products
 async function fetchTopProducts() {
-    const token = sessionStorage.getItem('access_token');
     try {
-        const res = await fetch('/api/reports/sales-summary/', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
+    const data = await apiFetch('/api/reports/sales-summary/');
         const products = data.top_products ?? [];
         if (products.length > 0 && window.topChart) {
             window.topChart.data.labels = products.map(p => p.product_name);
             window.topChart.data.datasets[0].data = products.map(p => p.units_sold);
             window.topChart.update();
+    } else if (window.topChart) {
+      window.topChart.data.labels = ['No sales data'];
+      window.topChart.data.datasets[0].data = [0];
+      window.topChart.update();
         }
-    } catch(e) {}
+  } catch(e) {
+    console.error('fetchTopProducts failed:', e);
+    if (window.topChart) {
+      window.topChart.data.labels = ['Unavailable'];
+      window.topChart.data.datasets[0].data = [0];
+      window.topChart.update();
+    }
+  }
 }
 
 fetchMonthlySales();
