@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports - Smart Inventory DSS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        body { background:#f0f4f8; color:#1a2e1e; font-family:'Segoe UI',sans-serif; }
+        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
+        .card { border-radius:12px; border:1px solid #e2e8f0; height:100%; }
+        .report-card { transition:transform .15s, box-shadow .15s; }
+        .report-card:hover { transform:translateY(-2px); box-shadow:0 4px 16px rgba(0,0,0,.08); }
+        .btn-primary { background:#2d6a4f; border:none; }
+        .btn-primary:hover { background:#1b4332; }
+        .btn-report-pdf { border:1px solid #1c6b3f; color:#1c6b3f; background-color:white; }
+        .btn-report-pdf:hover { background-color:#e8f5e9; color:#1c6b3f; cursor:pointer; }
+        .download-actions { display:flex; flex-wrap:wrap; gap:8px; }
+        .report-message { min-height:24px; font-size:12px; margin-top:10px; }
+        .report-icon { color:#2d6a4f; font-size:22px; }
+        .description { color:#64748b; font-size:13px; min-height:40px; }
+        .date-label { color:#64748b; font-size:11px; font-weight:600; text-transform:uppercase; }
+        #toast { position:fixed; right:24px; bottom:24px; z-index:1050; min-width:280px; }
+    </style>
+</head>
+<body>
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-0 fw-bold">Reports</h4>
+        <small class="text-muted">Download manager reports from the current system data</small>
+    </div>
+    <div>
+        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+    </div>
+</div>
+
+<div class="container-fluid px-4">
+    <div id="toast" class="alert d-none" role="status"></div>
+    <div class="row g-4">
+        <div class="col-12 col-lg-6">
+            <div class="card report-card p-4">
+                <div class="d-flex justify-content-between"><h5>Sales Report</h5><span class="report-icon">▤</span></div>
+                <p class="description">Detailed sales revenue, units sold, and best-selling products.</p>
+                <div class="row g-2 mb-3"><div class="col"><label class="date-label" for="salesFrom">From</label><input type="date" id="salesFrom" class="form-control form-control-sm"></div><div class="col"><label class="date-label" for="salesTo">To</label><input type="date" id="salesTo" class="form-control form-control-sm"></div></div>
+                <div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadDateReport('/api/reports/sales/','sales_report','excel','salesFrom','salesTo',this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadDateReport('/api/reports/sales/','sales_report','pdf','salesFrom','salesTo',this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div>
+            </div>
+        </div>
+        <div class="col-12 col-lg-6">
+            <div class="card report-card p-4">
+                <div class="d-flex justify-content-between"><h5>Profit Report</h5><span class="report-icon">↗</span></div>
+                <p class="description">WAC-based revenue, cost, gross profit, and margin results.</p>
+                <div class="row g-2 mb-3"><div class="col"><label class="date-label" for="profitFrom">From</label><input type="date" id="profitFrom" class="form-control form-control-sm"></div><div class="col"><label class="date-label" for="profitTo">To</label><input type="date" id="profitTo" class="form-control form-control-sm"></div></div>
+                <div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadDateReport('/api/reports/profit/','profit_report','excel','profitFrom','profitTo',this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadDateReport('/api/reports/profit/','profit_report','pdf','profitFrom','profitTo',this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div>
+            </div>
+        </div>
+        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Inventory Report</h5><span class="report-icon">▦</span></div><p class="description">Current stock, reorder thresholds, and stock status.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/inventory/','inventory_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/inventory/','inventory_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
+        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Health Score Report</h5><span class="report-icon">♥</span></div><p class="description">Product health scores and their component assessments.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/health-scores/','health_score_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/health-scores/','health_score_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
+        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Supplier Report</h5><span class="report-icon"><i class="bi bi-truck"></i></span></div><p class="description">Supplier records, purchasing activity, and performance data.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/supplier/','supplier_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/supplier/','supplier_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
+        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Lifecycle Report</h5><span class="report-icon"><i class="bi bi-bezier2"></i></span></div><p class="description">Lifecycle status, sales velocity, and recommendations.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/lifecycle/','lifecycle_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/lifecycle/','lifecycle_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
+        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Loss Report</h5><span class="report-icon">↘</span></div><p class="description">Recorded losses, expiry damage, and loss values.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/loss/','loss_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/loss/','loss_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
+        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Reorder Report</h5><span class="report-icon">⟳</span></div><p class="description">Reorder recommendations, urgency, quantities, and costs.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/reorder/','reorder_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/reorder/','reorder_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
+    </div>
+</div>
+
+<script>
+const token = sessionStorage.getItem('access_token');
+if (!token) { window.location.href = '/dashboard/login/'; }
+
+function doLogout() {
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
+    window.location.href = '/dashboard/login/';
+}
+
+function showMessage(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    toast.className = `alert alert-${type}`;
+    toast.textContent = message;
+    window.clearTimeout(showMessage.timer);
+    showMessage.timer = window.setTimeout(() => toast.classList.add('d-none'), 4500);
+}
+
+function showCardMessage(button, message, type = 'danger') {
+    const card = button?.closest('.report-card');
+    const messageBox = card?.querySelector('.report-message');
+    if (!messageBox) {
+        showMessage(message, type);
+        return;
+    }
+    messageBox.className = `report-message text-${type === 'danger' ? 'danger' : type}`;
+    messageBox.textContent = message;
+    window.clearTimeout(messageBox.timer);
+    messageBox.timer = window.setTimeout(() => {
+        messageBox.textContent = '';
+        messageBox.className = 'report-message';
+    }, 4500);
+}
+
+function setDownloadLoading(button, loading) {
+    if (!button) return;
+    if (loading) {
+        button.dataset.originalLabel = button.textContent;
+        button.disabled = true;
+        button.textContent = 'Downloading...';
+    } else {
+        button.disabled = false;
+        button.textContent = button.dataset.originalLabel || button.textContent;
+        delete button.dataset.originalLabel;
+    }
+}
+
+function setDefaultDates() {
+    const to = new Date();
+    const from = new Date(to);
+    from.setDate(from.getDate() - 30);
+    const format = date => date.toISOString().slice(0, 10);
+    document.getElementById('salesFrom').value = format(from);
+    document.getElementById('salesTo').value = format(to);
+    document.getElementById('profitFrom').value = format(from);
+    document.getElementById('profitTo').value = format(to);
+}
+
+async function downloadReport(endpoint, filenameBase, format, extraParams = {}, button = null) {
+    const token = sessionStorage.getItem('access_token');
+    const params = new URLSearchParams({ format, ...extraParams });
+    setDownloadLoading(button, true);
+    try {
+        const res = await fetch(`${endpoint}?${params}`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Download failed');
+        }
+        const blob = await res.blob();
+        const ext = format === 'excel' ? 'xlsx' : 'pdf';
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${filenameBase}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        showCardMessage(button, `${filenameBase.replaceAll('_', ' ')} downloaded.`, 'success');
+    } catch (e) {
+        showCardMessage(button, 'Download failed: ' + e.message, 'danger');
+    } finally {
+        setDownloadLoading(button, false);
+    }
+}
+
+function downloadDateReport(endpoint, filenameBase, format, fromId, toId, button) {
+    const date_from = document.getElementById(fromId).value;
+    const date_to = document.getElementById(toId).value;
+    if (!date_from || !date_to) {
+        showCardMessage(button, 'Please select both report dates.', 'warning');
+        return;
+    }
+    if (date_from > date_to) {
+        showCardMessage(button, 'From date must be on or before To date.', 'warning');
+        return;
+    }
+    downloadReport(endpoint, filenameBase, format, { date_from, date_to }, button);
+}
+
+setDefaultDates();
+</script>
+</body>
+</html>

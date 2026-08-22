@@ -9,6 +9,9 @@ def dashboard_login(request):
 def sales_report(request):
     return render(request, 'dashboard/sales_report.html')
 
+def reports(request):
+    return render(request, 'dashboard/reports.html')
+
 def loss_analysis(request):
     return render(request, 'dashboard/loss_analysis.html')
 
