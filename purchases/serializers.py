@@ -286,3 +286,40 @@ class PurchaseCreateSerializer(serializers.ModelSerializer):
             purchase.save(update_fields=['total_amount'])
 
         return purchase
+
+# ─────────────────────────────────────────────────────────────────
+# Confirm-expiry serializers — used to move a batch out of
+# PENDING_EXPIRY once staff enters the real expiry date (R9 gap fix)
+# ─────────────────────────────────────────────────────────────────
+class ConfirmBatchExpirySerializer(serializers.Serializer):
+    expiry_date = serializers.DateField()
+
+    def validate_expiry_date(self, value):
+        if value <= timezone.now().date():
+            raise serializers.ValidationError(
+                'expiry_date must be a future date.'
+            )
+        return value
+
+
+class BulkConfirmBatchExpiryItemSerializer(serializers.Serializer):
+    batch_id = serializers.IntegerField()
+    expiry_date = serializers.DateField()
+
+    def validate_expiry_date(self, value):
+        if value <= timezone.now().date():
+            raise serializers.ValidationError(
+                'expiry_date must be a future date.'
+            )
+        return value
+
+
+class BulkConfirmBatchExpirySerializer(serializers.Serializer):
+    batches = BulkConfirmBatchExpiryItemSerializer(many=True)
+
+    def validate_batches(self, value):
+        if not value:
+            raise serializers.ValidationError(
+                'At least one batch must be provided.'
+            )
+        return value
