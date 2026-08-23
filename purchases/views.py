@@ -293,8 +293,8 @@ def _recalculate_avg_cost_price(product):
     original JSON /api/purchases/ endpoint) -- not just the most recent
     purchase.
 
-    Formula: avg_cost_price = total_purchase_cost / total_units_received
-    (matches Randika's spec exactly.)
+    Formula: avg_cost_price = total_purchase_cost / total_remaining_units
+    (matches Randika's spec, updated per Fix below.)
 
     Fix (Randika, [date]) — filter to status='ACTIVE' only, matching the
     same fix already applied in serializers.py (Fix 8). Before this fix,
@@ -305,9 +305,19 @@ def _recalculate_avg_cost_price(product):
     for the same batch — misleading margin/health-score numbers with no
     real stock backing them.
 
-    NOTE: still uses quantity_received, not remaining_quantity, unlike
-    the ACTIVE-only fix in serializers.py Fix 7. Flagged for Nipuni —
-    not changed here without her sign-off, same as the status filter.
+    Fix (Randika, 2026-08-23) — switched from quantity_received to
+    remaining_quantity, matching serializers.py Fix 7 and Nipuni's
+    recalculate_wac.py fix exactly. All three WAC code paths in the
+    system now agree. WAC should reflect current stock reality (what's
+    actually still on the shelf), not original arrival quantity -- a
+    batch that's mostly sold through shouldn't still weight its full
+    original quantity into the cost average. Feeds F05 profit
+    calculation and F09's discount profit floor directly.
+
+    Edge case (same convention as serializers.py Fix 7+8 and
+    recalculate_wac.py): if a product's ACTIVE batches sum to zero
+    remaining units, avg_cost_price is left UNCHANGED, not reset to 0 --
+    the last known cost basis stays as a useful reference.
 
     Called after every batch creation, not just the first purchase.
     Safe to call multiple times for the same product within one
@@ -316,16 +326,16 @@ def _recalculate_avg_cost_price(product):
     """
     agg = PurchaseBatch.objects.filter(
         product=product,
-        status='ACTIVE'          # <-- the fix
+        status='ACTIVE'          # <-- Fix: was unfiltered
     ).aggregate(
         total_cost=Coalesce(
             Sum(
-                F('quantity_received') * F('cost_price'),
+                F('remaining_quantity') * F('cost_price'),   # Fix: was quantity_received
                 output_field=DecimalField(max_digits=14, decimal_places=2)
             ),
             Decimal('0'),
         ),
-        total_qty=Coalesce(Sum('quantity_received'), 0),
+        total_qty=Coalesce(Sum('remaining_quantity'), 0),    # Fix: was quantity_received
     )
     total_cost = agg['total_cost']
     total_qty = agg['total_qty']
@@ -335,6 +345,9 @@ def _recalculate_avg_cost_price(product):
         product.avg_cost_price = new_avg
         product.save(update_fields=['avg_cost_price'])
         return new_avg
+    # No ACTIVE batches with remaining stock -- leave existing
+    # avg_cost_price unchanged rather than resetting it (matches
+    # serializers.py Fix 7+8 and recalculate_wac.py convention).
     return None
  
 from .serializers import (
