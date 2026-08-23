@@ -158,6 +158,7 @@
         <a href="/customer/products/">Products</a>
         <a href="/customer/chatbot/">Chat</a>
         <a href="/customer/my-orders/">My Orders</a>
+        <a href="/customer/profile/">My Profile</a>
         <button class="logout-btn" onclick="logout()">Logout</button>
     </div>
 </nav>
@@ -283,6 +284,10 @@
 </div>
 
 <script>
+    const token = sessionStorage.getItem('jwt');
+    if (!token) {
+        window.location.href = '/customer/login/';
+    }
     const demoProducts = [
         { id:1, name:"Anchor Full Cream Milk 1L",  price:350, discounted:280 },
         { id:2, name:"Milo Chocolate Drink 400g",  price:480, discounted:384 },

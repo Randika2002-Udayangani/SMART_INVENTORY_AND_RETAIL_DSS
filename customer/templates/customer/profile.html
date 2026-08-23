@@ -130,9 +130,11 @@
             if (res.ok) {
                 const data = await res.json();
                 original = data;
-                document.getElementById('name').value         = data.name  || '';
-                document.getElementById('email').value        = data.email || '';
-                document.getElementById('phone').value        = data.phone || '';
+
+                document.getElementById('name').value           = data.name           || '';
+                document.getElementById('email').value          = data.email          || '';
+                document.getElementById('phone').value          = data.contact_number || '';
+
                 document.getElementById('headerName').textContent  = data.name  || 'Customer';
                 document.getElementById('headerEmail').textContent = data.email || '';
             }
@@ -144,33 +146,33 @@
     // ── Toggle edit mode ─────────────────────────────────────────
     function toggleEdit() {
         if (!isEditing) {
-            // Enable editing
             document.getElementById('name').disabled  = false;
             document.getElementById('phone').disabled = false;
+            document.getElementById('email').disabled = false;
             document.getElementById('editBtn').textContent = 'Save Changes';
             document.getElementById('cancelBtn').style.display = 'block';
             isEditing = true;
         } else {
-            // Save changes
             saveProfile();
         }
     }
 
-    function cancelEdit() {
-        document.getElementById('name').value         = original.name  || '';
-        document.getElementById('email').value        = original.email || '';
-        document.getElementById('phone').value        = original.phone || '';
+   function cancelEdit() {
+        // Use current field values — not original
+        // (saveProfile already updated original before calling this)
         document.getElementById('name').disabled  = true;
+        document.getElementById('email').disabled = true;
         document.getElementById('phone').disabled = true;
         document.getElementById('editBtn').textContent = 'Edit Profile';
         document.getElementById('cancelBtn').style.display = 'none';
         isEditing = false;
     }
-
+    
     // ── Save profile ─────────────────────────────────────────────
     async function saveProfile() {
-        const name  = document.getElementById('name').value.trim();
-        const phone = document.getElementById('phone').value.trim();
+        const name           = document.getElementById('name').value.trim();
+        const email          = document.getElementById('email').value.trim();
+        const contact_number = document.getElementById('phone').value.trim();
 
         try {
             const res = await fetch('/api/customer-auth/profile/', {
@@ -179,19 +181,27 @@
                     'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + token
                 },
-                body: JSON.stringify({ name, phone })
+                body: JSON.stringify({ name, email, contact_number })
             });
 
             if (res.ok) {
                 const data = await res.json();
                 original = data;
-                sessionStorage.setItem('customerName', data.name);
-                document.getElementById('headerName').textContent = data.name;
+
+                document.getElementById('name').value  = data.name           || name;
+                document.getElementById('email').value = data.email          || email;
+                document.getElementById('phone').value = data.contact_number || contact_number;
+
+                document.getElementById('headerName').textContent  = data.name  || name;
+                document.getElementById('headerEmail').textContent = data.email || email;
+
+                sessionStorage.setItem('customerName', data.name || name);
+
                 showSuccess('Profile updated successfully!');
                 cancelEdit();
             } else {
                 const err = await res.json();
-                showError(err.error || 'Update failed.');
+                showError(err.error || err.detail || 'Update failed.');
             }
         } catch (err) {
             showError('Connection error. Please try again.');
