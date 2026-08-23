@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 # Create your models here.
 
@@ -193,6 +194,7 @@ class InventoryHealthScore(models.Model):
         max_length=15, choices=WEIGHTING_CHOICES, default='4-COMPONENT'
     )
     calculated_date = models.DateField(auto_now_add=True)
+    calculated_at = models.DateTimeField(default=timezone.now, null=True, blank=True)
     calculated_by = models.ForeignKey(
         AppUser, on_delete=models.SET_NULL,
         null=True, blank=True, db_column='calculated_by'
@@ -219,6 +221,7 @@ class CategoryHealthScore(models.Model):
     critical_count = models.IntegerField(default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES)
     calculated_date = models.DateField(auto_now_add=True)
+    calculated_at = models.DateTimeField(default=timezone.now, null=True, blank=True)
     calculated_by = models.ForeignKey(
         AppUser, on_delete=models.SET_NULL,
         null=True, blank=True, db_column='calculated_by'

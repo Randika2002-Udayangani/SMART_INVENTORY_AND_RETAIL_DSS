@@ -26,9 +26,14 @@
         <small class="text-muted">Composite 0–100 score · 4-band classification · triggered on-demand</small>
     </div>
     <div>
-        <button class="btn btn-primary btn-sm me-2" id="calcBtn" onclick="runCalculation()">▶ Run Health Calculation</button>
-        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
-        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button class="btn btn-primary btn-sm" id="calcBtn" onclick="runCalculation()">▶ Run Health Calculation</button>
+            <small id="lastCalculatedLabel" class="text-muted">Last calculated: --</small>
+        </div>
+        <div class="mt-2 d-flex justify-content-end">
+            <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
+            <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+        </div>
     </div>
 </div>
 
@@ -38,28 +43,28 @@
         <div class="col-md-3">
             <div class="kpi-card">
                 <div class="kpi-lbl" style="color:#16a34a;">HEALTHY · 80–100</div>
-                <div class="kpi-val" style="color:#16a34a;" id="countHealthy">—</div>
+                <div class="kpi-val" style="color:#16a34a;" id="countHealthy">0</div>
                 <small class="text-muted">Monitor normally</small>
             </div>
         </div>
         <div class="col-md-3">
             <div class="kpi-card">
                 <div class="kpi-lbl" style="color:#854d0e;">WATCH · 60–79</div>
-                <div class="kpi-val" style="color:#ca8a04;" id="countWatch">—</div>
+                <div class="kpi-val" style="color:#ca8a04;" id="countWatch">0</div>
                 <small class="text-muted">Keep an eye on these</small>
             </div>
         </div>
         <div class="col-md-3">
             <div class="kpi-card">
                 <div class="kpi-lbl" style="color:#c2410c;">AT RISK · 40–59</div>
-                <div class="kpi-val" style="color:#ea580c;" id="countAtRisk">—</div>
+                <div class="kpi-val" style="color:#ea580c;" id="countAtRisk">0</div>
                 <small class="text-muted">Needs attention soon</small>
             </div>
         </div>
         <div class="col-md-3">
             <div class="kpi-card">
                 <div class="kpi-lbl" style="color:#b91c1c;">CRITICAL · 0–39</div>
-                <div class="kpi-val" style="color:#dc2626;" id="countCritical">—</div>
+                <div class="kpi-val" style="color:#dc2626;" id="countCritical">0</div>
                 <small class="text-muted">Immediate action required</small>
             </div>
         </div>
@@ -84,6 +89,7 @@
                     <th>Velocity</th>
                     <th>Margin</th>
                     <th>Expiry Risk</th>
+                    <th>Stock Duration</th>
                     <th>Overall Score</th>
                     <th>Status</th>
                     <th>Recommended Action</th>
@@ -119,6 +125,43 @@ function statusBadge(s) {
     return `<span class="${map[s] || 'badge-watch'}">${s}</span>`;
 }
 
+function numberCell(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num.toFixed(2) : '—';
+}
+
+function formatTimestamp(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = date.getHours();
+    const mins = String(date.getMinutes()).padStart(2, '0');
+    const secs = String(date.getSeconds()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'pm' : 'am';
+    const hr12 = hours % 12 || 12;
+
+    return `${day}/${month}/${year}, ${hr12}:${mins}:${secs} ${ampm}`;
+}
+
+function setLastCalculatedLabel(rawValue, fallbackToNow = false) {
+    const timestamp = rawValue || (fallbackToNow ? new Date().toISOString() : null);
+    const labelText = timestamp ? 'Last calculated' : 'Last refreshed';
+    const valueText = timestamp ? formatTimestamp(timestamp) : '—';
+    document.getElementById('lastCalculatedLabel').textContent = `${labelText}: ${valueText}`;
+}
+
+async function fetchJson(url, options) {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+        throw new Error(`Request failed (${response.status})`);
+    }
+    return response.json();
+}
+
 function filterTable(filter, btn) {
     currentFilter = filter;
     document.querySelectorAll('.btn-group-filter button').forEach(b => b.classList.remove('active'));
@@ -129,47 +172,71 @@ function renderTable() {
     const rows = currentFilter === 'ALL' ? allData : allData.filter(r => r.status === currentFilter);
     const tbody = document.getElementById('hsBody');
     if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No products found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No products found.</td></tr>';
         return;
     }
     tbody.innerHTML = rows.map(r => `
         <tr>
-           <td style="font-weight:600">${r.product__product_name ?? r.product_name ?? '—'}</td>
-            <td>${r.category ?? '—'}</td>
-            <td>${r.velocity_score ?? '—'}</td>
-            <td>${r.margin_score ?? '—'}</td>
-            <td>${r.expiry_risk_score ?? '—'}</td>
-            <td><strong>${r.overall_score ?? '—'}</strong></td>
+            <td style="font-weight:600">${r.product__product_name ?? r.product_name ?? '—'}</td>
+            <td>${r.product__category__category_name ?? r.category ?? '—'}</td>
+            <td>${numberCell(r.velocity_score)}</td>
+            <td>${numberCell(r.margin_score)}</td>
+            <td>${numberCell(r.expiry_risk_score)}</td>
+            <td>${numberCell(r.stock_duration_score)}</td>
+            <td><strong>${numberCell(r.overall_score)}</strong></td>
             <td>${statusBadge(r.status)}</td>
             <td><em style="color:#64748b;font-size:12px;">${r.recommended_action ?? '—'}</em></td>
         </tr>
     `).join('');
 }
 
+function updateSummaryCounts() {
+    const counts = {
+        HEALTHY: 0,
+        WATCH: 0,
+        'AT RISK': 0,
+        CRITICAL: 0,
+    };
+
+    allData.forEach(row => {
+        const status = row.status;
+        if (status in counts) counts[status] += 1;
+    });
+
+    document.getElementById('countHealthy').innerText = counts.HEALTHY ?? 0;
+    document.getElementById('countWatch').innerText = counts.WATCH ?? 0;
+    document.getElementById('countAtRisk').innerText = counts['AT RISK'] ?? 0;
+    document.getElementById('countCritical').innerText = counts.CRITICAL ?? 0;
+}
+
 async function loadHealthScores() {
     try {
-        const res = await fetch('/api/analytics/health-scores/', {
+        const requestOptions = {
             headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
+        };
+        const data = await fetchJson('/api/analytics/health-scores/', requestOptions);
 
-        // Update count cards
-        if (typeof data === 'object' && !Array.isArray(data) && data.HEALTHY !== undefined) {
-            document.getElementById('countHealthy').innerText = data.HEALTHY ?? 0;
-            document.getElementById('countWatch').innerText = data.WATCH ?? 0;
-            document.getElementById('countAtRisk').innerText = data['AT RISK'] ?? 0;
-            document.getElementById('countCritical').innerText = data.CRITICAL ?? 0;
+        const summaryTimestamp = data?.last_calculated_at || data?.summary?.last_calculated_at || null;
+        if (summaryTimestamp) {
+            setLastCalculatedLabel(summaryTimestamp, false);
+        } else {
+            setLastCalculatedLabel(null, true);
         }
 
-        // Try to get full list
-        const listRes = await fetch('/api/health-scores/', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const listData = await listRes.json();
+        const listData = await fetchJson('/api/health-scores/', requestOptions);
         allData = Array.isArray(listData) ? listData : (listData.results ?? []);
+
+        updateSummaryCounts();
+
+        const latestRow = [...allData].sort((a, b) => new Date(b.calculated_at || b.calculated_date || 0) - new Date(a.calculated_at || a.calculated_date || 0))[0];
+        const latestStamp = latestRow?.calculated_at || latestRow?.calculated_date || null;
+        if (latestStamp) {
+            setLastCalculatedLabel(latestStamp, false);
+        }
+
         renderTable();
     } catch(e) {
-        document.getElementById('hsBody').innerHTML = '<tr><td colspan="8" class="text-center text-muted">Could not load data.</td></tr>';
+        document.getElementById('hsBody').innerHTML = '<tr><td colspan="9" class="text-center text-muted">Could not load data.</td></tr>';
     }
 }
 
@@ -178,12 +245,17 @@ async function runCalculation() {
     btn.innerHTML = '⏳ Calculating...';
     btn.disabled = true;
     try {
-        await fetch('/api/health-scores/calculate/', {
+        const result = await fetchJson('/api/health-scores/calculate/', {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + token }
         });
+        if (result.last_calculated_at) {
+            setLastCalculatedLabel(result.last_calculated_at, false);
+        }
         await loadHealthScores();
-    } catch(e) {}
+    } catch(e) {
+        document.getElementById('lastCalculatedLabel').textContent = 'Calculation failed';
+    }
     btn.innerHTML = '▶ Run Health Calculation';
     btn.disabled = false;
 }

@@ -1,4 +1,5 @@
 import io
+from html import escape, unescape
 from django.http import HttpResponse
 from openpyxl import Workbook
 from reportlab.lib.pagesizes import A4
@@ -44,6 +45,7 @@ from suppliers.models import Supplier
 from suppliers.views import _compute_scorecard
 
 from inventory.services.lifecycle import get_latest_lifecycle
+from inventory.services.reorder_logic import check_reorder_needs
 
 # =========================================================
 # HELPERS
@@ -1129,6 +1131,21 @@ def _log_export(request, filename):
     )
 
 
+def _prepare_export_text_for_pdf(value):
+    """Escape XML-like text once for ReportLab Paragraph objects.
+
+    ReportLab's Paragraphs accept XML-like markup, so ampersands must be
+    written as ``&amp;``. Some earlier implementations double-processed
+    already-escaped text by stripping ``amp`` out of ``&amp;``, leaving
+    trailing semicolons like ``&;``. Normalizing through ``html.unescape``
+    first keeps the value stable and ensures we only escape once.
+    """
+    if value is None:
+        return ''
+    text = str(value)
+    return escape(unescape(text), quote=False)
+
+
 def _excel_response(filename, headers, rows, summary=None):
     """
     summary: optional list of (label, value) tuples rendered as a
@@ -1136,6 +1153,9 @@ def _excel_response(filename, headers, rows, summary=None):
     totals straight from the exported file without the dashboard open.
     Default None keeps every other report export (inventory, health
     score, supplier, lifecycle, loss, reorder) unchanged.
+
+    Excel cells do not need HTML escaping: values are written as raw text,
+    including ampersands, so we intentionally do not call html.escape() here.
     """
     from openpyxl.styles import Font
 
@@ -1209,7 +1229,7 @@ def _pdf_response(filename, title, headers, rows, summary=None):
 
     if summary:
         summary_table = Table(
-            [[label, str(value)] for label, value in summary],
+            [[_prepare_export_text_for_pdf(label), _prepare_export_text_for_pdf(value)] for label, value in summary],
             colWidths=[170, 400]
         )
         summary_table.setStyle(TableStyle([
@@ -1256,8 +1276,8 @@ def _pdf_response(filename, title, headers, rows, summary=None):
         scale = available_width / sum(col_widths)
         col_widths = [w * scale for w in col_widths]
 
-    header_row = [Paragraph(str(h), header_style) for h in headers]
-    body_rows = [[Paragraph(str(c), cell_style) for c in row] for row in rows]
+    header_row = [Paragraph(_prepare_export_text_for_pdf(h), header_style) for h in headers]
+    body_rows = [[Paragraph(_prepare_export_text_for_pdf(c), cell_style) for c in row] for row in rows]
     table_data = [header_row] + body_rows
 
     table = Table(table_data, colWidths=col_widths, repeatRows=1)
@@ -1685,6 +1705,15 @@ def reorder_report_export(request):
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Refresh the recommendation data before export so the report reflects the
+    # current sales/stock conditions instead of stale rows from an older job run.
+    # This does not change urgency thresholds; it only ensures the underlying data
+    # is current when the report is generated.
+    try:
+        check_reorder_needs()
+    except Exception:
+        pass
+
     latest_ids = (
         ReorderRecommendation.objects
         .filter(product_id=OuterRef('product_id'))
@@ -1701,6 +1730,49 @@ def reorder_report_export(request):
         queryset = queryset.filter(urgency=urgency_filter)
     if status_filter:
         queryset = queryset.filter(status=status_filter)
+
+    report_generated_on = timezone.now()
+    total_products = queryset.count()
+    urgency_counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
+    total_estimated_cost = 0.0
+    excluded_zero_cost_count = 0
+
+    detail_rows = []
+    for rec in queryset:
+        urgency = (rec.urgency or 'LOW').upper()
+        if urgency == 'NORMAL':
+            urgency = 'MEDIUM'
+        if urgency in urgency_counts:
+            urgency_counts[urgency] += 1
+        else:
+            urgency_counts['LOW'] += 1
+
+        estimated_cost = float(rec.estimated_cost or 0)
+        detail_rows.append({
+            'estimated_cost': estimated_cost,
+            'product_name': rec.product.product_name,
+        })
+
+        if estimated_cost == 0:
+            excluded_zero_cost_count += 1
+            continue
+
+        total_estimated_cost += estimated_cost
+
+    summary = [
+        ('Report Generated On', report_generated_on.strftime('%Y-%m-%d %H:%M:%S')),
+        ('Total Products', total_products),
+        ('CRITICAL Products', urgency_counts.get('CRITICAL', 0)),
+        ('HIGH Products', urgency_counts.get('HIGH', 0)),
+        ('MEDIUM Products', urgency_counts.get('MEDIUM', 0)),
+        ('LOW Products', urgency_counts.get('LOW', 0)),
+        ('Total Estimated Reorder Cost', f'Rs. {total_estimated_cost:,.2f}'),
+    ]
+    if excluded_zero_cost_count:
+        summary.append((
+            'Cost Note',
+            f'{excluded_zero_cost_count} of {total_products} items excluded from cost total — no cost history yet',
+        ))
 
     headers = [
         'Product Name', 'SKU', 'Supplier', 'Current Stock', 'Avg Daily Sales',
@@ -1720,10 +1792,10 @@ def reorder_report_export(request):
 
     filename_base = f'reorder_report_{date.today()}'
     if fmt == 'excel':
-        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows, summary=summary)
         logged_name = f'{filename_base}.xlsx'
     else:
-        response = _pdf_response(f'{filename_base}.pdf', f'Reorder Recommendations Report ({date.today()})', headers, rows)
+        response = _pdf_response(f'{filename_base}.pdf', f'Reorder Recommendations Report ({date.today()})', headers, rows, summary=summary)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)

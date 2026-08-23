@@ -782,6 +782,7 @@ class HealthScoreCalculateView(APIView):
             'message'           : 'Health score calculation complete',
             'products_processed': result['products_processed'],
             'summary'           : result['summary'],
+            'last_calculated_at': result['calculated_at'],
         }, status=status.HTTP_200_OK)
 
 
@@ -825,7 +826,7 @@ class HealthScoreListView(APIView):
             'velocity_score', 'margin_score',
             'expiry_risk_score', 'stock_duration_score', 'rating_score',
             'overall_score', 'status', 'recommended_action',
-            'rating_sufficient', 'weighting_mode', 'calculated_date'
+            'rating_sufficient', 'weighting_mode', 'calculated_date', 'calculated_at'
         )
         return Response(list(data))
  
@@ -850,6 +851,7 @@ class HealthScoreSummaryView(APIView):
         )
  
         counts = latest_qs.values('status').annotate(count=Count('id'))
+        latest_record = latest_qs.order_by('-calculated_at', '-calculated_date', '-id').first()
  
         summary = {
             'HEALTHY':  0,
@@ -860,10 +862,15 @@ class HealthScoreSummaryView(APIView):
         for row in counts:
             if row['status'] in summary:
                 summary[row['status']] = row['count']
+
+        last_calculated_at = None
+        if latest_record is not None:
+            last_calculated_at = latest_record.calculated_at.isoformat() if latest_record.calculated_at else latest_record.calculated_date.isoformat()
  
         return Response({
             'summary': summary,
             'total':   sum(summary.values()),
+            'last_calculated_at': last_calculated_at,
             'note': (
                 'Call POST /api/health-scores/calculate/ first if all counts '
                 'are 0. For the full product list use GET /api/health-scores/.'
@@ -898,7 +905,7 @@ class CategoryHealthScoreView(APIView):
         data = queryset.values(
             'id', 'category', 'category__category_name', 'avg_health_score',
             'healthy_count', 'watch_count', 'at_risk_count',
-            'critical_count', 'status', 'calculated_date'
+            'critical_count', 'status', 'calculated_date', 'calculated_at'
         )
         return Response(list(data))
 
@@ -932,7 +939,7 @@ class HealthScoreCriticalView(APIView):
         data = queryset.values(
             'id', 'product', 'product__product_name', 'product__sku_code',
             'overall_score', 'status',
-            'recommended_action', 'calculated_date'
+            'recommended_action', 'calculated_date', 'calculated_at'
         )
         return Response(list(data))
 
@@ -985,6 +992,7 @@ class HealthScoreDetailView(APIView):
             'rating_sufficient': record.rating_sufficient,
             'weighting_mode': record.weighting_mode,
             'calculated_date': record.calculated_date,
+            'calculated_at': record.calculated_at.isoformat() if record.calculated_at else None,
         }
         return Response(data)
 
@@ -1013,7 +1021,7 @@ class HealthScoreHistoryView(APIView):
             'velocity_score', 'margin_score',
             'expiry_risk_score', 'stock_duration_score', 'rating_score',
             'overall_score', 'status', 'recommended_action',
-            'rating_sufficient', 'weighting_mode', 'calculated_date'
+            'rating_sufficient', 'weighting_mode', 'calculated_date', 'calculated_at'
         )
         return Response(list(data))
     
