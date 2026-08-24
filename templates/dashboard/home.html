@@ -971,7 +971,19 @@ async function fetchExpirySummary() {
 async function fetchSyncDate() {
   try {
     const data = await apiFetch('/api/inventory/stock/');
-    document.getElementById('syncDate').innerText = data.last_sync_date || 'Not synced yet';
+    const rawSyncDate = data.last_sync_date;
+    const syncDate = rawSyncDate ? new Date(rawSyncDate) : null;
+    document.getElementById('syncDate').innerText = syncDate && !Number.isNaN(syncDate.getTime())
+      ? syncDate.toLocaleString('en-GB', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        })
+      : 'Not synced yet';
   } catch(e) {
     console.error('fetchSyncDate failed:', e);
     document.getElementById('syncDate').innerText = 'Unavailable';
