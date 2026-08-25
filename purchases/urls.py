@@ -11,14 +11,16 @@ urlpatterns = [
     path('purchases/<int:pk>/', views.PurchaseDetailView.as_view(), name='purchase-detail'),
     path('purchases/upload/invoice/', views.PurchaseInvoicePDFUploadView.as_view(), name='upload-purchase-invoice'),
 
-    # ── Batches ──────────────────────────────────────────────────
-    # NOTE: expiring-soon must come BEFORE <int:pk> to avoid URL conflict
-    # GET  /api/batches/expiring-soon/?days=30
-    path('batches/expiring-soon/', views.BatchExpiringSoonView.as_view(), name='batch-expiring'),
+    
 
-    # GET  /api/batches/          — list all batches (?status=ACTIVE &product=<id>)
+    # ── Batches ──────────────────────────────────────────────────
+    # NOTE: expiring-soon and confirm-expiry/bulk must come BEFORE
+    # <int:pk> patterns to avoid URL conflicts
+    path('batches/expiring-soon/', views.BatchExpiringSoonView.as_view(), name='batch-expiring'),
+    path('batches/confirm-expiry/bulk/', views.BulkConfirmBatchExpiryView.as_view(), name='batch-confirm-expiry-bulk'),
+
     path('batches/', views.BatchListView.as_view(), name='batch-list'),
 
-    # PATCH /api/batches/<id>/status/  — update batch status
     path('batches/<int:pk>/status/', views.BatchStatusUpdateView.as_view(), name='batch-status'),
+    path('batches/<int:pk>/confirm-expiry/', views.ConfirmBatchExpiryView.as_view(), name='batch-confirm-expiry'),
 ]
