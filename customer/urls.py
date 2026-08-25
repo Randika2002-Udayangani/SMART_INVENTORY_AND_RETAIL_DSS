@@ -12,4 +12,5 @@ urlpatterns = [
     path('my-orders/', views.my_orders, name='my-orders'),
     path('profile/', views.profile_page, name='customer-profile'),
     path('product/', views.product_detail_page, name='product-detail'),
+    
 ]

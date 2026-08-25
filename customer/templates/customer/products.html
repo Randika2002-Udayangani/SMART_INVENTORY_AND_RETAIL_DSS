@@ -170,9 +170,11 @@
     <a class="brand" href="#">🛒 SmartDeals</a>
     <div class="nav-links">
         <a href="/customer/products/">Products</a>
-        <a href="/customer/chatbot/">Chat</a>
+        <a href="/customer/chatbot/">Chat with Us</a>
         <a href="/customer/my-orders/">My Orders</a>
-        <button class="logout-btn" onclick="logout()">Logout</button>    </div>
+        <a href="/customer/profile/">My Profile</a>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
 </nav>
 
 
@@ -422,8 +424,7 @@
 
     // ── Order button ─────────────────────────────────────────────
     function orderProduct(id, name) {
-    window.location.href =
-        `/customer/order/?product=${id}&name=${encodeURIComponent(name)}`;
+        window.location.href = `/customer/product/?id=${id}`;
     }
 
     // ── Logout ───────────────────────────────────────────────────
