@@ -50,7 +50,7 @@ class CategoryDetailView(ReadPublicWriteAuthenticated, generics.RetrieveUpdateDe
     authentication_classes = [LenientJWTAuthentication]
 
 # ─────────────────────────────────────────────
-# StoreZone
+# StoreZone — staff-only, no customer traffic, default auth is fine
 # ─────────────────────────────────────────────
 class StoreZoneListCreateView(generics.ListCreateAPIView):
     queryset = StoreZone.objects.all()
@@ -66,6 +66,7 @@ class StoreZoneDetailView(generics.RetrieveUpdateDestroyAPIView):
 # Product
 # ─────────────────────────────────────────────
 class ProductListCreateView(generics.ListCreateAPIView):
+    authentication_classes = [LenientJWTAuthentication]
 
     def get_queryset(self):
         queryset = Product.objects.filter(is_active=True)
@@ -100,7 +101,8 @@ class ProductListCreateView(generics.ListCreateAPIView):
             return [permissions.IsAuthenticated()]
         return [permissions.AllowAny()]
 
-    # ─────────────────────────────────────────────
+
+# ─────────────────────────────────────────────
 # Customer-safe stock check  (F01, API Design Doc v3.1 §5.4)
 # GET /api/products/<id>/availability/
 # Public (Auth: No). Used by M3 Chalani (product detail/browse)
@@ -111,6 +113,7 @@ class ProductListCreateView(generics.ListCreateAPIView):
 # ─────────────────────────────────────────────
 class ProductAvailabilityView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = [LenientJWTAuthentication]
 
     def get(self, request, pk):
         try:
@@ -140,6 +143,7 @@ class ProductAvailabilityView(APIView):
 
 class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Product.objects.all()
+    authentication_classes = [LenientJWTAuthentication]
 
     def get_serializer_class(self):
         if self.request.method in ('PUT', 'PATCH', 'DELETE'):
@@ -338,14 +342,6 @@ class ItemMasterUploadView(APIView):
             'upload_log_id' : upload_log.id,
             'notes'         : errors[:20],
         }, status=status.HTTP_201_CREATED)
-    
-# ============================================================
-# APPEND to products/views.py.
-# Also add this import near the top, with the other .serializers import:
-#   ZoneRecommendationSerializer
-# and this with the other .models import:
-#   ZoneRecommendation
-# ============================================================
 
 
 class ZoneRecommendationListView(generics.ListAPIView):
@@ -369,10 +365,6 @@ class ZoneRecommendationListView(generics.ListAPIView):
     ).order_by('-recommendation_date')
     serializer_class = ZoneRecommendationSerializer
     permission_classes = [permissions.IsAuthenticated]
-
-# ============================================================
-# APPEND to products/views.py
-# ============================================================
 
 
 class RecalculateWACView(APIView):
