@@ -2,6 +2,31 @@
 Shared helper functions used across multiple apps.
 """
 
+SYNC_UPLOAD_TYPES = ['DAILY_BILLS', 'SUPPLIER_INVOICE', 'ITEM_SALES']
+
+
+def get_latest_sync_uploads():
+    """Return the latest eligible upload for each type and the overall winner."""
+    from sales.models import UploadLog
+
+    uploads = []
+    latest_overall = None
+    for upload_type in SYNC_UPLOAD_TYPES:
+        row = (
+            UploadLog.objects
+            .filter(upload_type=upload_type, status__in=['SUCCESS', 'PARTIAL'])
+            .order_by('-upload_date', '-id')
+            .first()
+        )
+        uploads.append((upload_type, row))
+        if row and (
+            latest_overall is None
+            or (row.upload_date, row.id) > (latest_overall.upload_date, latest_overall.id)
+        ):
+            latest_overall = row
+    return uploads, latest_overall
+
+
 def get_last_sync_date():
     """
     Return the latest incoming data upload date/time, as an ISO date
@@ -22,15 +47,5 @@ def get_last_sync_date():
     status) and the two disagreed with each other for the same
     upload. Both are now replaced by this one function.
     """
-    from sales.models import UploadLog
-
-    last_upload = (
-        UploadLog.objects
-        .filter(
-            upload_type__in=['DAILY_BILLS', 'SUPPLIER_INVOICE', 'ITEM_SALES'],
-            status__in=['SUCCESS', 'PARTIAL'],
-        )
-        .order_by('-upload_date', '-id')
-        .first()
-    )
+    _, last_upload = get_latest_sync_uploads()
     return last_upload.upload_date.isoformat() if last_upload else 'Not synced yet'

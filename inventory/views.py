@@ -39,7 +39,7 @@ from datetime import date
 from django.utils import timezone as dj_timezone
 
 from django.utils import timezone as dj_timezone
-from core.utils import get_last_sync_date
+from core.utils import get_last_sync_date, get_latest_sync_uploads
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -1333,6 +1333,35 @@ class SyncDateView(APIView):
 
     def get(self, request):
         return Response({'last_sync_date': get_last_sync_date()})
+
+
+class LastUploadsByTypeView(APIView):
+    """
+    GET /api/inventory/last-uploads-by-type/
+    Return the latest eligible upload for each type contributing to Dashboard sync.
+    """
+
+    def get(self, request):
+        uploads, latest_overall = get_latest_sync_uploads()
+        results = []
+        for upload_type, row in uploads:
+            if row:
+                results.append({
+                    'upload_type': upload_type,
+                    'found': True,
+                    'file_name': row.file_name,
+                    'status': row.status,
+                    'upload_date': row.upload_date,
+                    'error_message': row.error_message,
+                })
+            else:
+                results.append({'upload_type': upload_type, 'found': False})
+
+        return Response({
+            'current_sync_type': latest_overall.upload_type if latest_overall else None,
+            'current_sync_date': latest_overall.upload_date if latest_overall else None,
+            'uploads': results,
+        })
     
 
 class ReorderCalculateView(APIView):
