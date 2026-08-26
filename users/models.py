@@ -2,58 +2,23 @@ from django.conf import settings
 from django.db import models
 
 
-class Role(models.Model):
-    ROLE_NAMES = [
-        ('ADMIN', 'Admin'),
-        ('MANAGER', 'Manager'),
-        ('STAFF', 'Staff'),
-    ]
-    role_name = models.CharField(max_length=20, choices=ROLE_NAMES, unique=True)
-    description = models.CharField(max_length=255, blank=True)
-
-    class Meta:
-        db_table = 'role'
-
-    def __str__(self):
-        return self.role_name
-
-
-class AppUser(models.Model):
-    username = models.CharField(max_length=50, unique=True)
-    password_hash = models.TextField()
-    role = models.ForeignKey(
-        Role, on_delete=models.PROTECT, db_column='role_id'
-    )
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    failed_login_count = models.IntegerField(default=0)
-    locked_until = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        db_table = 'app_user'
-
-    def __str__(self):
-        return self.username
-
-
-class UserSession(models.Model):
-    user = models.ForeignKey(
-        AppUser, on_delete=models.CASCADE, db_column='user_id'
-    )
-    session_token = models.CharField(max_length=255, unique=True)
-    login_time = models.DateTimeField(auto_now_add=True)
-    logout_time = models.DateTimeField(null=True, blank=True)
-    last_activity = models.DateTimeField(auto_now=True)
-    ip_address = models.CharField(max_length=45, blank=True)
-    is_active = models.BooleanField(default=True)
-    user_agent = models.CharField(max_length=255, blank=True)
-
-    class Meta:
-        db_table = 'user_session'
+# ─────────────────────────────────────────────────────────────────
+# Role, AppUser, UserSession — REMOVED.
+#
+# These were the original custom auth models from early in the
+# project. Confirmed dead: nothing in the real login flow
+# (TokenObtainPairView / SimpleJWT against settings.AUTH_USER_MODEL)
+# ever read or wrote to them. Every FK that used to point at AppUser
+# (inventory/models.py x7, orders/models.py x2) has been repointed
+# to settings.AUTH_USER_MODEL. See inventory/migrations/0005_*.py,
+# orders/migrations/0003_*.py, and this app's 0004_*.py for the
+# actual schema changes (applied in that order — the FKs move off
+# AppUser before AppUser itself is dropped).
+# ─────────────────────────────────────────────────────────────────
 
 
 class AuditLog(models.Model):
-    # CHANGED: now points to the real auth table (where staff actually log in from),
+    # Points to the real auth table (where staff actually log in from),
     # not the orphaned AppUser table.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
@@ -86,11 +51,8 @@ class SystemConfig(models.Model):
 # ─────────────────────────────────────────────────────────────────
 # F15 — Account lockout (API Design Doc v3.1 §4.1)
 #
-# Deliberately NOT built on AppUser — that table is orphaned, nothing
-# in the real login flow (TokenObtainPairView, staff JWT) reads from
-# or writes to it. failed_login_count/locked_until living there would
-# never actually enforce anything. This ties to the REAL auth user
-# (settings.AUTH_USER_MODEL) that /api/auth/login/ actually checks.
+# Built on settings.AUTH_USER_MODEL — the real auth user that
+# /api/auth/login/ actually checks.
 #
 # get_or_create() is used everywhere this is read, not a signal —
 # so existing accounts (including the superuser) get a row lazily on
