@@ -12,6 +12,7 @@ from inventory.views import (
 
 from sales.views import ItemSalesListView
 from sales.views import profit_summary
+from analytics.views import slow_moving, sales_trend, category_performance, store_revenue
 
 urlpatterns = [
     # ── F05 Profit & Analytics ────────────────────────────
@@ -31,4 +32,10 @@ urlpatterns = [
 
     # ── Profit summary (M1 requested) ─────────────────────
     path('analytics/profit-summary/', profit_summary, name='analytics-profit-summary'),
+
+    # ── F05-D..G: remaining analytics endpoints (M2 — Nipuni) ─────
+    path('analytics/slow-moving/', slow_moving, name='analytics-slow-moving'),
+    path('analytics/sales-trend/', sales_trend, name='analytics-sales-trend'),
+    path('analytics/category-performance/', category_performance, name='analytics-category-performance'),
+    path('analytics/store-revenue/', store_revenue, name='analytics-store-revenue'),
 ]

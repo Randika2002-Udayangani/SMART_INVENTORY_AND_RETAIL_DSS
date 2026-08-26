@@ -17,7 +17,8 @@
 #            removes the Decimal → float → Decimal(str()) round-trip
 
 from decimal import Decimal
-from django.db.models import Sum
+from datetime import date, timedelta
+from django.db.models import Sum, Count
 from sales.models import ItemSalesRecord, DailyBillSummary
 from products.models import Product
 
@@ -279,3 +280,323 @@ def get_top_products(start_date, end_date, rank_by='profit', limit=5, product_re
         )
 
     return sorted_results[:limit]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# F05-D: Slow-Moving / Decision Support
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def slow_moving(start_date, end_date, product_results=None):
+    """
+    Flags products whose margin and volume diverge from their own
+    category's average — per API Design Doc §10:
+    "Products where margin < category_avg AND qty > category_avg
+    (high volume, low margin) or vice versa."
+
+    Two flag types returned (both directions of the divergence,
+    since the design doc's "or vice versa" covers both):
+        HIGH_VOLUME_LOW_MARGIN — selling a lot, but thin margin
+                                  relative to peers in the same
+                                  category. Candidate for review —
+                                  competing on price at the expense
+                                  of profit.
+        LOW_VOLUME_HIGH_MARGIN — barely selling, but fat margin.
+                                  Candidate for promotion/zone
+                                  placement rather than discount —
+                                  the margin is fine, visibility isn't.
+
+    Category averages are computed from the SAME product_results
+    passed in (or freshly calculated) — not a separate DB query —
+    so this stays consistent with whatever period the caller is
+    already looking at, and costs zero extra queries beyond
+    calculate_sales_and_profit()'s existing 3.
+
+    Products with no category (category_id == 0 / UNCATEGORISED)
+    are skipped — there's no peer group to compare them against,
+    and lumping every uncategorised product into one fake "category"
+    would produce a meaningless average.
+
+    Returns:
+        list of dicts, one per flagged product:
+            product_id, product_name, category_name,
+            margin_pct, total_qty  (the product's own figures)
+            category_avg_margin_pct, category_avg_qty  (its peer average)
+            flag  — 'HIGH_VOLUME_LOW_MARGIN' or 'LOW_VOLUME_HIGH_MARGIN'
+
+    Called by: GET /api/analytics/slow-moving/
+    """
+    if product_results is None:
+        product_results, _, _, _ = calculate_sales_and_profit(start_date, end_date)
+
+    # ── Build category averages first — needs every product's numbers
+    #    before any single product can be compared against its peers ──────────
+    category_totals = {}
+    for result in product_results:
+        c_id = result['category_id']
+        if c_id == 0:
+            continue  # UNCATEGORISED — no peer group, skip from averaging too
+
+        if c_id not in category_totals:
+            category_totals[c_id] = {
+                'category_name'  : result['category_name'],
+                'margin_sum'     : Decimal('0.00'),
+                'qty_sum'        : 0,
+                'product_count'  : 0,
+            }
+        category_totals[c_id]['margin_sum']    += result['margin_pct']
+        category_totals[c_id]['qty_sum']       += result['total_qty']
+        category_totals[c_id]['product_count'] += 1
+
+    category_averages = {
+        c_id: {
+            'category_name'          : totals['category_name'],
+            'category_avg_margin_pct': (totals['margin_sum'] / totals['product_count']).quantize(Decimal('0.01')),
+            'category_avg_qty'       : totals['qty_sum'] / totals['product_count'],
+        }
+        for c_id, totals in category_totals.items()
+    }
+
+    # ── Compare each product against its own category's average ──────────────
+    flagged = []
+    for result in product_results:
+        c_id = result['category_id']
+        if c_id == 0 or c_id not in category_averages:
+            continue
+
+        avg = category_averages[c_id]
+        margin_pct = result['margin_pct']
+        total_qty  = result['total_qty']
+
+        flag = None
+        if margin_pct < avg['category_avg_margin_pct'] and total_qty > avg['category_avg_qty']:
+            flag = 'HIGH_VOLUME_LOW_MARGIN'
+        elif margin_pct > avg['category_avg_margin_pct'] and total_qty < avg['category_avg_qty']:
+            flag = 'LOW_VOLUME_HIGH_MARGIN'
+
+        if flag:
+            flagged.append({
+                'product_id'              : result['product_id'],
+                'product_name'            : result['product_name'],
+                'category_name'           : result['category_name'],
+                'margin_pct'              : float(margin_pct),
+                'total_qty'               : total_qty,
+                'category_avg_margin_pct' : float(avg['category_avg_margin_pct']),
+                'category_avg_qty'        : float(avg['category_avg_qty']),
+                'flag'                    : flag,
+            })
+
+    return flagged
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# F05-E: Sales Trend (Chart Data)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def sales_trend(period='daily', months=6):
+    """
+    Buckets sales into daily / weekly / monthly totals for chart
+    rendering — per API Design Doc §10:
+    "Daily/weekly/monthly sales trend data for chart.
+    Pass ?period=daily/weekly/monthly and ?months=6"
+
+    Uses Django's Trunc* DB functions to do the bucketing inside
+    the database (single aggregate query) rather than pulling every
+    row and bucketing in Python — same "push the work to the DB"
+    approach as calculate_sales_and_profit()'s grouped annotate.
+
+    period='daily'   → TruncDate,  one point per calendar day
+    period='weekly'  → TruncWeek,  one point per ISO week start
+    period='monthly' → TruncMonth, one point per calendar month
+    Anything else falls back to 'daily' rather than raising —
+    matches the defensive-default pattern already used for
+    SystemConfig lookups elsewhere in this file's sibling module
+    (discount_engine.py's _get_config_value).
+
+    Returns:
+        list of dicts, oldest → newest:
+            period_label   str  — ISO date of the bucket start
+            total_qty      int
+            total_revenue  float
+
+    Called by: GET /api/analytics/sales-trend/?period=daily&months=6
+    """
+    from django.db.models.functions import TruncDate, TruncWeek, TruncMonth
+
+    trunc_map = {
+        'daily':   TruncDate,
+        'weekly':  TruncWeek,
+        'monthly': TruncMonth,
+    }
+    trunc_fn = trunc_map.get(period, TruncDate)
+
+    end_date   = date.today()
+    start_date = end_date - timedelta(days=months * 30)
+
+    bucketed = (
+        ItemSalesRecord.objects
+        .filter(sale_date__range=(start_date, end_date))
+        .annotate(bucket=trunc_fn('sale_date'))
+        .values('bucket')
+        .annotate(
+            total_qty     = Sum('quantity_sold'),
+            total_revenue = Sum('total_amount'),
+        )
+        .order_by('bucket')
+    )
+
+    return [
+        {
+            'period_label'  : str(row['bucket']),
+            'total_qty'     : row['total_qty']     or 0,
+            'total_revenue' : float(row['total_revenue'] or 0),
+        }
+        for row in bucketed
+    ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# F05-F: Category Performance
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def category_performance(start_date, end_date, product_results=None):
+    """
+    Sales and profit grouped by category, with a margin ranking —
+    per API Design Doc §10: "Sales and profit grouped by category.
+    Includes margin ranking."
+
+    Builds on the same category_map grouping used in
+    aggregate_by_brand_and_category() (F05-B) rather than
+    re-querying — but adds margin_pct per category and a 1-indexed
+    rank field, which brand-comparison's output doesn't need.
+
+    Accepts pre-computed product_results to avoid recalculating,
+    same convention as F05-B and F05-C.
+
+    Rank is by margin_pct descending (highest-margin category = rank 1),
+    matching "margin ranking" in the spec — not by total_profit, since
+    a high-revenue category can have thin margins and a small category
+    can be very profitable per rupee sold; margin is what "ranking"
+    refers to here.
+
+    Returns:
+        list of dicts, sorted by rank ascending:
+            category_name, total_revenue, total_profit, margin_pct, rank
+
+    Called by: GET /api/analytics/category-performance/
+    """
+    if product_results is None:
+        product_results, _, _, _ = calculate_sales_and_profit(start_date, end_date)
+
+    category_map = {}
+    for result in product_results:
+        c_id = result['category_id']
+        if c_id not in category_map:
+            category_map[c_id] = {
+                'category_name' : result['category_name'],
+                'total_profit'  : Decimal('0.00'),
+                'total_revenue' : Decimal('0.00'),
+            }
+        category_map[c_id]['total_profit']  += result['total_profit']
+        category_map[c_id]['total_revenue'] += result['total_revenue']
+
+    rows = []
+    for v in category_map.values():
+        margin_pct = (
+            (v['total_profit'] / v['total_revenue'] * 100)
+            if v['total_revenue']
+            else Decimal('0')
+        ).quantize(Decimal('0.01'))
+
+        rows.append({
+            'category_name' : v['category_name'],
+            'total_revenue' : float(v['total_revenue']),
+            'total_profit'  : float(v['total_profit']),
+            'margin_pct'    : float(margin_pct),
+        })
+
+    # ── Rank by margin_pct descending — highest margin category first ─────────
+    rows.sort(key=lambda x: x['margin_pct'], reverse=True)
+    for i, row in enumerate(rows, start=1):
+        row['rank'] = i
+
+    return rows
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# F05-G: Store Revenue KPIs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def store_revenue(start_date, end_date):
+    """
+    Store-level KPIs sourced from DailyBillSummary — per API Design
+    Doc §10: "Store-level KPIs from Daily_Bill_Summary: total revenue,
+    total discount, net revenue, payment type breakdown."
+
+    Deliberately reads DailyBillSummary, NOT ItemSalesRecord —
+    these are the two separate easyAcc pipelines (§9 Data Ingestion).
+    Store-level KPIs belong to the bill-level pipeline; product-level
+    profit belongs to the item-ledger pipeline. Mixing them here
+    would reintroduce the same item-sales-vs-bill-sales mismatch
+    that calculate_sales_and_profit()'s consistency check already
+    exists to detect — so this function stays on its own pipeline.
+
+    total_revenue = sum(gross_amount)   — before discount
+    total_discount = sum(discount)
+    net_revenue = sum(final_amount)     — what the store actually took in
+
+    payment_type breakdown skips bills with payment_type == '' —
+    per the model, payment_type is blank=True, so older or
+    incompletely-parsed bills may not have it set. Counting those
+    under a fake "UNKNOWN" bucket would silently hide a data-quality
+    issue; leaving them out of the breakdown (while still counting
+    them in the totals above) makes the gap visible instead — the
+    breakdown total will be lower than total_revenue if any bills
+    are missing payment_type, which is the intended signal.
+
+    Returns:
+        dict:
+            total_revenue    float
+            total_discount   float
+            net_revenue      float
+            payment_breakdown  list of {payment_type, total_amount, bill_count}
+            period           {date_from, date_to}
+
+    Called by: GET /api/analytics/store-revenue/
+    """
+    bills = DailyBillSummary.objects.filter(
+        sale_date__range=(start_date, end_date)
+    )
+
+    totals = bills.aggregate(
+        total_revenue  = Sum('gross_amount'),
+        total_discount = Sum('discount'),
+        net_revenue    = Sum('final_amount'),
+    )
+
+    payment_rows = (
+        bills.exclude(payment_type='')
+        .values('payment_type')
+        .annotate(
+            total_amount = Sum('final_amount'),
+            bill_count   = Count('id'),
+        )
+        .order_by('-total_amount')
+    )
+
+    return {
+        'total_revenue'  : float(totals['total_revenue']  or 0),
+        'total_discount' : float(totals['total_discount'] or 0),
+        'net_revenue'    : float(totals['net_revenue']    or 0),
+        'payment_breakdown': [
+            {
+                'payment_type' : row['payment_type'],
+                'total_amount' : float(row['total_amount'] or 0),
+                'bill_count'   : row['bill_count'],
+            }
+            for row in payment_rows
+        ],
+        'period': {
+            'date_from': str(start_date),
+            'date_to':   str(end_date),
+        }
+    }

@@ -288,40 +288,217 @@ def _try_resolve_truncated_product(description):
 
 def _recalculate_avg_cost_price(product):
     """
-    True weighted-average-cost recalculation across ALL PurchaseBatch
+    True weighted-average-cost recalculation across ALL ACTIVE PurchaseBatch
     records for this product (both from this invoice pipeline and the
     original JSON /api/purchases/ endpoint) -- not just the most recent
     purchase.
- 
-    Formula: avg_cost_price = total_purchase_cost / total_units_received
-    (matches Randika's spec exactly.)
- 
+
+    Formula: avg_cost_price = total_purchase_cost / total_remaining_units
+    (matches Randika's spec, updated per Fix below.)
+
+    Fix (Randika, [date]) — filter to status='ACTIVE' only, matching the
+    same fix already applied in serializers.py (Fix 8). Before this fix,
+    PENDING_EXPIRY batches (100% of batches from the PDF invoice pipeline,
+    per R9) were counted into avg_cost_price even though they don't count
+    as stock anywhere else (StockSnapshotView, low-stock, reorder all
+    filter to ACTIVE only). That let cost move while stock stayed at 0
+    for the same batch — misleading margin/health-score numbers with no
+    real stock backing them.
+
+    Fix (Randika, 2026-08-23) — switched from quantity_received to
+    remaining_quantity, matching serializers.py Fix 7 and Nipuni's
+    recalculate_wac.py fix exactly. All three WAC code paths in the
+    system now agree. WAC should reflect current stock reality (what's
+    actually still on the shelf), not original arrival quantity -- a
+    batch that's mostly sold through shouldn't still weight its full
+    original quantity into the cost average. Feeds F05 profit
+    calculation and F09's discount profit floor directly.
+
+    Edge case (same convention as serializers.py Fix 7+8 and
+    recalculate_wac.py): if a product's ACTIVE batches sum to zero
+    remaining units, avg_cost_price is left UNCHANGED, not reset to 0 --
+    the last known cost basis stays as a useful reference.
+
     Called after every batch creation, not just the first purchase.
     Safe to call multiple times for the same product within one
     transaction -- each call re-aggregates from the DB, so it stays
     correct even if the same product appears twice on one invoice.
     """
-    agg = PurchaseBatch.objects.filter(product=product).aggregate(
+    agg = PurchaseBatch.objects.filter(
+        product=product,
+        status='ACTIVE'          # <-- Fix: was unfiltered
+    ).aggregate(
         total_cost=Coalesce(
             Sum(
-                F('quantity_received') * F('cost_price'),
+                F('remaining_quantity') * F('cost_price'),   # Fix: was quantity_received
                 output_field=DecimalField(max_digits=14, decimal_places=2)
             ),
             Decimal('0'),
         ),
-        total_qty=Coalesce(Sum('quantity_received'), 0),
+        total_qty=Coalesce(Sum('remaining_quantity'), 0),    # Fix: was quantity_received
     )
     total_cost = agg['total_cost']
     total_qty = agg['total_qty']
- 
+
     if total_qty and total_qty > 0:
         new_avg = (total_cost / total_qty).quantize(Decimal('0.01'))
         product.avg_cost_price = new_avg
         product.save(update_fields=['avg_cost_price'])
         return new_avg
+    # No ACTIVE batches with remaining stock -- leave existing
+    # avg_cost_price unchanged rather than resetting it (matches
+    # serializers.py Fix 7+8 and recalculate_wac.py convention).
     return None
  
+from .serializers import (
+    PurchaseSerializer, PurchaseCreateSerializer, PurchaseBatchSerializer,
+    ConfirmBatchExpirySerializer, BulkConfirmBatchExpirySerializer,
+)
 
+
+# ─────────────────────────────────────────────────────────────────
+# POST /api/batches/<id>/confirm-expiry/
+# Moves a single PENDING_EXPIRY batch to ACTIVE once staff enters
+# the real expiry date. Closes the R9 gap: PDF-pipeline batches had
+# no exit path out of PENDING_EXPIRY before this.
+# ─────────────────────────────────────────────────────────────────
+class ConfirmBatchExpiryView(APIView):
+    def post(self, request, pk):
+        try:
+            batch = PurchaseBatch.objects.get(pk=pk)
+        except PurchaseBatch.DoesNotExist:
+            return Response(
+                {'error': 'Batch not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if batch.status != 'PENDING_EXPIRY':
+            return Response(
+                {'error': f'Batch {batch.id} is status {batch.status}, '
+                          f'not PENDING_EXPIRY. Nothing to confirm.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = ConfirmBatchExpirySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        old_status = batch.status
+        batch.expiry_date = serializer.validated_data['expiry_date']
+        batch.status = 'ACTIVE'
+        batch.save(update_fields=['expiry_date', 'status'])
+
+        new_avg = None
+        if batch.product is not None:
+            # R7 batches (product=NULL, flagged for review) can't get a
+            # WAC recalc until staff also resolves the product match --
+            # confirming expiry alone doesn't fix a missing product link.
+            new_avg = _recalculate_avg_cost_price(batch.product)
+
+        log_action(
+            user=request.user, action='UPDATE', table_name='purchase_batch',
+            record_id=batch.id,
+            old_value={'status': old_status, 'expiry_date': None},
+            new_value={'status': batch.status, 'expiry_date': str(batch.expiry_date)},
+            request=request,
+        )
+
+        return Response({
+            'message': f'Batch {batch.id} confirmed and moved to ACTIVE.',
+            'id': batch.id,
+            'product': batch.product.product_name if batch.product else None,
+            'status': batch.status,
+            'expiry_date': str(batch.expiry_date),
+            'avg_cost_price_after_recalc': str(new_avg) if new_avg is not None else None,
+        })
+
+
+# ─────────────────────────────────────────────────────────────────
+# POST /api/batches/confirm-expiry/bulk/
+# Confirms many PENDING_EXPIRY batches in one call -- needed because
+# a single invoice can produce dozens of PENDING_EXPIRY batches at
+# once, and confirming them one at a time isn't realistic for real
+# invoice volume.
+#
+# Body:
+# {
+#   "batches": [
+#     {"batch_id": 101, "expiry_date": "2026-09-01"},
+#     {"batch_id": 102, "expiry_date": "2026-08-15"}
+#   ]
+# }
+#
+# Partial-success pattern, matching the PDF upload view's style:
+# valid batches are confirmed even if others in the same request fail.
+# ─────────────────────────────────────────────────────────────────
+class BulkConfirmBatchExpiryView(APIView):
+    def post(self, request):
+        serializer = BulkConfirmBatchExpirySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        confirmed = []
+        failed = []
+        affected_products = set()
+
+        with transaction.atomic():
+            for item in serializer.validated_data['batches']:
+                batch_id = item['batch_id']
+                expiry_date = item['expiry_date']
+
+                try:
+                    batch = PurchaseBatch.objects.get(pk=batch_id)
+                except PurchaseBatch.DoesNotExist:
+                    failed.append({
+                        'batch_id': batch_id,
+                        'reason': 'Batch not found',
+                    })
+                    continue
+
+                if batch.status != 'PENDING_EXPIRY':
+                    failed.append({
+                        'batch_id': batch_id,
+                        'reason': f'Status is {batch.status}, not PENDING_EXPIRY',
+                    })
+                    continue
+
+                old_status = batch.status
+                batch.expiry_date = expiry_date
+                batch.status = 'ACTIVE'
+                batch.save(update_fields=['expiry_date', 'status'])
+
+                log_action(
+                    user=request.user, action='UPDATE', table_name='purchase_batch',
+                    record_id=batch.id,
+                    old_value={'status': old_status, 'expiry_date': None},
+                    new_value={'status': batch.status, 'expiry_date': str(batch.expiry_date)},
+                    request=request,
+                )
+
+                confirmed.append({
+                    'batch_id': batch.id,
+                    'product': batch.product.product_name if batch.product else None,
+                    'expiry_date': str(batch.expiry_date),
+                })
+
+                if batch.product is not None:
+                    affected_products.add(batch.product)
+
+            # Recalc WAC once per unique product, same optimization
+            # pattern as Fix 8 in serializers.py -- avoids N recalcs
+            # for N batches of the same product in one bulk request.
+            wac_updates = {}
+            for product in affected_products:
+                new_avg = _recalculate_avg_cost_price(product)
+                if new_avg is not None:
+                    wac_updates[product.product_name] = str(new_avg)
+
+        return Response({
+            'message': f'{len(confirmed)} batch(es) confirmed, {len(failed)} failed.',
+            'confirmed_count': len(confirmed),
+            'failed_count': len(failed),
+            'confirmed': confirmed,
+            'failed': failed,
+            'wac_updates': wac_updates,
+        }, status=status.HTTP_200_OK if confirmed else status.HTTP_400_BAD_REQUEST)
 
 class PurchaseInvoicePDFUploadView(APIView):
     """
