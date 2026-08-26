@@ -38,20 +38,8 @@ from datetime import date
 
 from django.utils import timezone as dj_timezone
 
-def get_last_sync_date():
-    """Return the latest successful incoming data upload timestamp."""
-    from sales.models import UploadLog
-
-    last_upload = (
-        UploadLog.objects
-        .filter(
-            upload_type__in=['DAILY_BILLS', 'SUPPLIER_INVOICE', 'ITEM_SALES'],
-            status='SUCCESS',
-        )
-        .order_by('-upload_date', '-id')
-        .first()
-    )
-    return last_upload.upload_date.isoformat() if last_upload else 'Not synced yet'
+from django.utils import timezone as dj_timezone
+from core.utils import get_last_sync_date
 
 
 # ═════════════════════════════════════════════════════════════════

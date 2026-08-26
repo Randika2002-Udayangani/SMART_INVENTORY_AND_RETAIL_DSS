@@ -47,6 +47,8 @@ from suppliers.views import _compute_scorecard
 from inventory.services.lifecycle import get_latest_lifecycle
 from inventory.services.reorder_logic import check_reorder_needs
 
+from core.utils import get_last_sync_date
+
 # =========================================================
 # HELPERS
 # =========================================================
@@ -1078,21 +1080,6 @@ def _sales_and_profit_rows(date_from, date_to):
             'margin_pct': margin_pct,
         })
     return rows
-
-
-def get_last_sync_date():
-    """
-    Reads last_item_ledger_sync from SystemConfig — same key used by
-    StockSnapshotView in the inventory app. Duplicated here (rather than
-    imported cross-app) to avoid a circular import between the reports
-    module and the inventory views module; keep both copies in sync if
-    the SystemConfig key name ever changes.
-    """
-    try:
-        config = SystemConfig.objects.get(key='last_item_ledger_sync')
-        return config.value
-    except SystemConfig.DoesNotExist:
-        return 'Not synced yet'
 
 
 def _inventory_rows():
