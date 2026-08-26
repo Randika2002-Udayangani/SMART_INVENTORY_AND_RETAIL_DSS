@@ -21,7 +21,7 @@ urlpatterns = [
     path('products/<int:pk>/recalculate-wac/', views.RecalculateWACView.as_view(), name='product-recalculate-wac'),
     path('products/<int:pk>/', views.ProductDetailView.as_view(), name='product-detail'),
 
-    # Commented out — views not yet implemented
-    # path('products/<int:pk>/availability/', views.ProductAvailabilityView.as_view(), name='product-availability'),
-    # path('products/reclassify/', views.ReclassifyProductsView.as_view(), name='products-reclassify'),
+    
+    path('products/<int:pk>/availability/', views.ProductAvailabilityView.as_view(), name='product-availability'),
+    path('products/reclassify/', views.ReclassifyProductsView.as_view(), name='products-reclassify'),
 ]
