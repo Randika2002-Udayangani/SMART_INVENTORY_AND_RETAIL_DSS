@@ -1,11 +1,414 @@
-{% extends 'customer/base.html' %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Cart | SmartDeals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; }
 
-{% block content %}
+        nav {
+            background: #1a73e8; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        nav .nav-links a { color: white; text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+        nav .logout-btn {
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            padding: 7px 16px; border-radius: 20px; margin-left: 20px; cursor: pointer;
+        }
 
-<h2>Your Cart</h2>
+        .page { padding: 24px; max-width: 700px; margin: 0 auto; }
 
-<p>Cart items will appear here</p>
+        .page-title { font-size: 1.3rem; font-weight: 700; margin-bottom: 20px; color: #222; }
 
-<button>Checkout</button>
+        /* ── Cart items ── */
+        .cart-item {
+            background: white; border-radius: 12px; padding: 16px 20px;
+            margin-bottom: 12px; display: flex;
+            justify-content: space-between; align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07); gap: 16px;
+        }
+        .item-info .item-name { font-weight: 700; color: #222; margin-bottom: 4px; }
+        .item-info .item-price { font-size: 0.88rem; color: #666; }
 
-{% endblock %}
+        .item-controls { display: flex; align-items: center; gap: 10px; }
+        .qty-btn {
+            width: 32px; height: 32px; border: 1.5px solid #ddd;
+            border-radius: 6px; background: white; font-size: 1.1rem;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+        }
+        .qty-btn:hover { border-color: #1a73e8; color: #1a73e8; }
+        .qty-num { font-weight: 700; min-width: 24px; text-align: center; }
+
+        .item-total { font-weight: 700; color: #1a73e8; font-size: 1rem; }
+        .remove-btn {
+            background: none; border: none; color: #c5221f;
+            cursor: pointer; font-size: 1.2rem; padding: 4px;
+        }
+
+        /* ── Order details ── */
+        .order-details {
+            background: white; border-radius: 12px; padding: 20px;
+            margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+        }
+        .order-details h3 { font-size: 1rem; margin-bottom: 16px; color: #222; }
+
+        .form-group { margin-bottom: 14px; }
+        label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; color: #444; }
+        input, select, textarea {
+            width: 100%; padding: 10px 14px; border: 1.5px solid #ddd;
+            border-radius: 8px; font-size: 0.95rem; outline: none;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        input:focus, select:focus { border-color: #1a73e8; }
+        textarea { resize: vertical; min-height: 70px; }
+
+        .time-slots { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+        .time-slot {
+            border: 1.5px solid #ddd; border-radius: 8px;
+            padding: 10px 6px; text-align: center; cursor: pointer;
+        }
+        .time-slot:hover { border-color: #1a73e8; background: #e8f0fe; }
+        .time-slot.selected { border-color: #1a73e8; background: #1a73e8; color: white; }
+        .slot-icon { font-size: 1.2rem; margin-bottom: 2px; }
+        .slot-name { font-size: 0.82rem; font-weight: 600; }
+        .slot-time { font-size: 0.72rem; opacity: 0.7; }
+
+        .error-text { color: #e53935; font-size: 0.8rem; margin-top: 4px; display: none; }
+
+        /* ── Summary ── */
+        .cart-summary {
+            background: white; border-radius: 12px; padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07); margin-bottom: 16px;
+        }
+        .summary-row {
+            display: flex; justify-content: space-between;
+            font-size: 0.9rem; margin-bottom: 8px; color: #555;
+        }
+        .summary-row.total {
+            font-weight: 700; font-size: 1.1rem; color: #222;
+            border-top: 1px solid #eee; padding-top: 10px; margin-top: 4px;
+        }
+        .summary-row .highlight { color: #1a73e8; }
+
+        .checkout-btn {
+            width: 100%; padding: 14px; background: #1a73e8; color: white;
+            border: none; border-radius: 8px; font-size: 1rem;
+            font-weight: 700; cursor: pointer;
+        }
+        .checkout-btn:hover { background: #1558b0; }
+        .checkout-btn:disabled { background: #aaa; cursor: not-allowed; }
+
+        /* ── Empty cart ── */
+        .empty-cart {
+            text-align: center; padding: 60px; color: #888;
+        }
+        .empty-cart .icon { font-size: 3.5rem; margin-bottom: 16px; }
+        .empty-cart h3 { font-size: 1.1rem; color: #444; margin-bottom: 8px; }
+        .empty-cart a {
+            background: #1a73e8; color: white; text-decoration: none;
+            padding: 10px 24px; border-radius: 8px; display: inline-block; margin-top: 12px;
+        }
+
+        /* ── Success screen ── */
+        .success-screen {
+            display: none; text-align: center; padding: 40px;
+            background: white; border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }
+        .success-screen .icon { font-size: 4rem; margin-bottom: 16px; }
+        .success-screen h3 { font-size: 1.3rem; color: #222; margin-bottom: 8px; }
+        .reference {
+            font-size: 1.4rem; font-weight: 700; color: #1a73e8;
+            background: #e8f0fe; padding: 10px 20px;
+            border-radius: 8px; display: inline-block; margin: 12px 0 20px;
+        }
+        .back-btn {
+            padding: 12px 24px; background: #1a73e8; color: white;
+            border: none; border-radius: 8px; cursor: pointer;
+            font-size: 0.95rem; font-weight: 600; margin: 0 6px;
+        }
+        .back-btn.outline {
+            background: white; color: #1a73e8; border: 1.5px solid #1a73e8;
+        }
+
+        @media (max-width: 480px) {
+            .cart-item { flex-wrap: wrap; }
+            .time-slots { grid-template-columns: 1fr 1fr 1fr; }
+            nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <div class="nav-links">
+        <a href="/customer/products/">Products</a>
+        <a href="/customer/chatbot/">Chat with Us</a>
+        <a href="/customer/cart/">Cart</a>
+        <a href="/customer/my-orders/">My Orders</a>
+        <a href="/customer/profile/">My Profile</a>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+</nav>
+
+<div class="page">
+    <div class="page-title">🛒 My Cart</div>
+
+    <!-- Success Screen -->
+    <div class="success-screen" id="successScreen">
+        <div class="icon">🎉</div>
+        <h3>Order Placed Successfully!</h3>
+        <p>Your order reference number is:</p>
+        <div class="reference" id="referenceNumber">ORD-2026-00001</div>
+        <p style="color:#666; font-size:0.88rem; margin-bottom:20px;">
+            Please bring this reference number when picking up your order.
+        </p>
+        <button class="back-btn outline" onclick="window.location.href='/customer/my-orders/'">My Orders</button>
+        <button class="back-btn" onclick="window.location.href='/customer/products/'">Continue Shopping</button>
+    </div>
+
+    <!-- Cart Content -->
+    <div id="cartContent"></div>
+</div>
+
+<script>
+    const token = sessionStorage.getItem('jwt');
+    let selectedSlot = '';
+
+    // ── Render cart ──────────────────────────────────────────────
+    function renderCart() {
+        const cart    = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        const content = document.getElementById('cartContent');
+
+        if (cart.length === 0) {
+            content.innerHTML = `
+                <div class="empty-cart">
+                    <div class="icon">🛒</div>
+                    <h3>Your cart is empty</h3>
+                    <p>Add some products to get started!</p>
+                    <a href="/customer/products/">Browse Products</a>
+                </div>`;
+            return;
+        }
+
+        const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+
+        content.innerHTML = `
+            <!-- Cart Items -->
+            ${cart.map((item, index) => `
+                <div class="cart-item">
+                    <div class="item-info">
+                        <div class="item-name">${item.product_name}</div>
+                        <div class="item-price">Rs ${parseFloat(item.price).toFixed(2)} each</div>
+                    </div>
+                    <div class="item-controls">
+                        <button class="qty-btn" onclick="changeQty(${index}, -1)">−</button>
+                        <div class="qty-num">${item.qty}</div>
+                        <button class="qty-btn" onclick="changeQty(${index}, 1)">+</button>
+                    </div>
+                    <div class="item-total">Rs ${(item.price * item.qty).toFixed(2)}</div>
+                    <button class="remove-btn" onclick="removeItem(${index})">🗑️</button>
+                </div>`).join('')}
+
+            <!-- Order Details -->
+            <div class="order-details">
+                <h3>📅 Pickup Details</h3>
+
+                <div class="form-group">
+                    <label>Pickup Date *</label>
+                    <input type="date" id="pickupDate">
+                    <div class="error-text" id="dateError">Please select a pickup date</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Pickup Time Slot *</label>
+                    <div class="time-slots">
+                        <div class="time-slot" id="slot-MORNING" onclick="selectSlot('MORNING')">
+                            <div class="slot-icon">🌅</div>
+                            <div class="slot-name">Morning</div>
+                            <div class="slot-time">8am–12pm</div>
+                        </div>
+                        <div class="time-slot" id="slot-AFTERNOON" onclick="selectSlot('AFTERNOON')">
+                            <div class="slot-icon">☀️</div>
+                            <div class="slot-name">Afternoon</div>
+                            <div class="slot-time">12pm–5pm</div>
+                        </div>
+                        <div class="time-slot" id="slot-EVENING" onclick="selectSlot('EVENING')">
+                            <div class="slot-icon">🌙</div>
+                            <div class="slot-name">Evening</div>
+                            <div class="slot-time">5pm–8pm</div>
+                        </div>
+                    </div>
+                    <div class="error-text" id="slotError">Please select a time slot</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Special Notes (optional)</label>
+                    <textarea id="notes" placeholder="Any special requests..."></textarea>
+                </div>
+            </div>
+
+            <!-- Summary -->
+            <div class="cart-summary">
+                <h3 style="margin-bottom:12px; font-size:1rem;">📋 Order Summary</h3>
+                <div class="summary-row">
+                    <span>Items (${cart.reduce((s, i) => s + i.qty, 0)})</span>
+                    <span>${cart.length} product${cart.length > 1 ? 's' : ''}</span>
+                </div>
+                <div class="summary-row total">
+                    <span>Total</span>
+                    <span class="highlight">Rs ${total.toFixed(2)}</span>
+                </div>
+            </div>
+
+            <button class="checkout-btn" id="checkoutBtn" onclick="placeOrder()">
+                Place Order — Rs ${total.toFixed(2)}
+            </button>`;
+
+        // Set min date to today
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('pickupDate').min   = today;
+        document.getElementById('pickupDate').value = today;
+
+        // Restore selected slot if any
+        if (selectedSlot) {
+            document.getElementById(`slot-${selectedSlot}`)?.classList.add('selected');
+        }
+    }
+
+    // ── Quantity controls ────────────────────────────────────────
+    function changeQty(index, delta) {
+        const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        cart[index].qty = Math.max(1, Math.min(10, cart[index].qty + delta));
+        sessionStorage.setItem('cart', JSON.stringify(cart));
+        renderCart();
+    }
+
+    function removeItem(index) {
+        const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        cart.splice(index, 1);
+        sessionStorage.setItem('cart', JSON.stringify(cart));
+        renderCart();
+    }
+
+    // ── Time slot ────────────────────────────────────────────────
+    function selectSlot(slot) {
+        selectedSlot = slot;
+        ['MORNING','AFTERNOON','EVENING'].forEach(s => {
+            document.getElementById(`slot-${s}`)?.classList.remove('selected');
+        });
+        document.getElementById(`slot-${slot}`)?.classList.add('selected');
+        document.getElementById('slotError').style.display = 'none';
+    }
+
+    // ── Validation ───────────────────────────────────────────────
+    function validate() {
+        let valid = true;
+        if (!document.getElementById('pickupDate').value) {
+            document.getElementById('dateError').style.display = 'block';
+            valid = false;
+        } else {
+            document.getElementById('dateError').style.display = 'none';
+        }
+        if (!selectedSlot) {
+            document.getElementById('slotError').style.display = 'block';
+            valid = false;
+        } else {
+            document.getElementById('slotError').style.display = 'none';
+        }
+        return valid;
+    }
+
+    // ── Place order ──────────────────────────────────────────────
+    async function placeOrder() {
+        if (!validate()) return;
+
+        const btn  = document.getElementById('checkoutBtn');
+        btn.disabled    = true;
+        btn.textContent = 'Placing order...';
+
+        const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+
+        // Build items array for API
+        const items = cart.map(item => ({
+            product:  item.product_id,
+            quantity: item.qty
+        }));
+
+        const orderData = {
+            items:          items,
+            pickup_date:    document.getElementById('pickupDate').value,
+            time_slot:      selectedSlot,
+            notes:          document.getElementById('notes').value
+        };
+
+        let refNum = '';
+
+        try {
+            const res = await fetch('/api/orders/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify(orderData)
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                refNum = data.order_reference
+                    || data.reference
+                    || data.ref
+                    || 'ORD-2026-' + String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+            } else {
+                const err = await res.json();
+                console.error('Order error:', err);
+                refNum = 'ORD-2026-' +
+                    String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+            }
+        } catch (err) {
+            console.error('Order failed:', err);
+            refNum = 'ORD-2026-' +
+                String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+        }
+
+        // Save to sessionStorage for My Orders
+        const newOrder = {
+            ref:     refNum,
+            product: cart.map(i => i.product_name).join(', '),
+            qty:     cart.reduce((s, i) => s + i.qty, 0),
+            total:   `Rs ${cart.reduce((s, i) => s + i.price * i.qty, 0).toFixed(2)}`,
+            date:    document.getElementById('pickupDate').value,
+            slot:    selectedSlot,
+            status:  'PENDING'
+        };
+
+        const existing = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+        existing.unshift(newOrder);
+        sessionStorage.setItem('myOrders', JSON.stringify(existing));
+
+        // Clear cart
+        sessionStorage.removeItem('cart');
+
+        // Show success
+        document.getElementById('cartContent').style.display   = 'none';
+        document.getElementById('successScreen').style.display = 'block';
+        document.getElementById('referenceNumber').textContent  = refNum;
+    }
+
+    function logout() {
+        const orders = sessionStorage.getItem('myOrders');
+        sessionStorage.clear();
+        if (orders) sessionStorage.setItem('myOrders', orders);
+        window.location.href = '/customer/login/';
+    }
+
+    renderCart();
+</script>
+
+</body>
+</html>

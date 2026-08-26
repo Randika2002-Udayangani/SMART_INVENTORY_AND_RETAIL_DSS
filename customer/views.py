@@ -1,16 +1,20 @@
 from django.shortcuts import render
-
-def product_list(request):
-    return render(request, "customer/products.html")
-
-def cart(request):
-    return render(request, "customer/cart.html")
-
-def chatbot(request):
-    return render(request, "customer/chatbot.html")
+from django.http import HttpResponse
 
 def customer_home(request):
-    return render(request, 'customer/home.html') 
+    return render(request, 'customer/products.html')
+
+def product_list(request):
+    return render(request, 'customer/products.html')
+
+def cart(request):
+    return HttpResponse("Cart page coming soon.")
+
+def cart_page(request):
+    return render(request, 'customer/cart.html')
+
+def chatbot(request):
+    return render(request, 'customer/chatbot.html')
 
 def login_page(request):
     return render(request, 'customer/login.html')

@@ -117,10 +117,7 @@
         let p = null;
 
         try {
-            const res = await fetch(`/api/products/${productId}/`, {
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
-
+            const res = await fetch(`/api/products/${productId}/`);
             if (res.ok) {
                 p = await res.json();
             } else {

@@ -167,10 +167,11 @@
 
 <!-- Nav Bar -->
 <nav>
-    <a class="brand" href="#">🛒 SmartDeals</a>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
     <div class="nav-links">
         <a href="/customer/products/">Products</a>
         <a href="/customer/chatbot/">Chat with Us</a>
+        <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
         <a href="/customer/my-orders/">My Orders</a>
         <a href="/customer/profile/">My Profile</a>
         <button class="logout-btn" onclick="logout()">Logout</button>
@@ -354,7 +355,6 @@
             return `
                 <div class="product-card">
                     <div class="badge-row">
-                        <span class="badge badge-expiry">Near Expiry</span>
                         ${discountBadge}
                     </div>
                     <div class="product-name">${p.product_name}</div>
@@ -384,33 +384,93 @@
             let url = '/api/products/';
             if (search) url += `?search=${encodeURIComponent(search)}`;
 
-            const res = await fetch(url, {
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
-
-            if (res.status === 401 || res.status === 403) {
-                // Products API needs staff token — fallback to demo products
-                console.log('Products API requires staff token, using demo data');
-                renderProducts(demoProducts);
-                return;
-            }
+            // No token needed — products API is now public
+            const res = await fetch(url);
 
             const data     = await res.json();
             const products = Array.isArray(data) ? data : (data.results || []);
 
             if (products.length === 0) {
-                // Fallback to demo products
-                renderProducts(demoProducts);
+                grid.innerHTML = `
+                    <div style="grid-column:1/-1;text-align:center;padding:60px;color:#888">
+                        <div style="font-size:3rem">📦</div>
+                        <p>${search
+                            ? `No products found for "<strong>${search}</strong>"`
+                            : 'No products available right now.'
+                        }</p>
+                    </div>`;
+                count.textContent = '0 items';
                 return;
             }
 
-            renderProducts(products);
+            count.textContent = `${products.length} item${products.length > 1 ? 's' : ''}`;
+
+            grid.innerHTML = products.map(p => `
+                <div class="product-card">
+                    <div class="product-name">${p.product_name}</div>
+                    <div class="price-row">
+                        <span class="discount-price">Rs ${parseFloat(p.unit_price).toFixed(2)}</span>
+                    </div>
+                    <button class="order-btn"
+                        onclick="addToCart(${p.id}, '${p.product_name.replace(/'/g, '')}', ${p.unit_price})">
+                        Add to Cart 🛒
+                    </button>
+                </div>`).join('');
 
         } catch (err) {
             console.error('Products load error:', err);
+            // Fallback to demo
             renderProducts(demoProducts);
         }
     }
+
+    // ── Cart ─────────────────────────────────────────────────────
+    function addToCart(productId, productName, price) {
+        const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+
+        // Check if product already in cart
+        const existing = cart.find(item => item.product_id === productId);
+        if (existing) {
+            existing.qty += 1;
+        } else {
+            cart.push({
+                product_id:   productId,
+                product_name: productName,
+                price:        price,
+                qty:          1
+            });
+        }
+
+        sessionStorage.setItem('cart', JSON.stringify(cart));
+        updateCartBadge();
+        showCartNotification(productName);
+    }
+
+    function updateCartBadge() {
+        const cart  = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        const total = cart.reduce((sum, item) => sum + item.qty, 0);
+        const badge = document.getElementById('cartBadge');
+        if (badge) {
+            badge.textContent = total;
+            badge.style.display = total > 0 ? 'inline' : 'none';
+        }
+    }
+
+    function showCartNotification(name) {
+        // Show a small popup notification
+        const notif = document.createElement('div');
+        notif.style.cssText = `
+            position: fixed; bottom: 20px; right: 20px;
+            background: #1a73e8; color: white; padding: 12px 20px;
+            border-radius: 8px; font-size: 0.9rem; z-index: 9999;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            animation: slideIn 0.3s ease;
+        `;
+        notif.textContent = `✅ ${name} added to cart!`;
+        document.body.appendChild(notif);
+        setTimeout(() => notif.remove(), 2500);
+    }
+
 
     // ── Filter / Search ──────────────────────────────────────────
     function filterProducts() {
@@ -434,6 +494,8 @@
         if (orders) sessionStorage.setItem('myOrders', orders);
         window.location.href = '/customer/login/';
     }
+
+    updateCartBadge();
 
     // ── Start ────────────────────────────────────────────────────
     loadProducts();
