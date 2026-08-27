@@ -49,10 +49,12 @@ class RegisterView(APIView):
         return Response(data)
 
     def post(self, request):
+        if not (request.user.is_superuser or request.user.groups.filter(name='ADMIN').exists()):
+            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+
         username  = request.data.get('username', '').strip()
         password  = request.data.get('password', '').strip()
         role_name = request.data.get('role', 'STAFF').upper().strip()
-
         if not username or not password:
             return Response(
                 {'error': 'username and password are required'},

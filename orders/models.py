@@ -1,6 +1,6 @@
 from django.db import models
 from products.models import Product
-from users.models import AppUser
+from django.conf import settings
 
 class Customer(models.Model):
     name = models.CharField(max_length=150)
@@ -74,7 +74,7 @@ class OnlineOrder(models.Model):
     notes = models.CharField(max_length=255, blank=True)
 
     confirmed_by = models.ForeignKey(
-        AppUser,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -235,7 +235,7 @@ class Notification(models.Model):
     ]
 
     user = models.ForeignKey(
-        AppUser,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

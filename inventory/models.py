@@ -5,7 +5,7 @@ from django.db import models
 from products.models import Product, Category
 from purchases.models import PurchaseBatch
 from suppliers.models import Supplier
-from users.models import AppUser
+from django.conf import settings
 
 
 # ── F3: Inventory & Stock ─────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ class StockAdjustment(models.Model):
     reason = models.CharField(max_length=255)
     adjustment_date = models.DateTimeField(auto_now_add=True)
     adjusted_by = models.ForeignKey(
-        AppUser, on_delete=models.SET_NULL,
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, db_column='adjusted_by'
     )
 
@@ -94,7 +94,7 @@ class SupplierReturn(models.Model):
         max_length=15, choices=STATUS_CHOICES, default='PENDING'
     )
     recorded_by = models.ForeignKey(
-        AppUser, on_delete=models.SET_NULL,
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, db_column='recorded_by'
     )
     notes = models.CharField(max_length=255, blank=True)
@@ -122,7 +122,7 @@ class LossRecord(models.Model):
     loss_value = models.DecimalField(max_digits=12, decimal_places=2)
     loss_date = models.DateField()
     recorded_by = models.ForeignKey(
-        AppUser, on_delete=models.SET_NULL,
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, db_column='recorded_by'
     )
     notes = models.CharField(max_length=255, blank=True)
@@ -194,7 +194,7 @@ class InventoryHealthScore(models.Model):
     )
     calculated_date = models.DateField(auto_now_add=True)
     calculated_by = models.ForeignKey(
-        AppUser, on_delete=models.SET_NULL,
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, db_column='calculated_by'
     )
 
@@ -220,7 +220,7 @@ class CategoryHealthScore(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES)
     calculated_date = models.DateField(auto_now_add=True)
     calculated_by = models.ForeignKey(
-        AppUser, on_delete=models.SET_NULL,
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, db_column='calculated_by'
     )
 
@@ -237,7 +237,7 @@ class DiscountRule(models.Model):
     minimum_margin_pct = models.DecimalField(max_digits=5, decimal_places=2)
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(
-        AppUser, on_delete=models.SET_NULL,
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, db_column='created_by'
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -282,7 +282,7 @@ class DiscountRecommendation(models.Model):
     )
     calculated_date = models.DateField(auto_now_add=True)
     reviewed_by = models.ForeignKey(
-        AppUser, on_delete=models.SET_NULL,
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='reviewed_discounts', db_column='reviewed_by'
     )
@@ -325,7 +325,7 @@ class ReorderRecommendation(models.Model):
         max_length=20, choices=STATUS_CHOICES, default='PENDING'
     )
     actioned_by = models.ForeignKey(
-        AppUser, on_delete=models.SET_NULL,
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, db_column='actioned_by'
     )
 
