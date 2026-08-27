@@ -418,6 +418,17 @@ class LifecycleCalculateView(APIView):
     def post(self, request):
         from inventory.services.lifecycle import run_lifecycle_calculation
         result = run_lifecycle_calculation()
+
+        log_action(
+            user=request.user, action='CALCULATE', table_name='product_lifecycle',
+            record_id=None, old_value=None,
+            new_value={
+                'products_processed': len(result['products']),
+                'summary': result['summary'],
+            },
+            request=request,
+        )
+
         return Response({
             'message'           : 'Lifecycle calculation complete',
             'products_processed': len(result['products']),
@@ -530,6 +541,18 @@ class LossRecordView(APIView):
             notes         = notes,
         )
 
+        log_action(
+            user=request.user, action='CREATE', table_name='loss_record',
+            record_id=record.id, old_value=None,
+            new_value={
+                'product': product.product_name,
+                'loss_type': loss_type,
+                'loss_quantity': int(loss_quantity),
+                'loss_value': str(loss_value),
+            },
+            request=request,
+        )
+
         return Response({
             'message'      : 'Loss recorded successfully',
             'loss_id'      : record.id,
@@ -621,6 +644,13 @@ class LossAutoDetectView(APIView):
             batch.save()
             created += 1
 
+        log_action(
+            user=request.user, action='CALCULATE', table_name='loss_record',
+            record_id=None, old_value=None,
+            new_value={'batches_expired': created},
+            request=request,
+        )
+
         return Response({
             'message'        : 'Expiry auto-detection complete',
             'batches_expired': created,
@@ -695,6 +725,19 @@ class SupplierReturnView(APIView):
             notes             = notes,
         )
 
+        log_action(
+            user=request.user, action='CREATE', table_name='supplier_return',
+            record_id=ret.id, old_value=None,
+            new_value={
+                'supplier': supplier.supplier_name if hasattr(supplier, 'supplier_name') else supplier.id,
+                'product': product.product_name,
+                'quantity_returned': int(quantity_returned),
+                'return_value': str(return_value),
+                'status': 'PENDING',
+            },
+            request=request,
+        )
+
         return Response({
             'message'          : 'Supplier return recorded',
             'return_id'        : ret.id,
@@ -723,8 +766,16 @@ class SupplierReturnStatusView(APIView):
             return Response({'error': 'Supplier return not found'},
                             status=status.HTTP_404_NOT_FOUND)
 
+        old_value = {'status': ret.status}
         ret.status = new_status
         ret.save()
+
+        log_action(
+            user=request.user, action='UPDATE', table_name='supplier_return',
+            record_id=ret.id, old_value=old_value,
+            new_value={'status': ret.status},
+            request=request,
+        )
 
         return Response({
             'message'  : f'Return status updated to {new_status}',
@@ -778,6 +829,17 @@ class HealthScoreCalculateView(APIView):
     def post(self, request):
         from inventory.services.health_score import calculate_health_scores
         result = calculate_health_scores()
+
+        log_action(
+            user=request.user, action='CALCULATE', table_name='inventory_health_score',
+            record_id=None, old_value=None,
+            new_value={
+                'products_processed': result['products_processed'],
+                'summary': result['summary'],
+            },
+            request=request,
+        )
+
         return Response({
             'message'           : 'Health score calculation complete',
             'products_processed': result['products_processed'],

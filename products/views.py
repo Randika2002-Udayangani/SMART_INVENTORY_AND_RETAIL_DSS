@@ -6,6 +6,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.utils import timezone
 from core.permissions import ReadPublicWriteAuthenticated
 from core.authentication import LenientJWTAuthentication
+from users.audit import log_action
 import pandas as pd
 
 from .models import Brand, Category, StoreZone, Product, ZoneRecommendation
@@ -101,6 +102,18 @@ class ProductListCreateView(generics.ListCreateAPIView):
             return [permissions.IsAuthenticated()]
         return [permissions.AllowAny()]
 
+    def perform_create(self, serializer):
+        product = serializer.save()
+        log_action(
+            user=self.request.user,
+            action='CREATE',
+            table_name='product',
+            record_id=product.id,
+            old_value=None,
+            new_value=ProductSerializer(product).data,
+            request=self.request,
+        )
+
 
 # ─────────────────────────────────────────────
 # Customer-safe stock check  (F01, API Design Doc v3.1 §5.4)
@@ -161,6 +174,53 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
         if self.request.method in ('PUT', 'PATCH', 'DELETE'):
             return [permissions.IsAuthenticated()]
         return [permissions.AllowAny()]
+
+    def perform_update(self, serializer):
+        old_data = ProductSerializer(self.get_object()).data
+        product = serializer.save()
+        new_data = ProductSerializer(product).data
+
+        # API Design Doc §22 lists 'price_change' as a mandatory audit
+        # action distinct from a generic field edit — flag it specifically
+        # when unit_price or cost_price actually moved, otherwise log as a
+        # plain UPDATE so non-price edits (name, category, etc.) still show.
+        price_changed = (
+            str(old_data.get('unit_price')) != str(new_data.get('unit_price')) or
+            str(old_data.get('cost_price')) != str(new_data.get('cost_price'))
+        )
+        log_action(
+            user=self.request.user,
+            action='PRICE_CHANGE' if price_changed else 'UPDATE',
+            table_name='product',
+            record_id=product.id,
+            old_value=old_data,
+            new_value=new_data,
+            request=self.request,
+        )
+
+    def perform_destroy(self, instance):
+        # FIX: API Design Doc §5.4 requires DELETE to *deactivate*
+        # (is_active=False), never hard-delete — a real delete would break
+        # every PurchaseBatch/ZoneRecommendation/etc. FK pointing at this
+        # product. The previous version had no perform_destroy() override,
+        # so it fell through to DRF's default instance.delete().
+        #
+        # NOT YET IMPLEMENTED: the spec also says this should be "Blocked
+        # if product has PENDING/CONFIRMED online orders" — that check
+        # needs the Orders app's Order model, which doesn't exist in this
+        # codebase yet. Add that guard here once orders/models.py lands.
+        old_data = ProductSerializer(instance).data
+        instance.is_active = False
+        instance.save(update_fields=['is_active'])
+        log_action(
+            user=self.request.user,
+            action='PRODUCT_DEACTIVATION',
+            table_name='product',
+            record_id=instance.id,
+            old_value=old_data,
+            new_value=ProductSerializer(instance).data,
+            request=self.request,
+        )
 
 
 # ─────────────────────────────────────────────
@@ -409,6 +469,16 @@ class RecalculateWACView(APIView):
         product.avg_cost_price = new_wac
         product.save(update_fields=['avg_cost_price'])
 
+        log_action(
+            user=request.user,
+            action='PRICE_CHANGE',
+            table_name='product',
+            record_id=product.id,
+            old_value={'avg_cost_price': str(old_wac)},
+            new_value={'avg_cost_price': str(round(new_wac, 2))},
+            request=request,
+        )
+
         return Response({
             'product_id': product.id,
             'product_name': product.product_name,
@@ -433,6 +503,20 @@ class ReclassifyProductsView(APIView):
         )
 
         result = classify_all_products(products_to_classify)
+
+        log_action(
+            user=request.user,
+            action='RECLASSIFY',
+            table_name='product',
+            record_id=None,
+            old_value=None,
+            new_value={
+                'classified': result['classified'],
+                'already_had_category': result['already_had_category'],
+                'total_processed': result['total_processed'],
+            },
+            request=request,
+        )
 
         return Response({
             'message':              'Reclassification complete',

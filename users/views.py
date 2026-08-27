@@ -160,6 +160,13 @@ class LogoutView(APIView):
             RefreshToken(refresh_token).blacklist()
         except Exception:
             return Response({'error': 'Invalid or already-expired refresh token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.user and request.user.is_authenticated:
+            log_action(
+                user=request.user, action='LOGOUT', table_name='auth_user',
+                record_id=request.user.id, old_value=None, new_value=None,
+                request=request,
+            )
         return Response({'message': 'Logged out successfully'})
 
 
@@ -458,9 +465,23 @@ class LockoutTokenObtainPairSerializer(TokenObtainPairSerializer):
             if user:
                 security, _ = UserLoginSecurity.objects.get_or_create(user=user)
                 security.failed_login_count += 1
+                just_locked = False
                 if security.failed_login_count >= self.LOCKOUT_MAX_ATTEMPTS:
                     security.locked_until = timezone.now() + timedelta(minutes=self.LOCKOUT_DURATION_MINUTES)
+                    just_locked = True
                 security.save()
+
+                if just_locked:
+                    log_action(
+                        user=user, action='LOGIN_LOCKOUT', table_name='user_login_security',
+                        record_id=user.id,
+                        old_value={'failed_login_count': security.failed_login_count - 1},
+                        new_value={
+                            'failed_login_count': security.failed_login_count,
+                            'locked_until': str(security.locked_until),
+                        },
+                        request=self.context.get('request'),
+                    )
             raise
 
         # Successful login — reset the counter
@@ -469,6 +490,12 @@ class LockoutTokenObtainPairSerializer(TokenObtainPairSerializer):
             security.failed_login_count = 0
             security.locked_until = None
             security.save()
+
+            log_action(
+                user=user, action='LOGIN', table_name='auth_user',
+                record_id=user.id, old_value=None, new_value=None,
+                request=self.context.get('request'),
+            )
 
         return data
 
