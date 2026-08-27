@@ -95,8 +95,8 @@ async function loadRecommendations() {
             <tr>
                 <td>${r.product_name ?? '—'}</td>
                 <td>${r.current_stock ?? '—'}</td>
-                <td>${r.reorder_threshold ?? '—'}</td>
-                <td>${r.suggested_qty ?? '—'}</td>
+                <td>${r.safety_stock ?? '—'}</td>
+                <td>${r.suggested_quantity ?? '—'}</td>
                 <td>${urgencyBadge(r.urgency)}</td>
                 <td><span class="badge bg-secondary">${r.status ?? '—'}</span></td>
                 <td>
