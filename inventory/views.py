@@ -1249,7 +1249,7 @@ class DiscountRuleListCreateView(APIView):
     def post(self, request):
         serializer = DiscountRuleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        # created_by is a legacy AppUser FK, not the real auth_user table —
+        
         # left null here, same gap as everywhere else in this codebase that
         # still references AppUser instead of settings.AUTH_USER_MODEL.
         rule = serializer.save(created_by=request.user)
