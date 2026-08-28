@@ -25,6 +25,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 
 from products.models import Product
+from users.audit import log_action
 from users.models import SystemConfig
 from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore, ReorderRecommendation
 
@@ -117,6 +118,7 @@ def validate_bill_row(row):
 class ItemLedgerPDFUploadView(APIView):
 
     parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
 
@@ -143,7 +145,8 @@ class ItemLedgerPDFUploadView(APIView):
             file_name=file.name,
             upload_type='ITEM_SALES',
             status='PARTIAL',
-            error_message=''
+            error_message='',
+            uploaded_by=request.user.id if request.user and request.user.is_authenticated else None,
         )
 
         try:
@@ -371,6 +374,18 @@ class ItemLedgerPDFUploadView(APIView):
 
             upload_log.save()
 
+            if upload_log.status == 'SUCCESS':
+                log_action(
+                    user=request.user, action='CREATE', table_name='upload_log',
+                    record_id=upload_log.id, old_value=None,
+                    new_value={
+                        'filename': upload_log.file_name,
+                        'upload_type': upload_log.upload_type,
+                        'status': upload_log.status,
+                    },
+                    request=request,
+                )
+
             return Response({
                 'message': 'Item Ledger PDF upload complete',
                 'product': product.product_name,
@@ -402,6 +417,7 @@ class ItemLedgerPDFUploadView(APIView):
 class DailyBillsUploadView(APIView):
 
     parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
 
@@ -423,7 +439,8 @@ class DailyBillsUploadView(APIView):
             file_name=file.name,
             upload_type='DAILY_BILLS',
             status='PARTIAL',
-            error_message=''
+            error_message='',
+            uploaded_by=request.user.id if request.user and request.user.is_authenticated else None,
         )
 
         try:
@@ -599,6 +616,18 @@ class DailyBillsUploadView(APIView):
             )
 
             upload_log.save()
+
+            if upload_log.status == 'SUCCESS':
+                log_action(
+                    user=request.user, action='CREATE', table_name='upload_log',
+                    record_id=upload_log.id, old_value=None,
+                    new_value={
+                        'filename': upload_log.file_name,
+                        'upload_type': upload_log.upload_type,
+                        'status': upload_log.status,
+                    },
+                    request=request,
+                )
 
             return Response({
                 'message': 'Daily bills upload complete',
