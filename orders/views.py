@@ -312,6 +312,12 @@ class OrderCreateView(APIView):
 
     ]
 
+    permission_classes = [
+
+        IsAuthenticated
+
+    ]
+
 
     def post(self, request):
 
@@ -547,6 +553,12 @@ class OrderListView(APIView):
     authentication_classes = [
 
         CustomerJWTAuthentication
+
+    ]
+
+    permission_classes = [
+
+        IsAuthenticated
 
     ]
 

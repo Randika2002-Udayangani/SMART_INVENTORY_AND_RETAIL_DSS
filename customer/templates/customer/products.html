@@ -168,7 +168,7 @@
 <!-- Nav Bar -->
 <nav>
     <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
-    <div class="nav-links">
+    <div class="nav-links"  id="navLinks">
         <a href="/customer/products/">Products</a>
         <a href="/customer/chatbot/">Chat with Us</a>
         <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
@@ -210,8 +210,7 @@
 <script>
     // ── Auth check ──────────────────────────────────────────────
     const token = sessionStorage.getItem('jwt');
-    if (!token) window.location.href = '/customer/login/';
-
+    
     // Show customer name
     const customerName = sessionStorage.getItem('customerName') || 'Customer';
     document.querySelector('.welcome-bar span').textContent = customerName;
@@ -230,6 +229,35 @@
 
     // ── Auto suggestions ─────────────────────────────────────────
     let activeSuggestionIndex = -1;
+
+
+    // ── Dynamic nav bar ──────────────────────────────────────────
+    function buildNav() {
+        const token = sessionStorage.getItem('jwt');
+        const nav   = document.getElementById('navLinks');
+
+        if (token) {
+            // Logged in nav
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
+                <a href="/customer/my-orders/">My Orders</a>
+                <a href="/customer/profile/">My Profile</a>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            `;
+        } else {
+            // Guest nav
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
+                <a href="/customer/register/" style="background:white;color:#1a73e8;padding:7px 16px;border-radius:20px;margin-left:20px;font-weight:600;">Register</a>
+                <a href="/customer/login/" style="background:rgba(255,255,255,0.2);color:white;padding:7px 16px;border-radius:20px;margin-left:8px;">Login</a>
+            `;
+        }
+        updateCartBadge();
+    }
 
     function showSuggestions(value) {
         const dropdown = document.getElementById('suggestionsDropdown');
@@ -389,6 +417,7 @@
 
             const data     = await res.json();
             const products = Array.isArray(data) ? data : (data.results || []);
+            console.log('First product:', products[0]);
 
             if (products.length === 0) {
                 grid.innerHTML = `
@@ -412,7 +441,7 @@
                         <span class="discount-price">Rs ${parseFloat(p.unit_price).toFixed(2)}</span>
                     </div>
                     <button class="order-btn"
-                        onclick="addToCart(${p.id}, '${p.product_name.replace(/'/g, '')}', ${p.unit_price})">
+                        onclick="addToCart(${p.id}, '${p.product_name.replace(/'/g, '')}', ${parseFloat(p.unit_price)})">
                         Add to Cart 🛒
                     </button>
                 </div>`).join('');
@@ -433,10 +462,11 @@
         if (existing) {
             existing.qty += 1;
         } else {
-            cart.push({
+           cart.push({
                 product_id:   productId,
+                id:           productId,
                 product_name: productName,
-                price:        price,
+                price:        parseFloat(price),
                 qty:          1
             });
         }

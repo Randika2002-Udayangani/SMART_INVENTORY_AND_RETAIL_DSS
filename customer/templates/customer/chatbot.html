@@ -176,7 +176,7 @@
 <!-- Nav -->
 <nav>
     <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
-    <div class="nav-links">
+    <div class="nav-links"  id="navLinks">
         <a href="/customer/products/">Products</a>
         <a href="/customer/chatbot/">Chat</a>
         <a href="/customer/my-orders/">My Orders</a>
@@ -234,6 +234,34 @@
         { id:8, name:"Cream Cheese 150g",          price:380, discounted:266, expiry:"2026-07-20", discount:30 },
     ];
 
+    // ── Dynamic nav bar ──────────────────────────────────────────
+    function buildNav() {
+        const token = sessionStorage.getItem('jwt');
+        const nav   = document.getElementById('navLinks');
+
+        if (token) {
+            // Logged in nav
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
+                <a href="/customer/my-orders/">My Orders</a>
+                <a href="/customer/profile/">My Profile</a>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            `;
+        } else {
+            // Guest nav
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
+                <a href="/customer/register/" style="background:white;color:#1a73e8;padding:7px 16px;border-radius:20px;margin-left:20px;font-weight:600;">Register</a>
+                <a href="/customer/login/" style="background:rgba(255,255,255,0.2);color:white;padding:7px 16px;border-radius:20px;margin-left:8px;">Login</a>
+            `;
+        }
+        updateCartBadge();
+    }
+    
     function getBotResponse(input) {
         const msg = input.toLowerCase();
 

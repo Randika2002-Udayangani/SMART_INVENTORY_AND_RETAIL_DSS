@@ -139,13 +139,41 @@
             .time-slots { grid-template-columns: 1fr 1fr 1fr; }
             nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
         }
+
+        /* ── Auth Modal ── */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .modal-box {
+            background: white; border-radius: 16px; padding: 32px 28px;
+            max-width: 380px; width: 90%; text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .modal-box .modal-icon { font-size: 3rem; margin-bottom: 12px; }
+        .modal-box h3 { font-size: 1.2rem; color: #222; margin-bottom: 8px; }
+        .modal-box p { font-size: 0.9rem; color: #666; margin-bottom: 24px; line-height: 1.5; }
+        .modal-buttons { display: flex; gap: 12px; }
+        .modal-btn {
+            flex: 1; padding: 12px; border-radius: 8px;
+            font-size: 0.95rem; font-weight: 600; cursor: pointer; border: none;
+        }
+        .modal-btn.primary { background: #1a73e8; color: white; }
+        .modal-btn.primary:hover { background: #1558b0; }
+        .modal-btn.outline { background: white; color: #1a73e8; border: 1.5px solid #1a73e8; }
+        .modal-btn.outline:hover { background: #e8f0fe; }
+        .modal-close {
+            margin-top: 14px; font-size: 0.85rem; color: #999;
+            cursor: pointer; background: none; border: none; width: 100%;
+        }
     </style>
 </head>
 <body>
 
 <nav>
     <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
-    <div class="nav-links">
+    <div class="nav-links"  id="navLinks">
         <a href="/customer/products/">Products</a>
         <a href="/customer/chatbot/">Chat with Us</a>
         <a href="/customer/cart/">Cart</a>
@@ -179,6 +207,29 @@
     const token = sessionStorage.getItem('jwt');
     let selectedSlot = '';
 
+    // ── Build nav bar ────────────────────────────────────────────
+    function buildNav() {
+        const nav = document.getElementById('navLinks');
+        if (token) {
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart</a>
+                <a href="/customer/my-orders/">My Orders</a>
+                <a href="/customer/profile/">My Profile</a>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            `;
+        } else {
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart</a>
+                <a href="/customer/register/" style="background:white;color:#1a73e8;padding:7px 16px;border-radius:20px;margin-left:20px;font-weight:600;">Register</a>
+                <a href="/customer/login/" style="background:rgba(255,255,255,0.2);color:white;padding:7px 16px;border-radius:20px;margin-left:8px;">Login</a>
+            `;
+        }
+    }
+
     // ── Render cart ──────────────────────────────────────────────
     function renderCart() {
         const cart    = JSON.parse(sessionStorage.getItem('cart') || '[]');
@@ -195,10 +246,8 @@
             return;
         }
 
-        const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-
+        const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0);
         content.innerHTML = `
-            <!-- Cart Items -->
             ${cart.map((item, index) => `
                 <div class="cart-item">
                     <div class="item-info">
@@ -214,7 +263,6 @@
                     <button class="remove-btn" onclick="removeItem(${index})">🗑️</button>
                 </div>`).join('')}
 
-            <!-- Order Details -->
             <div class="order-details">
                 <h3>📅 Pickup Details</h3>
 
@@ -252,7 +300,6 @@
                 </div>
             </div>
 
-            <!-- Summary -->
             <div class="cart-summary">
                 <h3 style="margin-bottom:12px; font-size:1rem;">📋 Order Summary</h3>
                 <div class="summary-row">
@@ -269,12 +316,10 @@
                 Place Order — Rs ${total.toFixed(2)}
             </button>`;
 
-        // Set min date to today
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('pickupDate').min   = today;
         document.getElementById('pickupDate').value = today;
 
-        // Restore selected slot if any
         if (selectedSlot) {
             document.getElementById(`slot-${selectedSlot}`)?.classList.add('selected');
         }
@@ -323,82 +368,152 @@
         return valid;
     }
 
+    function showAuthModal() {
+        // Remove existing modal if any
+        const existing = document.getElementById('authModal');
+        if (existing) existing.remove();
+
+        const modal = document.createElement('div');
+        modal.id        = 'authModal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-box">
+                <div class="modal-icon">🔐</div>
+                <h3>Sign in to place your order</h3>
+                <p>You need an account to complete your purchase.<br>
+                Already have one? Login. New here? Register for free!</p>
+                <div class="modal-buttons">
+                    <button class="modal-btn outline"
+                        onclick="window.location.href='/customer/login/'">
+                        Login
+                    </button>
+                    <button class="modal-btn primary"
+                        onclick="window.location.href='/customer/register/'">
+                        Register Free
+                    </button>
+                </div>
+                <button class="modal-close" onclick="closeAuthModal()">
+                    Cancel — continue browsing
+                </button>
+            </div>`;
+
+        document.body.appendChild(modal);
+
+        // Close when clicking outside
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) closeAuthModal();
+        });
+    }
+
+    function closeAuthModal() {
+        const modal = document.getElementById('authModal');
+        if (modal) modal.remove();
+    }
+
     // ── Place order ──────────────────────────────────────────────
     async function placeOrder() {
-        if (!validate()) return;
+    if (!token) {
+        showAuthModal();
+        return;
+    }
 
-        const btn  = document.getElementById('checkoutBtn');
-        btn.disabled    = true;
-        btn.textContent = 'Placing order...';
+    if (!validate()) return;
 
-        const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+    const cart  = JSON.parse(sessionStorage.getItem('cart') || '[]');
+    const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0);
 
-        // Build items array for API
-        const items = cart.map(item => ({
-            product:  item.product_id,
-            quantity: item.qty
-        }));
+    const btn       = document.getElementById('checkoutBtn');
+    btn.disabled    = true;
+    btn.textContent = 'Placing order...';
 
-        const orderData = {
-            items:          items,
-            pickup_date:    document.getElementById('pickupDate').value,
-            time_slot:      selectedSlot,
-            notes:          document.getElementById('notes').value
-        };
+    const items = cart.map(item => ({
+        product_id:  item.product_id || item.id,
+        quantity: item.qty
+    }));
 
-        let refNum = '';
+    console.log('Sending items:', items);
 
-        try {
-            const res = await fetch('/api/orders/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + token
-                },
-                body: JSON.stringify(orderData)
-            });
+    const orderData = {
+        items:       items,
+        pickup_date: document.getElementById('pickupDate').value,
+        time_slot:   selectedSlot,
+        notes:       document.getElementById('notes').value
+    };
 
-            if (res.ok) {
-                const data = await res.json();
-                refNum = data.order_reference
-                    || data.reference
-                    || data.ref
-                    || 'ORD-2026-' + String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
-            } else {
-                const err = await res.json();
-                console.error('Order error:', err);
-                refNum = 'ORD-2026-' +
-                    String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
-            }
-        } catch (err) {
-            console.error('Order failed:', err);
-            refNum = 'ORD-2026-' +
-                String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+    console.log('Full order data:', orderData);
+
+    let refNum = '';
+
+    try {
+        const res = await fetch('/api/orders/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify(orderData)
+        });
+
+        console.log('Response status:', res.status);
+
+        if (res.status === 401) {
+            window.location.href = '/customer/login/';
+            return;
         }
 
-        // Save to sessionStorage for My Orders
-        const newOrder = {
-            ref:     refNum,
-            product: cart.map(i => i.product_name).join(', '),
-            qty:     cart.reduce((s, i) => s + i.qty, 0),
-            total:   `Rs ${cart.reduce((s, i) => s + i.price * i.qty, 0).toFixed(2)}`,
-            date:    document.getElementById('pickupDate').value,
-            slot:    selectedSlot,
-            status:  'PENDING'
-        };
+        const responseText = await res.text();
+        console.log('Raw response:', responseText);
 
-        const existing = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
-        existing.unshift(newOrder);
-        sessionStorage.setItem('myOrders', JSON.stringify(existing));
+        if (res.ok) {
+            const data = JSON.parse(responseText);
+            refNum = data.order_reference
+                || data.reference
+                || data.ref
+                || data.id
+                || 'ORD-2026-' + String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+        } else {
+            let errMsg = responseText;
+            try {
+                const errJson = JSON.parse(responseText);
+                errMsg = JSON.stringify(errJson);
+                console.error('Order error:', errJson);
+            } catch(e) {}
 
-        // Clear cart
-        sessionStorage.removeItem('cart');
+            alert('Could not place order:\n' + errMsg);
+            btn.disabled    = false;
+            btn.textContent = `Place Order — Rs ${total.toFixed(2)}`;
+            return;
+        }
 
-        // Show success
-        document.getElementById('cartContent').style.display   = 'none';
-        document.getElementById('successScreen').style.display = 'block';
-        document.getElementById('referenceNumber').textContent  = refNum;
+    } catch (err) {
+        console.error('Order failed:', err);
+        refNum = 'ORD-2026-' +
+            String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
     }
+
+    // Save to My Orders
+    const newOrder = {
+        ref:     refNum,
+        product: cart.map(i => i.product_name).join(', '),
+        qty:     cart.reduce((s, i) => s + i.qty, 0),
+        total:   `Rs ${total.toFixed(2)}`,
+        date:    document.getElementById('pickupDate').value,
+        slot:    selectedSlot,
+        status:  'PENDING'
+    };
+
+    const existing = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+    existing.unshift(newOrder);
+    sessionStorage.setItem('myOrders', JSON.stringify(existing));
+
+    // Clear cart
+    sessionStorage.removeItem('cart');
+
+    // Show success
+    document.getElementById('cartContent').style.display   = 'none';
+    document.getElementById('successScreen').style.display = 'block';
+    document.getElementById('referenceNumber').textContent  = refNum;
+}
 
     function logout() {
         const orders = sessionStorage.getItem('myOrders');
@@ -407,6 +522,8 @@
         window.location.href = '/customer/login/';
     }
 
+    // ── Start ────────────────────────────────────────────────────
+    buildNav();
     renderCart();
 </script>
 

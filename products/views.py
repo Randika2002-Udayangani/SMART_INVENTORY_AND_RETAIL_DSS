@@ -4,6 +4,9 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import render
 from django.utils import timezone
+from django.db.models import Sum
+from purchases.models import PurchaseBatch
+from core.authentication import LenientJWTAuthentication
 import pandas as pd
 
 from .models import Brand, Category, StoreZone, Product, ZoneRecommendation
@@ -172,7 +175,8 @@ class ItemMasterUploadView(APIView):
             file_name=file.name,
             upload_type='ITEM_MASTER',
             status='PARTIAL',
-            error_message=''
+            error_message='',
+            uploaded_by=request.user.id
         )
 
         try:
