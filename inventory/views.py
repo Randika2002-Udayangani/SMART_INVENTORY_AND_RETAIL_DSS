@@ -1611,19 +1611,30 @@ class ReorderRecommendationDetailView(APIView):
 class NotificationListView(APIView):
     """
     GET /api/notifications/
-    Unread notifications, staff-facing (customer is null).
+    GET /api/notifications/?status=unread|read|all   (default: unread)
+    Staff-facing (customer is null).
     NOTE: Notification.user is still a legacy AppUser FK (same gap
     flagged elsewhere in this project — it's never reliably
-    populated), so this currently returns ALL unread staff
-    notifications rather than filtering to "my" notifications.
+    populated), so this currently returns ALL staff notifications
+    matching the status filter rather than filtering to "my" notifications.
     Revisit once the AppUser → auth_user bridge is resolved.
     """
- 
+
     def get(self, request):
-        notifications = Notification.objects.filter(
-            is_read=False, customer__isnull=True
-        ).order_by('-created_at')
- 
+        status_param = request.query_params.get('status', 'unread').lower()
+        if status_param not in ('unread', 'read', 'all'):
+            return Response(
+                {'error': 'status must be unread, read, or all'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        notifications = Notification.objects.filter(customer__isnull=True)
+        if status_param == 'unread':
+            notifications = notifications.filter(is_read=False)
+        elif status_param == 'read':
+            notifications = notifications.filter(is_read=True)
+        notifications = notifications.order_by('-created_at')
+
         data = [{
             'id': n.id,
             'type': n.type,
@@ -1633,9 +1644,11 @@ class NotificationListView(APIView):
             'reference_table': n.reference_table,
             'reference_id': n.reference_id,
             'is_read': n.is_read,
+            'read_at': n.read_at,
             'created_at': n.created_at,
         } for n in notifications]
- 
+
+
         return Response(data)
  
  

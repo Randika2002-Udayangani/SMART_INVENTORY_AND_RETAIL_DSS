@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Smart Inventory DSS — Notifications</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:       #e8f5eb;
+      --card:     #f4faf5;
+      --card2:    #eaf6ed;
+      --border:   #b8dfc2;
+      --txt:      #1a2e1e;
+      --muted:    #5a8266;
+      --sidebar:  #0f3d3e;
+      --green1:   #34d17a;
+      --green2:   #22c55e;
+      --amber:    #f59e0b;
+      --red:      #ef4444;
+      --purple:   #8b5cf6;
+      --orange:   #ea580c;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--txt); min-height: 100vh; }
+
+    /* ── SIDEBAR (identical to home.html) ───────────────── */
+    .sidebar { overflow-y: auto;
+      width: 220px; height: 100vh; background: var(--sidebar);
+      position: fixed; top: 0; left: 0;
+      display: flex; flex-direction: column; z-index: 100;
+      border-right: 1px solid rgba(255,255,255,0.06);
+    }
+    .sb-logo { padding: 20px 18px 14px; border-bottom: 1px solid rgba(255,255,255,0.15); }
+    .sb-logo .lt { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #d4f7e0; }
+    .sb-logo .ls { font-size: 9.5px; color: rgba(255,255,255,0.5); margin-top: 2px; }
+    .sb-nav { padding: 12px 8px; flex: 1; overflow-y: auto; max-height: calc(100vh - 80px); }
+    .sb-sec { font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 0 10px 6px; margin-top: 10px; }
+    .sb-nav a {
+      display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+      border-radius: 7px; color: rgba(255,255,255,0.72); text-decoration: none;
+      font-size: 13px; font-weight: 500; transition: all 0.14s; margin-bottom: 1px;
+    }
+    .sb-nav a:hover { background: rgba(255,255,255,0.13); color: #fff; }
+    .sb-nav a.active { background: rgba(255,255,255,0.20); color: #fff; font-weight: 600; }
+    .sb-nav a i { font-size: 15px; width: 17px; text-align: center; }
+    .sb-nav a .badge-pill {
+      margin-left: auto; background: rgba(239,68,68,0.85); color: #fff;
+      font-size: 9.5px; font-weight: 700; border-radius: 10px;
+      padding: 1px 7px; line-height: 1.5;
+    }
+    .sb-footer { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.15); font-size: 11.5px; color: rgba(255,255,255,0.5); }
+    .sb-footer .name { color: #fff; font-weight: 600; font-size: 12.5px; }
+
+    /* ── MAIN ────────────────────────────────────────────── */
+    .main { margin-left: 220px; padding: 24px 28px 40px; }
+
+    .topbar { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 22px; }
+    .topbar h1 { font-size: 19px; font-weight: 700; }
+    .topbar .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+    /* ── SUMMARY STRIP ───────────────────────────────────── */
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+    .summary-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 14px 16px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .summary-card .lbl { font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    .summary-card .val { font-size: 22px; font-weight: 700; font-family: 'DM Mono', monospace; }
+    .summary-card i { font-size: 20px; }
+    .sc-total .val { color: var(--txt); }
+    .sc-critical .val { color: #dc2626; }
+    .sc-high .val { color: #ea580c; }
+    .sc-medium .val { color: #ca8a04; }
+
+    /* ── FILTER BAR ──────────────────────────────────────── */
+    .filter-bar {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 14px; margin-bottom: 16px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    }
+    .pill-wrap { display: flex; gap: 6px; flex-wrap: wrap; }
+    .f-pill {
+      padding: 5px 13px; border-radius: 16px; font-size: 11.5px; font-weight: 600;
+      border: 1.5px solid; cursor: pointer; background: transparent; transition: all 0.13s;
+    }
+    .fp-all      { border-color: var(--muted);  color: var(--muted); }
+    .fp-critical { border-color: #dc2626; color: #dc2626; }
+    .fp-high     { border-color: #ea580c; color: #ea580c; }
+    .fp-medium   { border-color: #ca8a04; color: #ca8a04; }
+    .fp-unread   { border-color: var(--sidebar); color: var(--sidebar); }
+    .f-pill.on, .f-pill:hover { color: #fff; }
+    .fp-all.on, .fp-all:hover           { background: var(--muted);  border-color: var(--muted); }
+    .fp-critical.on, .fp-critical:hover { background: #dc2626; border-color: #dc2626; }
+    .fp-high.on, .fp-high:hover         { background: #ea580c; border-color: #ea580c; }
+    .fp-medium.on, .fp-medium:hover     { background: #ca8a04; border-color: #ca8a04; }
+    .fp-unread.on, .fp-unread:hover     { background: var(--sidebar); border-color: var(--sidebar); }
+
+    .filter-right { display: flex; align-items: center; gap: 8px; }
+    .type-select {
+      border: 1.5px solid var(--border); border-radius: 8px; padding: 5px 10px;
+      font-size: 11.5px; background: #fff; color: var(--txt); font-family: 'DM Sans', sans-serif;
+    }
+    .refresh-btn {
+      border: 1.5px solid var(--border); background: #fff; border-radius: 8px;
+      padding: 5px 12px; font-size: 11.5px; font-weight: 600; color: var(--txt); cursor: pointer;
+    }
+    .refresh-btn:hover { background: var(--card2); }
+
+    /* ── LIST ────────────────────────────────────────────── */
+    .card-box {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+      margin-bottom: 22px;
+    }
+    .card-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+    .card-head .cht { font-size: 13.5px; font-weight: 700; }
+    .card-head .chs { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+
+    .n-row {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px 18px; border-bottom: 1px solid var(--border); cursor: pointer;
+      transition: background 0.1s;
+    }
+    .n-row:hover { background: var(--card2); }
+    .n-row:last-child { border-bottom: none; }
+    .n-row.is-handled { opacity: 0.55; }
+
+    .n-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
+    .nd-critical { background: #dc2626; } .nd-high { background: #ea580c; } .nd-medium { background: #ca8a04; } .nd-low { background: #6b7280; }
+
+    .n-pri {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+      padding: 2px 7px; border-radius: 4px; flex-shrink: 0; margin-top: 2px; white-space: nowrap;
+    }
+    .np-critical { background: #fee2e2; color: #b91c1c; }
+    .np-high     { background: #ffedd5; color: #c2410c; }
+    .np-medium   { background: #fef9c3; color: #854d0e; }
+    .np-low      { background: #f1f5f9; color: #475569; }
+
+    .n-body { flex: 1; min-width: 0; }
+    .n-title { font-size: 13px; font-weight: 700; color: var(--txt); }
+    .n-msg { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+    .n-meta { font-size: 10.5px; color: var(--muted); margin-top: 5px; font-family: 'DM Mono', monospace; }
+    .n-type-tag { background: var(--card2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px; margin-right: 6px; }
+
+    .n-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+    .n-btn {
+      border: 1.5px solid var(--border); background: #fff; border-radius: 7px;
+      width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; color: var(--muted); transition: all 0.12s; font-size: 13px;
+    }
+    .n-btn:hover { background: var(--card2); color: var(--txt); }
+    .n-btn.read-btn:hover { color: #16a34a; border-color: #86efac; }
+    .n-btn.dismiss-btn:hover { color: #dc2626; border-color: #fca5a5; }
+
+    .empty-state { padding: 40px 18px; text-align: center; color: var(--muted); font-size: 13px; }
+    .empty-state i { font-size: 28px; display: block; margin-bottom: 8px; color: var(--green1); }
+
+    /* ── MODAL ───────────────────────────────────────────── */
+    .modal-content { border-radius: 14px; border: 1px solid var(--border); }
+    .modal-header { border-bottom: 1px solid var(--border); }
+    .modal-footer { border-top: 1px solid var(--border); }
+    .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--card2); font-size: 12.5px; }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-row .dk { color: var(--muted); font-weight: 600; }
+    .detail-row .dv { font-family: 'DM Mono', monospace; text-align: right; }
+
+    @media (max-width: 960px) {
+      .sidebar { display: none; } .main { margin-left: 0; padding: 16px; }
+      .summary-grid { grid-template-columns: repeat(2,1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ───────────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="lt">Smart Inventory</div>
+    <div class="ls">Decision Support System — Samanala Super Mart</div>
+  </div>
+  <nav class="sb-nav">
+    <div class="sb-sec">Overview</div>
+    <a href="/dashboard/"><i class="bi bi-grid-1x2"></i> Dashboard</a>
+    <a href="/dashboard/analytics/"><i class="bi bi-bar-chart-line"></i> Analytics</a>
+
+    <div class="sb-sec">Inventory</div>
+    <a href="/dashboard/inventory/"><i class="bi bi-box-seam"></i> Product Management</a>
+    <a href="/dashboard/purchases/?tab=purchases"><i class="bi bi-receipt"></i> Purchases</a>
+    <a href="/dashboard/purchases/?tab=batches"><i class="bi bi-layers"></i> Batches</a>
+    <a href="/dashboard/purchases/?tab=expiring"><i class="bi bi-calendar-x"></i> Expiry Alerts</a>
+    <a href="/dashboard/sales-upload/"><i class="bi bi-upload"></i> Sales Upload</a>
+    <a href="/dashboard/products/"><i class="bi bi-boxes"></i> Products</a>
+
+    <div class="sb-sec">Decision Support</div>
+    <a href="/dashboard/health-score/"><i class="bi bi-heart-pulse"></i> Health Score</a>
+    <a href="/dashboard/discount-engine/"><i class="bi bi-tag"></i> Discount Engine</a>
+    <a href="/dashboard/reorder/"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
+    <a href="/dashboard/loss-analysis/"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
+    <a href="/dashboard/lifecycle/"><i class="bi bi-activity"></i> Lifecycle</a>
+
+    <div class="sb-sec">Operations</div>
+    <a href="#" onclick="alert('Coming soon'); return false;"><i class="bi bi-receipt"></i> Order Management</a>
+    <a href="/dashboard/suppliers/"><i class="bi bi-truck"></i> Suppliers</a>
+
+    <div class="sb-sec">Reports</div>
+    <a href="/dashboard/reports/"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
+    <a href="/dashboard/sales-report/"><i class="bi bi-bar-chart"></i> Sales Report</a>
+    <a href="/dashboard/notifications/" class="active"><i class="bi bi-bell"></i> Notifications <span class="badge-pill" id="sidebarAlertCount">0</span></a>
+
+    <div class="sb-sec">Administration</div>
+    <a href="/dashboard/system-config/"><i class="bi bi-sliders"></i> System Config</a>
+    <a href="/dashboard/audit-log/"><i class="bi bi-journal-text"></i> Audit Log</a>
+    <a href="/dashboard/users/"><i class="bi bi-people"></i> User Management</a>
+  </nav>
+  <div class="sb-footer">
+    <div class="name">Manager</div>
+    <div>Samanala Super Mart</div>
+  </div>
+</aside>
+
+<!-- ── MAIN CONTENT ──────────────────────────────────────── -->
+<main class="main">
+
+  <div class="topbar">
+    <div>
+      <h1>Notifications &amp; Alerts</h1>
+      <div class="sub">Unread staff notifications — CRITICAL / HIGH / MEDIUM</div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <a href="/dashboard/" style="background:#fff;color:var(--txt);border:1.5px solid var(--border);padding:8px 16px;border-radius:6px;font-size:13px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;">
+        <i class="bi bi-arrow-left"></i> Dashboard
+      </a>
+      <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+        <i class="bi bi-box-arrow-right"></i> Logout
+      </button>
+    </div>
+  </div>
+
+  <!-- SUMMARY STRIP -->
+  <div class="summary-grid">
+    <div class="summary-card sc-total">
+      <div><div class="lbl" id="sumTotalLbl">Unread</div><div class="val" id="sumTotal">—</div></div>
+      <i class="bi bi-bell-fill" style="color:var(--sidebar)"></i>
+    </div>
+    <div class="summary-card sc-critical">
+      <div><div class="lbl">Critical</div><div class="val" id="sumCritical">—</div></div>
+      <i class="bi bi-exclamation-octagon-fill" style="color:#dc2626"></i>
+    </div>
+    <div class="summary-card sc-high">
+      <div><div class="lbl">High</div><div class="val" id="sumHigh">—</div></div>
+      <i class="bi bi-exclamation-triangle-fill" style="color:#ea580c"></i>
+    </div>
+    <div class="summary-card sc-medium">
+      <div><div class="lbl">Medium</div><div class="val" id="sumMedium">—</div></div>
+      <i class="bi bi-info-circle-fill" style="color:#ca8a04"></i>
+    </div>
+  </div>
+
+  <!-- STATUS TABS — backed by GET /api/notifications/?status= -->
+  <div class="filter-bar" style="margin-bottom:10px;">
+    <div class="pill-wrap">
+      <button class="f-pill fp-unread on" data-status="unread" onclick="setStatusTab('unread', this)">Unread</button>
+      <button class="f-pill fp-all" data-status="read" onclick="setStatusTab('read', this)">Read</button>
+      <button class="f-pill fp-all" data-status="all" onclick="setStatusTab('all', this)">All</button>
+    </div>
+    <button class="refresh-btn" onclick="loadNotifications()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+  </div>
+
+  <!-- FILTER BAR -->
+  <div class="filter-bar">
+    <div class="pill-wrap">
+      <button class="f-pill fp-all on" data-pri="all" onclick="setPriorityFilter('all', this)">All priorities</button>
+      <button class="f-pill fp-critical" data-pri="CRITICAL" onclick="setPriorityFilter('CRITICAL', this)">Critical</button>
+      <button class="f-pill fp-high" data-pri="HIGH" onclick="setPriorityFilter('HIGH', this)">High</button>
+      <button class="f-pill fp-medium" data-pri="MEDIUM" onclick="setPriorityFilter('MEDIUM', this)">Medium</button>
+    </div>
+    <div class="filter-right">
+      <select class="type-select" id="typeSelect" onchange="renderList()">
+        <option value="all">All types</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- LIST -->
+  <div class="card-box">
+    <div class="card-head">
+      <div>
+        <div class="cht">Notification List</div>
+        <div class="chs">Click a notification to view full details</div>
+      </div>
+      <span class="card-badge" id="listCount" style="background:var(--card2);border:1px solid var(--border);border-radius:5px;padding:3px 9px;font-size:10.5px;color:var(--muted);">—</span>
+    </div>
+    <div id="listBody"></div>
+  </div>
+
+</main>
+
+<!-- ── DETAIL MODAL ──────────────────────────────────────── -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title" id="modalTitle" style="font-weight:700;">Notification</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="modalBody">Loading...</div>
+      <div class="modal-footer">
+        <button class="btn btn-sm btn-outline-danger" id="modalDismissBtn" onclick="dismissFromModal()">
+          <i class="bi bi-trash3"></i> Dismiss
+        </button>
+        <button class="btn btn-sm" id="modalReadBtn" style="background:var(--sidebar);color:#fff;" onclick="markReadFromModal()">
+          <i class="bi bi-check2"></i> Mark as Read
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── SCRIPTS ───────────────────────────────────────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+<script>
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    }[char]));
+  }
+
+  async function apiFetch(url, options = {}) {
+    const token = sessionStorage.getItem('access_token');
+    const headers = new Headers(options.headers || {});
+    headers.set('Authorization', 'Bearer ' + token);
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401) {
+      sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('refresh_token');
+      window.location.href = '/dashboard/login/';
+      throw new Error('Authentication expired');
+    }
+    if (!response.ok && response.status !== 204) throw new Error(`${response.status} ${response.statusText}`);
+    return response.status === 204 ? null : response.json();
+  }
+
+  function checkAuth() {
+    const token = sessionStorage.getItem('access_token');
+    if (!token) { window.location.href = '/dashboard/login/'; }
+  }
+  checkAuth();
+
+  function doLogout() {
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
+    window.location.href = '/dashboard/login/';
+  }
+
+  // ── State ──────────────────────────────────────────────
+  // Backed by GET /api/notifications/?status=unread|read|all
+  let allNotifications = [];
+  let statusTab = 'unread';
+  let priorityFilter = 'all';
+  let activeDetailId = null;
+
+  const priClass = { CRITICAL: 'critical', HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
+  const tabLabels = { unread: 'Unread', read: 'Read', all: 'Total' };
+
+  function setStatusTab(tab, btn) {
+    statusTab = tab;
+    document.querySelectorAll('.f-pill[data-status]').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    document.getElementById('sumTotalLbl').innerText = tabLabels[tab];
+    loadNotifications();
+  }
+
+  function setPriorityFilter(pri, btn) {
+    priorityFilter = pri;
+    document.querySelectorAll('.f-pill[data-pri]').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    renderList();
+  }
+
+  function populateTypeSelect() {
+    const select = document.getElementById('typeSelect');
+    const types = [...new Set(allNotifications.map(n => n.type))].sort();
+    select.innerHTML = '<option value="all">All types</option>' +
+      types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  }
+
+  function updateSummary() {
+    const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0 };
+    allNotifications.forEach(n => { if (counts[n.priority] !== undefined) counts[n.priority]++; });
+    document.getElementById('sumTotal').innerText = allNotifications.length;
+    document.getElementById('sumCritical').innerText = counts.CRITICAL;
+    document.getElementById('sumHigh').innerText = counts.HIGH;
+    document.getElementById('sumMedium').innerText = counts.MEDIUM;
+    document.getElementById('sidebarAlertCount').innerText = allNotifications.length;
+  }
+
+  function timeAgo(iso) {
+    const d = new Date(iso);
+    const diffMin = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' · ' +
+      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function renderList() {
+    const typeVal = document.getElementById('typeSelect').value;
+    let rows = allNotifications.filter(n => {
+      if (priorityFilter !== 'all' && n.priority !== priorityFilter) return false;
+      if (typeVal !== 'all' && n.type !== typeVal) return false;
+      return true;
+    });
+
+    document.getElementById('listCount').innerText = `${rows.length} shown`;
+
+    const body = document.getElementById('listBody');
+    if (!rows.length) {
+      body.innerHTML = `<div class="empty-state"><i class="bi bi-check2-circle"></i>No notifications match this filter.</div>`;
+      return;
+    }
+
+    body.innerHTML = rows.map(n => `
+      <div class="n-row ${n.is_read ? 'is-handled' : ''}" onclick="openDetail(${n.id})">
+        <div class="n-dot nd-${priClass[n.priority] || 'medium'}"></div>
+        <span class="n-pri np-${priClass[n.priority] || 'medium'}">${escapeHtml(n.priority)}</span>
+        <div class="n-body">
+          <div class="n-title">${escapeHtml(n.title)}</div>
+          <div class="n-msg">${escapeHtml(n.message || '')}</div>
+          <div class="n-meta"><span class="n-type-tag">${escapeHtml(n.type)}</span>${n.is_read && n.read_at ? 'Read ' + timeAgo(n.read_at) : timeAgo(n.created_at)}</div>
+        </div>
+        <div class="n-actions" onclick="event.stopPropagation()">
+          ${n.is_read ? '' : `<button class="n-btn read-btn" title="Mark as read" onclick="markRead(${n.id})"><i class="bi bi-check2"></i></button>`}
+          <button class="n-btn dismiss-btn" title="Dismiss" onclick="dismiss(${n.id})"><i class="bi bi-trash3"></i></button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function loadNotifications() {
+    document.getElementById('listBody').innerHTML = `<div class="empty-state">Loading notifications...</div>`;
+    try {
+      const data = await apiFetch(`/api/notifications/?status=${statusTab}`);
+      allNotifications = Array.isArray(data) ? data : [];
+      populateTypeSelect();
+      updateSummary();
+      renderList();
+    } catch (e) {
+      console.error('loadNotifications failed:', e);
+      document.getElementById('listBody').innerHTML =
+        `<div class="empty-state"><i class="bi bi-exclamation-triangle"></i>Notifications could not be loaded.</div>`;
+    }
+  }
+
+  // ── Mark as read / dismiss (list actions) ───────────────
+  async function markRead(id) {
+    try {
+      await apiFetch(`/api/notifications/${id}/read/`, { method: 'PATCH' });
+      // On the Unread tab this item no longer belongs here — refetch
+      // from the backend rather than faking local state.
+      await loadNotifications();
+    } catch (e) {
+      console.error('markRead failed:', e);
+      alert('Could not mark notification as read.');
+    }
+  }
+
+  async function dismiss(id) {
+    if (!confirm('Dismiss this notification? This cannot be undone.')) return;
+    try {
+      await apiFetch(`/api/notifications/${id}/`, { method: 'DELETE' });
+      allNotifications = allNotifications.filter(n => n.id !== id);
+      updateSummary();
+      renderList();
+    } catch (e) {
+      console.error('dismiss failed:', e);
+      alert('Could not dismiss notification.');
+    }
+  }
+
+  // ── Detail modal ─────────────────────────────────────────
+  async function openDetail(id) {
+    activeDetailId = id;
+    const modalEl = document.getElementById('detailModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    document.getElementById('modalTitle').innerText = 'Loading...';
+    document.getElementById('modalBody').innerHTML = 'Loading...';
+    modal.show();
+
+    try {
+      const n = await apiFetch(`/api/notifications/${id}/`);
+      document.getElementById('modalTitle').innerText = n.title;
+      document.getElementById('modalBody').innerHTML = `
+        <div class="detail-row"><span class="dk">Priority</span><span class="dv"><span class="n-pri np-${priClass[n.priority] || 'medium'}">${escapeHtml(n.priority)}</span></span></div>
+        <div class="detail-row"><span class="dk">Type</span><span class="dv">${escapeHtml(n.type)}</span></div>
+        <div class="detail-row"><span class="dk">Message</span><span class="dv" style="text-align:left;max-width:60%;font-family:'DM Sans',sans-serif;">${escapeHtml(n.message || '—')}</span></div>
+        <div class="detail-row"><span class="dk">Reference</span><span class="dv">${escapeHtml(n.reference_table || '—')} #${n.reference_id ?? '—'}</span></div>
+        <div class="detail-row"><span class="dk">Created</span><span class="dv">${new Date(n.created_at).toLocaleString('en-GB')}</span></div>
+        <div class="detail-row"><span class="dk">Read</span><span class="dv">${n.is_read ? 'Yes — ' + new Date(n.read_at).toLocaleString('en-GB') : 'No'}</span></div>
+        ${n.expires_at ? `<div class="detail-row"><span class="dk">Expires</span><span class="dv">${new Date(n.expires_at).toLocaleString('en-GB')}</span></div>` : ''}
+      `;
+      document.getElementById('modalReadBtn').style.display = n.is_read ? 'none' : 'inline-block';
+    } catch (e) {
+      console.error('openDetail failed:', e);
+      document.getElementById('modalBody').innerHTML = 'Could not load this notification — it may have been dismissed.';
+    }
+  }
+
+  async function markReadFromModal() {
+    if (activeDetailId == null) return;
+    const id = activeDetailId;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('detailModal')).hide();
+    await markRead(id);
+  }
+
+  async function dismissFromModal() {
+    if (activeDetailId == null) return;
+    const id = activeDetailId;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('detailModal')).hide();
+    await dismiss(id);
+  }
+
+  loadNotifications();
+</script>
+</body>
+</html>

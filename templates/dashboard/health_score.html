@@ -25,6 +25,7 @@
         <h4 class="mb-0 fw-bold">Inventory Health Score</h4>
         <small class="text-muted">Composite 0–100 score · 4-band classification · triggered on-demand</small>
     </div>
+    
     <div>
         <div class="d-flex align-items-center gap-2 flex-wrap">
             <button class="btn btn-primary btn-sm" id="calcBtn" onclick="runCalculation()">▶ Run Health Calculation</button>
@@ -110,13 +111,15 @@
         </div>
     </div>
 
-    <!-- Filter Buttons -->
-    <div class="mb-3 d-flex gap-2" id="filterButtons">
+    <!-- Filter Buttons + Search -->
+    <div class="mb-3 d-flex gap-2 align-items-center flex-wrap" id="filterButtons">
         <button class="btn btn-sm btn-outline-secondary active" onclick="filterTable('ALL', this)">All</button>
         <button class="btn btn-sm btn-outline-success" onclick="filterTable('HEALTHY', this)">Healthy</button>
         <button class="btn btn-sm btn-outline-warning" onclick="filterTable('WATCH', this)">Watch</button>
         <button class="btn btn-sm" style="border:1px solid #c2410c;color:#c2410c;" onclick="filterTable('AT RISK', this)">At Risk</button>
         <button class="btn btn-sm btn-outline-danger" onclick="filterTable('CRITICAL', this)">Critical</button>
+        <input type="text" id="productSearch" class="form-control form-control-sm ms-auto" style="max-width:260px;"
+               placeholder="Search product name or SKU..." oninput="handleSearchInput()">
     </div>
 
     <!-- Table -->
@@ -155,6 +158,7 @@ function doLogout() {
 
 let allData = [];
 let currentFilter = 'ALL';
+let currentSearch = '';
 
 function statusBadge(s) {
     const map = {
@@ -210,11 +214,27 @@ function filterTable(filter, btn) {
     renderTable();
 }
 
+function handleSearchInput() {
+    currentSearch = document.getElementById('productSearch').value.trim().toLowerCase();
+    renderTable();
+}
+
+function matchesSearch(row, term) {
+    if (!term) return true;
+    const name = String(row.product__product_name ?? row.product_name ?? '').toLowerCase();
+    const sku = String(row.product__sku_code ?? row.sku_code ?? '').toLowerCase();
+    return name.includes(term) || sku.includes(term);
+}
+
 function renderTable() {
-    const rows = currentFilter === 'ALL' ? allData : allData.filter(r => r.status === currentFilter);
+    let rows = currentFilter === 'ALL' ? allData : allData.filter(r => r.status === currentFilter);
+    rows = rows.filter(r => matchesSearch(r, currentSearch));
     const tbody = document.getElementById('hsBody');
     if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No products found.</td></tr>';
+        const message = currentSearch
+            ? `No products match "${currentSearch}".`
+            : 'No products found.';
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted">${message}</td></tr>`;
         return;
     }
     tbody.innerHTML = rows.map(r => `
