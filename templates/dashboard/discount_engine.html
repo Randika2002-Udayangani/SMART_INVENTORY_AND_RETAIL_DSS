@@ -38,12 +38,13 @@
         <h6 class="fw-bold mb-3">Discount Recommendations</h6>
         <table class="table table-hover">
             <thead class="table-light">
-                <tr><th>Product</th><th>Batch</th><th>Days to Expiry</th><th>Suggested Discount</th><th>Status</th><th id="recommendationActionHeader" style="display:none;">Action</th></tr>
+                <tr><th>Product</th><th>Batch</th><th>Days to Expiry</th><th>Suggested Discount</th><th>Status</th><th>Details</th><th id="recommendationActionHeader" style="display:none;">Action</th></tr>
             </thead>
             <tbody id="discountBody">
-                <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
+                <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+        <div id="discountMsg" class="mt-2" aria-live="polite"></div>
     </div>
 
     <div id="tab-rules" style="display:none;">
@@ -166,7 +167,7 @@ async function loadDiscounts() {
         const rows = Array.isArray(data) ? data : (data.results ?? []);
         const tbody = document.getElementById('discountBody');
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No discount recommendations. Click Calculate Discounts.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No discount recommendations. Click Calculate Discounts.</td></tr>';
             return;
         }
         tbody.innerHTML = rows.map(r => `
@@ -176,6 +177,7 @@ async function loadDiscounts() {
                 <td>${r.days_until_expiry ?? '—'}</td>
                 <td><strong>${r.recommended_discount_pct ?? '—'}%</strong></td>
                 <td>${statusBadge(r.status)}</td>
+                <td><button class="btn btn-sm btn-outline-secondary" onclick='showRecommendationDetails(${JSON.stringify(r)})'>Details</button></td>
                 <td class="recommendation-actions-cell">
                     ${canManageRules() ? `<button class="btn btn-sm btn-success me-1" onclick="updateStatus(${r.id},'APPLIED')">Apply</button>
                     <button class="btn btn-sm btn-outline-secondary" onclick="updateStatus(${r.id},'IGNORED')">Ignore</button>` : ''}
@@ -183,19 +185,56 @@ async function loadDiscounts() {
             </tr>
         `).join('');
     } catch(e) {
-        document.getElementById('discountBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Could not load data.</td></tr>';
+        document.getElementById('discountBody').innerHTML = '<tr><td colspan="7" class="text-center text-muted">Could not load data.</td></tr>';
     }
+}
+
+function showDiscountMessage(text, type) {
+    document.getElementById('discountMsg').innerHTML =
+        `<div class="alert alert-${type} py-2 mb-0">${text}</div>`;
+}
+
+function showRecommendationDetails(r) {
+    const money = v => (v !== null && v !== undefined) ? `Rs ${Number(v).toFixed(2)}` : '—';
+    const lines = [
+        `Product: ${r.product_name ?? '—'}`,
+        `Batch: ${r.batch != null ? '#' + r.batch : '—'}`,
+        `Days to expiry: ${r.days_until_expiry ?? '—'}`,
+        `Current price: ${money(r.current_price)}`,
+        `Recommended discount: ${r.recommended_discount_pct ?? '—'}%`,
+        `Recommended price: ${money(r.recommended_price)}`,
+        `Profit protected: ${r.profit_protected ? 'Yes' : 'No'}`,
+        `Recovery — sell at discount: ${money(r.recovery_sell)}`,
+        `Recovery — return to supplier: ${money(r.recovery_return)}`,
+        `Recovery — discard: ${money(r.recovery_discard)}`,
+        `System-suggested best action: ${r.best_action ?? '—'}`,
+        `Status: ${r.status ?? '—'}`,
+        `Reviewed by: ${r.reviewed_by_username ?? '—'}`,
+        `Reviewed at: ${r.reviewed_at ? new Date(r.reviewed_at).toLocaleString() : '—'}`
+    ];
+    alert(lines.join('\n'));
 }
 
 async function updateStatus(id, status) {
     try {
-        await fetch(`/api/discounts/recommendations/${id}/`, {
+        const res = await fetch(`/api/discounts/recommendations/${id}/`, {
             method: 'PATCH',
             headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
             body: JSON.stringify({ status })
         });
-        loadDiscounts();
-    } catch(e) {}
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            showDiscountMessage(
+                `Could not update recommendation: ${data.error || data.detail || 'request failed (' + res.status + ')'}`,
+                'danger'
+            );
+            return; // do NOT refresh — the row still reflects the real server state
+        }
+        showDiscountMessage(`Recommendation marked ${status}.`, 'success');
+        await loadDiscounts();
+    } catch (e) {
+        showDiscountMessage('Network error — recommendation was not updated. Please try again.', 'danger');
+    }
 }
 
 async function runCalculate() {

@@ -70,6 +70,9 @@ class DiscountRuleSerializer(serializers.ModelSerializer):
 
 class DiscountRecommendationSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.product_name', read_only=True)
+    reviewed_by_username = serializers.CharField(
+        source='reviewed_by.username', read_only=True, allow_null=True, default=None
+    )
 
     class Meta:
         model = DiscountRecommendation
@@ -79,7 +82,7 @@ class DiscountRecommendationSerializer(serializers.ModelSerializer):
             'recommended_discount_pct', 'recommended_price',
             'profit_protected', 'recovery_sell', 'recovery_return',
             'recovery_discard', 'best_action', 'status',
-            'calculated_date', 'reviewed_by', 'reviewed_at',
+            'calculated_date', 'reviewed_by', 'reviewed_by_username', 'reviewed_at',
         ]
         read_only_fields = [
             'id', 'product', 'product_name', 'batch',
@@ -107,4 +110,3 @@ class ReorderRecommendationSerializer(serializers.ModelSerializer):
             'safety_stock', 'suggested_quantity', 'estimated_cost',
             'urgency', 'calculation_date',
         ]
- 
