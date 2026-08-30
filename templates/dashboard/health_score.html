@@ -82,10 +82,10 @@
                 <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0">
                         <thead class="table-light">
-                            <tr><th>Product</th><th>SKU</th><th>Score</th><th>Recommended Action</th></tr>
+                            <tr><th>Product</th><th>Score</th><th>Recommended Action</th></tr>
                         </thead>
                         <tbody id="criticalBody">
-                            <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
+                            <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -303,13 +303,12 @@ async function loadCritical() {
         tbody.innerHTML = rows.length ? rows.map(r => `
             <tr>
                 <td>${r.product__product_name ?? '—'}</td>
-                <td>${r.product__sku_code ?? '—'}</td>
                 <td><strong style="color:#dc2626;">${numberCell(r.overall_score)}</strong></td>
                 <td><em style="color:#64748b;font-size:12px;">${r.recommended_action ?? '—'}</em></td>
             </tr>
-        `).join('') : '<tr><td colspan="4" class="text-center text-muted">No critical products right now.</td></tr>';
+        `).join('') : '<tr><td colspan="3" class="text-center text-muted">No critical products right now.</td></tr>';
     } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Could not load critical products.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Could not load critical products.</td></tr>';
     }
 }
 
