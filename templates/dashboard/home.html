@@ -540,13 +540,13 @@
 
     <div class="card-box">
       <div class="card-head">
-        <div><div class="cht">Product Health Scores</div><div class="chs">velocity · margin · expiry risk · stock duration · rating (if ≥10 ratings)</div></div>
+        <div><div class="cht">Product Health Scores</div><div class="chs">Critical items shown here · <a href="/dashboard/health-score/" style="color:var(--sidebar);font-weight:600;text-decoration:none;">View full breakdown &rarr;</a></div></div>
         <div class="hf-wrap">
-          <button class="hf-btn hf-all on" onclick="fhs('all',this)">All</button>
+          <button class="hf-btn hf-all" onclick="fhs('all',this)">All</button>
           <button class="hf-btn hf-h" onclick="fhs('HEALTHY',this)">Healthy</button>
           <button class="hf-btn hf-w" onclick="fhs('WATCH',this)">Watch</button>
           <button class="hf-btn hf-a" onclick="fhs('AT RISK',this)">At Risk</button>
-          <button class="hf-btn hf-c" onclick="fhs('CRITICAL',this)">Critical</button>
+          <button class="hf-btn hf-c on" onclick="fhs('CRITICAL',this)">Critical</button>
         </div>
       </div>
       <div style="overflow-x:auto;">
@@ -728,7 +728,7 @@
 
   // ── Health Score Table — real data, loaded from /api/health-scores/ ──
   let hsData = [];
-  let currentHsFilter = 'all';
+  let currentHsFilter = 'CRITICAL';
 
   function scoreCol(s) {
     return s>=80?'#16a34a':s>=60?'#ca8a04':s>=40?'#ea580c':'#dc2626';
@@ -743,7 +743,8 @@
   }
 
   function renderHS(filter) {
-    const rows = filter === 'all' ? hsData : hsData.filter(r => r.status === filter);
+    const filtered = filter === 'all' ? hsData : hsData.filter(r => r.status === filter);
+    const rows = filtered.slice(0, 10);
     document.getElementById('hsTbody').innerHTML = rows.length ? rows.map(r=>`
       <tr>
         <td style="font-weight:600">${escapeHtml(r.name)}</td>
