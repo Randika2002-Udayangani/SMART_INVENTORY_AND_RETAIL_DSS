@@ -1,7 +1,6 @@
 import io
-...
+from html import escape, unescape
 from django.http import HttpResponse
-...
 from openpyxl import Workbook
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -26,6 +25,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 
 from products.models import Product
+from users.audit import log_action
 from users.models import SystemConfig
 from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore, ReorderRecommendation
 
@@ -46,6 +46,9 @@ from suppliers.models import Supplier
 from suppliers.views import _compute_scorecard
 
 from inventory.services.lifecycle import get_latest_lifecycle
+from inventory.services.reorder_logic import check_reorder_needs
+
+from core.utils import get_last_sync_date
 
 # =========================================================
 # HELPERS
@@ -115,6 +118,7 @@ def validate_bill_row(row):
 class ItemLedgerPDFUploadView(APIView):
 
     parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
 
@@ -141,7 +145,8 @@ class ItemLedgerPDFUploadView(APIView):
             file_name=file.name,
             upload_type='ITEM_SALES',
             status='PARTIAL',
-            error_message=''
+            error_message='',
+            uploaded_by=request.user.id if request.user and request.user.is_authenticated else None,
         )
 
         try:
@@ -369,6 +374,18 @@ class ItemLedgerPDFUploadView(APIView):
 
             upload_log.save()
 
+            if upload_log.status == 'SUCCESS':
+                log_action(
+                    user=request.user, action='CREATE', table_name='upload_log',
+                    record_id=upload_log.id, old_value=None,
+                    new_value={
+                        'filename': upload_log.file_name,
+                        'upload_type': upload_log.upload_type,
+                        'status': upload_log.status,
+                    },
+                    request=request,
+                )
+
             return Response({
                 'message': 'Item Ledger PDF upload complete',
                 'product': product.product_name,
@@ -400,6 +417,7 @@ class ItemLedgerPDFUploadView(APIView):
 class DailyBillsUploadView(APIView):
 
     parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
 
@@ -421,7 +439,8 @@ class DailyBillsUploadView(APIView):
             file_name=file.name,
             upload_type='DAILY_BILLS',
             status='PARTIAL',
-            error_message=''
+            error_message='',
+            uploaded_by=request.user.id if request.user and request.user.is_authenticated else None,
         )
 
         try:
@@ -597,6 +616,18 @@ class DailyBillsUploadView(APIView):
             )
 
             upload_log.save()
+
+            if upload_log.status == 'SUCCESS':
+                log_action(
+                    user=request.user, action='CREATE', table_name='upload_log',
+                    record_id=upload_log.id, old_value=None,
+                    new_value={
+                        'filename': upload_log.file_name,
+                        'upload_type': upload_log.upload_type,
+                        'status': upload_log.status,
+                    },
+                    request=request,
+                )
 
             return Response({
                 'message': 'Daily bills upload complete',
@@ -1116,6 +1147,21 @@ def _log_export(request, filename):
     )
 
 
+def _prepare_export_text_for_pdf(value):
+    """Escape XML-like text once for ReportLab Paragraph objects.
+
+    ReportLab's Paragraphs accept XML-like markup, so ampersands must be
+    written as ``&amp;``. Some earlier implementations double-processed
+    already-escaped text by stripping ``amp`` out of ``&amp;``, leaving
+    trailing semicolons like ``&;``. Normalizing through ``html.unescape``
+    first keeps the value stable and ensures we only escape once.
+    """
+    if value is None:
+        return ''
+    text = str(value)
+    return escape(unescape(text), quote=False)
+
+
 def _excel_response(filename, headers, rows, summary=None):
     """
     summary: optional list of (label, value) tuples rendered as a
@@ -1123,6 +1169,9 @@ def _excel_response(filename, headers, rows, summary=None):
     totals straight from the exported file without the dashboard open.
     Default None keeps every other report export (inventory, health
     score, supplier, lifecycle, loss, reorder) unchanged.
+
+    Excel cells do not need HTML escaping: values are written as raw text,
+    including ampersands, so we intentionally do not call html.escape() here.
     """
     from openpyxl.styles import Font
 
@@ -1164,16 +1213,40 @@ def _excel_response(filename, headers, rows, summary=None):
 
 
 def _pdf_response(filename, title, headers, rows, summary=None):
-    """summary: same optional (label, value) list as _excel_response."""
+    """
+    summary: same optional (label, value) list as _excel_response.
+
+    Renders in landscape orientation with proportional column widths and
+    word-wrapped cells (via Paragraph), instead of the previous portrait
+    Table(table_data, repeatRows=1) call with no colWidths. That version
+    worked fine for narrow reports (Sales: 4 columns, Profit/Inventory:
+    6-7 columns) but silently broke on wide ones — Health Score's 11
+    columns, including full-sentence Recommended Action text, caused
+    reportlab's default auto-sizing to crush the Product Name column to
+    near-zero width to make everything else fit, making the report
+    unreadable (no way to tell which product a row belonged to). Fixing
+    it here (the shared helper) rather than only in the health-score
+    export, since Supplier/Lifecycle/Loss/Reorder reports could hit the
+    same failure mode if any of them also have many/long columns.
+    """
+    from reportlab.lib.pagesizes import landscape
+    from reportlab.lib.styles import ParagraphStyle
+
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    page_size = landscape(A4)
+    margin = 28
+    doc = SimpleDocTemplate(
+        buffer, pagesize=page_size,
+        leftMargin=margin, rightMargin=margin,
+        topMargin=margin, bottomMargin=margin,
+    )
     styles = getSampleStyleSheet()
     elements = [Paragraph(title, styles['Title']), Spacer(1, 12)]
 
     if summary:
         summary_table = Table(
-            [[label, str(value)] for label, value in summary],
-            colWidths=[150, 320]
+            [[_prepare_export_text_for_pdf(label), _prepare_export_text_for_pdf(value)] for label, value in summary],
+            colWidths=[170, 400]
         )
         summary_table.setStyle(TableStyle([
             ('FONTSIZE', (0, 0), (-1, -1), 9),
@@ -1183,18 +1256,52 @@ def _pdf_response(filename, title, headers, rows, summary=None):
         elements.append(summary_table)
         elements.append(Spacer(1, 16))
 
-    if rows:
-        table_data = [headers] + [list(row) for row in rows]
-    else:
-        table_data = [headers, ['No data for this period'] + [''] * (len(headers) - 1)]
+    if not rows:
+        rows = [['No data for this period'] + [''] * (len(headers) - 1)]
 
-    table = Table(table_data, repeatRows=1)
+    # ── Proportional column widths + word-wrapped cells ─────────────
+    # Plain strings in a reportlab Table never wrap and never shrink
+    # gracefully when the table is wider than the page — the library
+    # just crushes whichever column it can, which is what silently cut
+    # Product Name to nothing on the Health Score report. Wrapping
+    # every cell in a Paragraph lets long text wrap onto multiple lines
+    # within its own column instead of being squeezed or clipped.
+    cell_style = ParagraphStyle('cell', parent=styles['Normal'], fontSize=7, leading=8.5)
+    header_style = ParagraphStyle(
+        'header', parent=styles['Normal'], fontSize=7.5, leading=9,
+        textColor=colors.white, fontName='Helvetica-Bold',
+    )
+
+    available_width = page_size[0] - 2 * margin
+
+    # Estimate each column's "natural" width from its longest content
+    # (header or any cell), capped so one very long column (e.g. a
+    # full-sentence Recommended Action) can't starve the rest, and
+    # floored so short numeric columns stay legible.
+    raw_lengths = []
+    for i, header in enumerate(headers):
+        lengths = [len(str(header))] + [len(str(row[i])) for row in rows]
+        raw_lengths.append(max(lengths))
+    capped = [min(length, 40) for length in raw_lengths]
+    total = sum(capped) or 1
+    min_width = 45
+    col_widths = [max(min_width, available_width * (c / total)) for c in capped]
+    # The floor above can push the total past the page width when there
+    # are many narrow columns — scale back down evenly if so.
+    if sum(col_widths) > available_width:
+        scale = available_width / sum(col_widths)
+        col_widths = [w * scale for w in col_widths]
+
+    header_row = [Paragraph(_prepare_export_text_for_pdf(h), header_style) for h in headers]
+    body_rows = [[Paragraph(_prepare_export_text_for_pdf(c), cell_style) for c in row] for row in rows]
+    table_data = [header_row] + body_rows
+
+    table = Table(table_data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f4f4f4')]),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
     ]))
     elements.append(table)
     doc.build(elements)
@@ -1280,13 +1387,61 @@ def profit_report_export(request):
         for r in data
     ]
 
+    # ── Summary block ──────────────────────────────────────────────
+    # Same pattern as sales_report_export(). overall_margin_pct is
+    # computed as total_profit / total_revenue across ALL products —
+    # including any with cost=0 (no purchase batch entered yet for
+    # that product). This is a deliberate team decision, not an
+    # oversight: as purchase data entry completes over time, this
+    # number will become more accurate on its own without a code
+    # change. zero_cost_count is surfaced separately so a manager
+    # reading the report knows how many rows still have no cost data,
+    # rather than the report silently looking "done".
+    total_revenue = sum(r['revenue'] for r in data)
+    total_cost = sum(r['cost'] for r in data)
+    total_profit = sum(r['profit'] for r in data)
+    overall_margin_pct = round(total_profit / total_revenue * 100, 1) if total_revenue > 0 else 0.0
+    product_count = len(data)
+    zero_cost_count = sum(1 for r in data if r['cost'] == 0)
+
+    if data:
+        # Highest/Lowest Profit Product is picked ONLY from rows that
+        # have real cost data. Rows with cost=0 (no purchase batch
+        # entered yet) show profit=revenue and margin=100% — that's a
+        # data-completeness artifact, not a genuine top performer, and
+        # letting it win "Highest Profit Product" would mislead whoever
+        # reads this report. Totals above still include every row
+        # (per team decision), only this specific pick excludes them.
+        priced = [r for r in data if r['cost'] > 0]
+        if priced:
+            by_profit = sorted(priced, key=lambda r: r['profit'], reverse=True)
+            best, worst = by_profit[0], by_profit[-1]
+            best_label = f"{best['product_name']} (Rs. {best['profit']:,.2f} profit, {best['margin_pct']}% margin)"
+            worst_label = f"{worst['product_name']} (Rs. {worst['profit']:,.2f} profit, {worst['margin_pct']}% margin)"
+        else:
+            best_label = worst_label = 'N/A — no products with recorded cost yet'
+    else:
+        best_label = worst_label = 'N/A'
+
+    summary = [
+        ('Date Range', f'{date_from} to {date_to}'),
+        ('Total Revenue', f'Rs. {total_revenue:,.2f}'),
+        ('Total Cost', f'Rs. {total_cost:,.2f}'),
+        ('Total Profit', f'Rs. {total_profit:,.2f}'),
+        ('Overall Margin %', f'{overall_margin_pct}%'),
+        ('Highest Profit Product (priced items only)', best_label),
+        ('Lowest Profit Product (priced items only)', worst_label),
+        ('Product Count', product_count),
+        ('Products With No Cost Recorded', f'{zero_cost_count} of {product_count} (purchase data pending)'),
+    ]
+
     filename_base = f'profit_report_{date_from}_to_{date_to}'
     if fmt == 'excel':
-        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows, summary=summary)
         logged_name = f'{filename_base}.xlsx'
     else:
         title = f'Profit Report ({date_from} to {date_to})'
-        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows)
+        response = _pdf_response(f'{filename_base}.pdf', title, headers, rows, summary=summary)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
@@ -1302,19 +1457,55 @@ def inventory_report_export(request):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
     data = _inventory_rows()
+
+    # ── Sort by urgency, not import order ──────────────────────────
+    # A manager opening a 500-row file needs OUT OF STOCK / LOW STOCK
+    # items at the top, not buried alphabetically among hundreds of
+    # AVAILABLE rows. Within each status group, sort by product name
+    # so it's still easy to scan/search.
+    status_priority = {'OUT OF STOCK': 0, 'LOW STOCK': 1, 'AVAILABLE': 2}
+    data = sorted(
+        data,
+        key=lambda r: (status_priority.get(r['stock_status'], 3), r['product_name'])
+    )
+
     headers = ['Product Name', 'SKU', 'Current Stock', 'Reorder Threshold', 'Status', 'Avg Cost Price']
     rows = [
         (r['product_name'], r['sku_code'], r['current_stock'], r['reorder_threshold'], r['stock_status'], r['avg_cost_price'])
         for r in data
     ]
 
+    # ── Summary block ──────────────────────────────────────────────
+    # Same pattern as sales_report_export()/profit_report_export().
+    # total_stock_value is current_stock × avg_cost_price summed across
+    # every product — the "how much money is sitting on the shelves
+    # right now" figure a manager actually wants from an inventory
+    # report, and it wasn't calculated anywhere before this.
+    total_products = len(data)
+    out_of_stock_count = sum(1 for r in data if r['stock_status'] == 'OUT OF STOCK')
+    low_stock_count = sum(1 for r in data if r['stock_status'] == 'LOW STOCK')
+    available_count = sum(1 for r in data if r['stock_status'] == 'AVAILABLE')
+    total_stock_value = sum(
+        (r['current_stock'] or 0) * float(r['avg_cost_price'] or 0) for r in data
+    )
+    last_sync = get_last_sync_date()
+
+    summary = [
+        ('Stock As Of', last_sync),
+        ('Total Products', total_products),
+        ('Out Of Stock', out_of_stock_count),
+        ('Low Stock', low_stock_count),
+        ('Available', available_count),
+        ('Total Stock Value', f'Rs. {total_stock_value:,.2f}'),
+    ]
+
     today = date.today()
     filename_base = f'inventory_report_{today}'
     if fmt == 'excel':
-        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows, summary=summary)
         logged_name = f'{filename_base}.xlsx'
     else:
-        response = _pdf_response(f'{filename_base}.pdf', f'Inventory Report ({today})', headers, rows)
+        response = _pdf_response(f'{filename_base}.pdf', f'Inventory Report ({today})', headers, rows, summary=summary)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
@@ -1530,6 +1721,15 @@ def reorder_report_export(request):
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Refresh the recommendation data before export so the report reflects the
+    # current sales/stock conditions instead of stale rows from an older job run.
+    # This does not change urgency thresholds; it only ensures the underlying data
+    # is current when the report is generated.
+    try:
+        check_reorder_needs()
+    except Exception:
+        pass
+
     latest_ids = (
         ReorderRecommendation.objects
         .filter(product_id=OuterRef('product_id'))
@@ -1546,6 +1746,49 @@ def reorder_report_export(request):
         queryset = queryset.filter(urgency=urgency_filter)
     if status_filter:
         queryset = queryset.filter(status=status_filter)
+
+    report_generated_on = timezone.now()
+    total_products = queryset.count()
+    urgency_counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
+    total_estimated_cost = 0.0
+    excluded_zero_cost_count = 0
+
+    detail_rows = []
+    for rec in queryset:
+        urgency = (rec.urgency or 'LOW').upper()
+        if urgency == 'NORMAL':
+            urgency = 'MEDIUM'
+        if urgency in urgency_counts:
+            urgency_counts[urgency] += 1
+        else:
+            urgency_counts['LOW'] += 1
+
+        estimated_cost = float(rec.estimated_cost or 0)
+        detail_rows.append({
+            'estimated_cost': estimated_cost,
+            'product_name': rec.product.product_name,
+        })
+
+        if estimated_cost == 0:
+            excluded_zero_cost_count += 1
+            continue
+
+        total_estimated_cost += estimated_cost
+
+    summary = [
+        ('Report Generated On', report_generated_on.strftime('%Y-%m-%d %H:%M:%S')),
+        ('Total Products', total_products),
+        ('CRITICAL Products', urgency_counts.get('CRITICAL', 0)),
+        ('HIGH Products', urgency_counts.get('HIGH', 0)),
+        ('MEDIUM Products', urgency_counts.get('MEDIUM', 0)),
+        ('LOW Products', urgency_counts.get('LOW', 0)),
+        ('Total Estimated Reorder Cost', f'Rs. {total_estimated_cost:,.2f}'),
+    ]
+    if excluded_zero_cost_count:
+        summary.append((
+            'Cost Note',
+            f'{excluded_zero_cost_count} of {total_products} items excluded from cost total — no cost history yet',
+        ))
 
     headers = [
         'Product Name', 'SKU', 'Supplier', 'Current Stock', 'Avg Daily Sales',
@@ -1565,10 +1808,10 @@ def reorder_report_export(request):
 
     filename_base = f'reorder_report_{date.today()}'
     if fmt == 'excel':
-        response = _excel_response(f'{filename_base}.xlsx', headers, rows)
+        response = _excel_response(f'{filename_base}.xlsx', headers, rows, summary=summary)
         logged_name = f'{filename_base}.xlsx'
     else:
-        response = _pdf_response(f'{filename_base}.pdf', f'Reorder Recommendations Report ({date.today()})', headers, rows)
+        response = _pdf_response(f'{filename_base}.pdf', f'Reorder Recommendations Report ({date.today()})', headers, rows, summary=summary)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)

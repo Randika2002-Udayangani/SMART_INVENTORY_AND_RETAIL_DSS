@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 from django.db.models import Sum, Avg, Min
+from django.utils import timezone
 from products.models import Product, Category
 from sales.models import ItemSalesRecord
 from purchases.models import PurchaseBatch
@@ -71,6 +72,7 @@ def calculate_health_scores():
     from products.models import Category
 
     today = date.today()
+    now = timezone.now()
 
     # ── Query 1: Active products ───────────────────────────────────────────────
     active_products = list(
@@ -275,6 +277,7 @@ def calculate_health_scores():
                 rating_sufficient    = rating_sufficient,
                 weighting_mode       = weighting_mode,
                 calculated_date      = today,
+                calculated_at        = now,
             )
         )
 
@@ -316,6 +319,7 @@ def calculate_health_scores():
                 critical_count  = critical_count,
                 status          = cat_status,
                 calculated_date = today,
+                calculated_at   = now,
             )
         )
 
@@ -325,5 +329,6 @@ def calculate_health_scores():
     return {
         'products_processed': len(health_records),
         'summary'           : summary,
+        'calculated_at'      : now.isoformat(),
     }
 

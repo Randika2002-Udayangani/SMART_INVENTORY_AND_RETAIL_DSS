@@ -74,7 +74,7 @@
         <span onclick="var p=document.getElementById('password');p.type=p.type==='password'?'text':'password';" style="cursor:pointer;padding:8px 12px;border:1px solid #ced4da;border-left:none;border-radius:0 4px 4px 0;background:white;">👁️</span>
     </div>
 </div>
-            <div class="error-msg" id="errorMsg">Invalid username or password.</div>
+            <div class="error-msg" id="errorMsg"></div>
             <button class="btn-login mt-2" onclick="doLogin()">Login</button>
         </div>
     </div>
@@ -100,17 +100,26 @@
                     sessionStorage.setItem('access_token', data.access);
                     sessionStorage.setItem('refresh_token', data.refresh);
                     window.location.href = '/dashboard/';
-                } else {
-                    errorMsg.style.display = 'block';
+                    return;
                 }
+
+                if (response.status === 423) {
+                    let msg = 'Account locked due to too many failed login attempts.';
+                    if (data.locked_until) {
+                        const until = new Date(data.locked_until);
+                        const now = new Date();
+                        const minsLeft = Math.max(1, Math.ceil((until - now) / 60000));
+                        msg += ` Try again in ${minsLeft} minute${minsLeft === 1 ? '' : 's'} (unlocks at ${until.toLocaleTimeString()}).`;
+                    }
+                    errorMsg.textContent = msg;
+                } else {
+                    errorMsg.textContent = 'Invalid username or password.';
+                }
+                errorMsg.style.display = 'block';
             } catch (error) {
+                errorMsg.textContent = 'Could not reach the server. Please try again.';
                 errorMsg.style.display = 'block';
             }
-            function togglePassword() {
-                const pwd = document.getElementById('password');
-                pwd.type = pwd.type === 'password' ? 'text' : 'password';
-            }
-
         }
     </script>
 </body>

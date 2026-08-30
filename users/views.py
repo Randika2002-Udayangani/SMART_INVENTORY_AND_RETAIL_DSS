@@ -39,13 +39,29 @@ class RegisterView(APIView):
             return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
 
         users = User.objects.all().order_by('id')
-        data = [{
-            'id': u.id,
-            'username': u.username,
-            'role': _get_role(u),
-            'is_active': u.is_active,
-            'date_joined': u.date_joined,
-        } for u in users]
+
+        # Pull all lockout rows in one query instead of one query per user.
+        security_by_user_id = {
+            s.user_id: s for s in UserLoginSecurity.objects.filter(user__in=users)
+        }
+
+        now = timezone.now()
+        data = []
+        for u in users:
+            security = security_by_user_id.get(u.id)
+            is_locked = bool(
+                security and security.locked_until and security.locked_until > now
+            )
+            data.append({
+                'id': u.id,
+                'username': u.username,
+                'role': _get_role(u),
+                'is_active': u.is_active,
+                'date_joined': u.date_joined,
+                'is_locked': is_locked,
+                'locked_until': security.locked_until if is_locked else None,
+                'failed_login_count': security.failed_login_count if security else 0,
+            })
         return Response(data)
 
     def post(self, request):
@@ -144,6 +160,13 @@ class LogoutView(APIView):
             RefreshToken(refresh_token).blacklist()
         except Exception:
             return Response({'error': 'Invalid or already-expired refresh token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.user and request.user.is_authenticated:
+            log_action(
+                user=request.user, action='LOGOUT', table_name='auth_user',
+                record_id=request.user.id, old_value=None, new_value=None,
+                request=request,
+            )
         return Response({'message': 'Logged out successfully'})
 
 
@@ -179,7 +202,7 @@ class ChangePasswordView(APIView):
 
 
 class UserDetailView(APIView):
-    """PATCH /api/users/{id}/ — update username/role/is_active. Admin only."""
+    """PATCH /api/users/{id}/ — update username/role/is_active/password. Admin only."""
 
     def patch(self, request, pk):
         if not (request.user.is_superuser or request.user.groups.filter(name='ADMIN').exists()):
@@ -199,6 +222,19 @@ class UserDetailView(APIView):
         new_username = request.data.get('username')
         new_is_active = request.data.get('is_active')
         new_role = request.data.get('role')
+        new_password = request.data.get('password')
+
+        if new_password:
+            new_password = new_password.strip()
+            if len(new_password) < 6:
+                return Response({'error': 'Password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
+            target.set_password(new_password)
+            # Admin-initiated reset — clear any lockout state so the new
+            # password isn't blocked by an old failed-attempt count.
+            security, _ = UserLoginSecurity.objects.get_or_create(user=target)
+            security.failed_login_count = 0
+            security.locked_until = None
+            security.save()
 
         if new_username:
             target.username = new_username
@@ -221,6 +257,10 @@ class UserDetailView(APIView):
             'is_active': target.is_active,
             'role': _get_role(target),
         }
+        # Never write the actual password into Audit_Log — just record that
+        # a reset happened, alongside whatever else changed in this request.
+        if new_password:
+            new_value['password_reset'] = True
 
         log_action(
             user=request.user, action='UPDATE', table_name='auth_user',
@@ -425,9 +465,23 @@ class LockoutTokenObtainPairSerializer(TokenObtainPairSerializer):
             if user:
                 security, _ = UserLoginSecurity.objects.get_or_create(user=user)
                 security.failed_login_count += 1
+                just_locked = False
                 if security.failed_login_count >= self.LOCKOUT_MAX_ATTEMPTS:
                     security.locked_until = timezone.now() + timedelta(minutes=self.LOCKOUT_DURATION_MINUTES)
+                    just_locked = True
                 security.save()
+
+                if just_locked:
+                    log_action(
+                        user=user, action='LOGIN_LOCKOUT', table_name='user_login_security',
+                        record_id=user.id,
+                        old_value={'failed_login_count': security.failed_login_count - 1},
+                        new_value={
+                            'failed_login_count': security.failed_login_count,
+                            'locked_until': str(security.locked_until),
+                        },
+                        request=self.context.get('request'),
+                    )
             raise
 
         # Successful login — reset the counter
@@ -436,6 +490,12 @@ class LockoutTokenObtainPairSerializer(TokenObtainPairSerializer):
             security.failed_login_count = 0
             security.locked_until = None
             security.save()
+
+            log_action(
+                user=user, action='LOGIN', table_name='auth_user',
+                record_id=user.id, old_value=None, new_value=None,
+                request=self.context.get('request'),
+            )
 
         return data
 

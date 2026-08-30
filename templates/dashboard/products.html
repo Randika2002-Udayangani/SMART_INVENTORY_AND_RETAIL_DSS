@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Products — Smart Inventory DSS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
+        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
+        .btn-primary { background:#2d6a4f; border:none; }
+        .btn-primary:hover { background:#1b4332; }
+        .card { border-radius:12px; border:1px solid #e2e8f0; }
+        .nav-tabs .nav-link.active { background:#2d6a4f; color:white; border-color:#2d6a4f; }
+        .nav-tabs .nav-link { color:#374151; }
+    </style>
+</head>
+<body>
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-0 fw-bold">Product Management</h4>
+        <small class="text-muted">Samanala Super Mart — product catalogue, import, zone recommendations</small>
+    </div>
+    <div>
+        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+    </div>
+</div>
+
+<div class="container-fluid px-4">
+
+    <ul class="nav nav-tabs mb-3" id="prodTabs">
+        <li class="nav-item"><button class="nav-link active" onclick="switchTab('list', this)">Product List</button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchTab('import', this)">Import Excel</button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchTab('zones', this)">Zone Recommendations</button></li>
+    </ul>
+
+    <!-- Product List -->
+    <div id="tab-list">
+        <div class="mb-3 d-flex gap-2">
+            <input type="text" id="prodSearch" class="form-control form-control-sm" style="width:260px;" placeholder="Search product name...">
+            <select id="prodCategory" class="form-select form-select-sm" style="width:180px;">
+                <option value="">All Categories</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="loadProducts()">Search</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="reclassify()">Reclassify Products</button>
+        </div>
+        <div class="card p-4">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr><th>Product</th><th>Category</th><th>Brand</th><th>SKU</th><th>Unit Price</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="prodBody">
+                    <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Import Tab -->
+    <div id="tab-import" style="display:none;">
+        <div class="card p-4" style="max-width:600px;">
+            <h6 class="fw-bold mb-3">Import Item Master Excel</h6>
+            <input type="file" id="importFile" class="form-control mb-3" accept=".xlsx,.xls">
+            <button class="btn btn-primary" onclick="submitImport()">Upload & Import</button>
+            <div id="importMsg" class="mt-3"></div>
+        </div>
+    </div>
+
+    <!-- Zone Recommendations Tab -->
+    <div id="tab-zones" style="display:none;">
+        <div class="card p-4">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr><th>Product</th><th>Recommended Zone</th><th>Reason</th></tr>
+                </thead>
+                <tbody id="zonesBody">
+                    <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<script>
+const token = sessionStorage.getItem('access_token');
+if (!token) { window.location.href = '/dashboard/login/'; }
+
+function doLogout() {
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
+    window.location.href = '/dashboard/login/';
+}
+
+function switchTab(name, btn) {
+    ['list','import','zones'].forEach(t => {
+        document.getElementById('tab-' + t).style.display = (t === name) ? 'block' : 'none';
+    });
+    document.querySelectorAll('#prodTabs .nav-link').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (name === 'zones') loadZones();
+}
+
+function extractArray(data) {
+    if (Array.isArray(data)) return data;
+    return data.results ?? data.products ?? data.data ?? [];
+}
+
+async function loadCategories() {
+    try {
+        const res = await fetch('/api/categories/', { headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        const cats = extractArray(data);
+        const sel = document.getElementById('prodCategory');
+        cats.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id ?? c.category_id;
+            opt.innerText = c.category_name ?? c.name;
+            sel.appendChild(opt);
+        });
+    } catch(e) {}
+}
+
+async function loadProducts() {
+    const search = document.getElementById('prodSearch').value;
+    const category = document.getElementById('prodCategory').value;
+    let url = '/api/products/?';
+    if (search) url += `search=${encodeURIComponent(search)}&`;
+    if (category) url += `category=${category}`;
+
+    try {
+        const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        const rows = extractArray(data);
+        const tbody = document.getElementById('prodBody');
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No products found.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(p => `
+            <tr>
+                <td style="font-weight:600">${p.product_name ?? '—'}</td>
+                <td>${p.category_name ?? '—'}</td>
+                <td>${p.brand_name ?? '—'}</td>
+                <td>${p.sku_code ?? '—'}</td>
+                <td>Rs ${Number(p.unit_price ?? 0).toLocaleString()}</td>
+                <td><button class="btn btn-sm btn-outline-secondary" onclick="alert('Edit form not built yet — product ID: ${p.id}')">Edit</button></td>
+            </tr>
+        `).join('');
+    } catch(e) {
+        document.getElementById('prodBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Could not load products.</td></tr>';
+    }
+}
+
+async function reclassify() {
+    if (!confirm('Run product reclassification now?')) return;
+    try {
+        const res = await fetch('/api/products/reclassify/', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+            alert('Reclassification complete.');
+            loadProducts();
+        } else {
+            alert('Reclassification failed.');
+        }
+    } catch(e) {
+        alert('Network error.');
+    }
+}
+
+async function submitImport() {
+    const fileInput = document.getElementById('importFile');
+    const msgBox = document.getElementById('importMsg');
+    if (!fileInput.files.length) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Please select a file first.</div>';
+        return;
+    }
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    try {
+        const res = await fetch('/api/products/import/', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token },
+            body: formData
+        });
+        if (res.ok) {
+            const data = await res.json();
+            msgBox.innerHTML = `<div class="alert alert-success py-2">Import complete: ${JSON.stringify(data)}</div>`;
+        } else {
+            msgBox.innerHTML = '<div class="alert alert-danger py-2">Import failed. Check file format.</div>';
+        }
+    } catch(e) {
+        msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error during import.</div>';
+    }
+}
+
+async function loadZones() {
+    try {
+        const res = await fetch('/api/zones/recommendations/', { headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        const rows = extractArray(data);
+        const tbody = document.getElementById('zonesBody');
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No zone recommendations available.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(z => `
+            <tr>
+                <td>${z.product_name ?? '—'}</td>
+                <td>${z.recommended_zone ?? z.zone_name ?? '—'}</td>
+                <td>${z.reason ?? '—'}</td>
+            </tr>
+        `).join('');
+    } catch(e) {
+        document.getElementById('zonesBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">Could not load zone data.</td></tr>';
+    }
+}
+
+loadCategories();
+loadProducts();
+</script>
+</body>
+</html>

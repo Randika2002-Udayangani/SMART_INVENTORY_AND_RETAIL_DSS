@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -30,6 +31,11 @@
 </div>
 
 <div class="container-fluid px-4">
+
+<div class="d-flex gap-2 mb-3">
+    <button class="btn btn-sm btn-outline-secondary" onclick="downloadReport('sales', 'excel')">⬇ Excel</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="downloadReport('sales', 'pdf')">⬇ PDF</button>
+</div>
 
     <!-- Date Filter -->
     <div class="card p-4 mb-4">
@@ -98,7 +104,6 @@
 </div>
 
 <script>
-// Auth check
 const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
 
@@ -149,6 +154,35 @@ async function loadReport() {
 
     } catch(e) {
         alert('Error loading report. Please try again.');
+    }
+}
+
+async function downloadReport(type, format) {
+    try {
+        const dateFrom = document.getElementById('dateFrom')?.value || '';
+        const dateTo = document.getElementById('dateTo')?.value || '';
+        let url = `/api/reports/${type}/?format=${format}`;
+        if (dateFrom) url += `&date_from=${dateFrom}`;
+        if (dateTo) url += `&date_to=${dateTo}`;
+
+        const res = await fetch(url, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) {
+            alert('Could not download report.');
+            return;
+        }
+        const blob = await res.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `${type}_report.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+    } catch(e) {
+        alert('Error downloading report.');
     }
 }
 </script>

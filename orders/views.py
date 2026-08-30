@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 
-from users.models import AuditLog
+from users.audit import log_action
 from products.models import Product
 
 from inventory.services.stock import get_available_stock
@@ -709,6 +709,8 @@ class OrderStatusUpdateView(APIView):
 
         new_status = new_status.upper()
 
+        old_status = order.status
+
 
 
         allowed = {
@@ -769,12 +771,14 @@ class OrderStatusUpdateView(APIView):
 
 
 
-        AuditLog.objects.create(
-
-            action=
-
-            f"{order.order_reference} changed to {new_status}"
-
+        log_action(
+            user=request.user,
+            action='ORDER_STATUS_CHANGE',
+            table_name='online_order',
+            record_id=order.id,
+            old_value={'status': old_status},
+            new_value={'status': new_status},
+            request=request,
         )
 
 
@@ -848,4 +852,3 @@ def chatbot(request):
     result,
     safe=True
 )
-

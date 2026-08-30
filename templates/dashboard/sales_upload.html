@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sales Upload - Smart Inventory DSS</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background:#f0f4f8; color:#1a2e1e; font-family:'Segoe UI',sans-serif; }
+    .page-header { background:#0f3d3e; color:#fff; padding:20px 30px; }
+    .card { border:1px solid #d8e4dc; border-radius:10px; }
+    .muted { color:#64748b; }
+    .upload-card h5 { color:#0f3d3e; }
+    .badge-success { background:#dcfce7; color:#166534; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-failed { background:#fee2e2; color:#b91c1c; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-partial { background:#fef9c3; color:#854d0e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .message { min-height:24px; }
+    .table { font-size:13px; }
+  </style>
+</head>
+<body>
+<header class="page-header d-flex justify-content-between align-items-center">
+  <div>
+    <h4 class="mb-1">Sales Upload</h4>
+    <small>Import daily bills and item sales ledger files</small>
+  </div>
+  <div>
+    <a href="/dashboard/" class="btn btn-light btn-sm me-2">Dashboard</a>
+    <button onclick="logout()" class="btn btn-danger btn-sm">Logout</button>
+  </div>
+</header>
+
+<main class="container-fluid p-4">
+  <div class="row g-4 mb-4">
+    <div class="col-lg-6">
+      <div class="card bg-white p-4 upload-card h-100">
+        <h5 class="mb-1">Upload Daily Bills</h5>
+        <p class="muted mb-3">Upload a PDF daily sales report.</p>
+        <input id="dailyBillsFile" type="file" class="form-control mb-3" accept=".pdf">
+        <button id="dailyBillsButton" class="btn btn-primary" onclick="uploadDailyBills()">Upload Daily Bills</button>
+        <div id="dailyBillsMessage" class="message mt-3" aria-live="polite"></div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card bg-white p-4 upload-card h-100">
+        <h5 class="mb-1">Upload Item Sales Ledger</h5>
+        <p class="muted mb-3">Upload a PDF item sales ledger.</p>
+        <input id="itemLedgerFile" type="file" class="form-control mb-3" accept=".pdf">
+        <button id="itemLedgerButton" class="btn btn-primary" onclick="uploadItemLedger()">Upload Item Sales Ledger</button>
+        <div id="itemLedgerMessage" class="message mt-3" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card bg-white p-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0">Upload History</h5>
+      <button class="btn btn-outline-secondary btn-sm" onclick="refreshLogs()">Refresh</button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead>
+          <tr><th>Date</th><th>Filename</th><th>Type</th><th>Status</th><th>Uploaded By</th><th>Details</th></tr>
+        </thead>
+        <tbody id="uploadBody">
+          <tr><td colspan="6" class="text-center muted">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+const token = sessionStorage.getItem('access_token');
+if (!token) location.href = '/dashboard/login/';
+
+function logout() {
+  sessionStorage.clear();
+  location.href = '/dashboard/login/';
+}
+
+async function api(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  headers.set('Authorization', 'Bearer ' + token);
+  const response = await fetch(url, { ...options, headers });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || data.message || 'Request failed');
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>\"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;'
+  }[character]));
+}
+
+function showMessage(elementId, message, type) {
+  document.getElementById(elementId).innerHTML = `<div class="alert alert-${type} py-2 mb-0">${escapeHtml(message)}</div>`;
+}
+
+function uploadMessage(data, label) {
+  const details = [];
+  if (data.message) details.push(data.message);
+  if (data.product) details.push(`Product: ${data.product}`);
+  if (data.inserted !== undefined) details.push(`Inserted: ${data.inserted}`);
+  if (data.skipped !== undefined) details.push(`Skipped: ${data.skipped}`);
+  if (data.dates_inserted !== undefined) details.push(`Dates inserted: ${data.dates_inserted}`);
+  if (data.dates_skipped !== undefined) details.push(`Dates skipped: ${data.dates_skipped}`);
+  if (Array.isArray(data.errors) && data.errors.length) details.push(`Errors: ${data.errors.join('; ')}`);
+  return `${label}: ${details.join(' | ') || 'Upload complete.'}`;
+}
+
+async function uploadFile(inputId, buttonId, messageId, endpoint, expectedExtension, label) {
+  const input = document.getElementById(inputId);
+  const button = document.getElementById(buttonId);
+  const file = input.files[0];
+  if (!file) {
+    showMessage(messageId, 'Please select a file first.', 'warning');
+    return;
+  }
+  if (!file.name.toLowerCase().endsWith(expectedExtension)) {
+    showMessage(messageId, `Please select a ${expectedExtension.slice(1).toUpperCase()} file.`, 'warning');
+    return;
+  }
+
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Uploading...';
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const data = await api(endpoint, { method: 'POST', body: formData });
+    showMessage(messageId, uploadMessage(data, label), 'success');
+    input.value = '';
+    await loadLogs();
+  } catch (error) {
+    const responseError = error.data?.error || error.data?.errors?.join('; ');
+    showMessage(messageId, responseError || error.message, 'danger');
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+function uploadDailyBills() {
+  return uploadFile('dailyBillsFile', 'dailyBillsButton', 'dailyBillsMessage', '/api/sales/upload/daily-bills/', '.pdf', 'Daily bills upload');
+}
+
+function uploadItemLedger() {
+  return uploadFile('itemLedgerFile', 'itemLedgerButton', 'itemLedgerMessage', '/api/sales/upload/item-ledger/', '.pdf', 'Item ledger upload');
+}
+
+function statusBadge(status) {
+  const normalized = String(status ?? '').toUpperCase();
+  const className = normalized === 'SUCCESS' ? 'badge-success' : (normalized === 'FAILED' ? 'badge-failed' : 'badge-partial');
+  return `<span class="${className}">${escapeHtml(normalized || '-')}</span>`;
+}
+
+async function loadLogs() {
+  try {
+    const data = await api('/api/sales/upload-log/');
+    const rows = Array.isArray(data) ? data : (data.results ?? []);
+    uploadBody.innerHTML = rows.length ? rows.map(log => `
+      <tr>
+        <td>${log.upload_date ? new Date(log.upload_date).toLocaleString() : '-'}</td>
+        <td>${escapeHtml(log.file_name)}</td>
+        <td>${escapeHtml(log.upload_type)}</td>
+        <td>${statusBadge(log.status)}</td>
+        <td>${escapeHtml(log.uploaded_by_username ?? '-')}</td>
+        <td><button class="btn btn-outline-secondary btn-sm" onclick="details(${log.id})">Details</button></td>
+      </tr>
+    `).join('') : '<tr><td colspan="6" class="text-center muted">No upload history found.</td></tr>';
+  } catch (error) {
+    uploadBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">${escapeHtml(error.message)}</td></tr>`;
+  }
+}
+
+async function refreshLogs() {
+  const button = event.currentTarget;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Refreshing...';
+  await loadLogs();
+  button.textContent = 'Refreshed ✓';
+  setTimeout(() => {
+    button.textContent = original;
+    button.disabled = false;
+  }, 900);
+}
+
+async function details(id) {
+  try {
+    const data = await api(`/api/sales/upload-log/${id}/`);
+    const errorMessage = data.error_message || 'No error message recorded.';
+    alert(`File: ${data.file_name || '-'}\nType: ${data.upload_type || '-'}\nStatus: ${data.status || '-'}\n\n${errorMessage}`);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+loadLogs();
+</script>
+</body>
+</html>
