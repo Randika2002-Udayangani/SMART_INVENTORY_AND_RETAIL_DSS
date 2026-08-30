@@ -1249,7 +1249,7 @@ class DiscountRuleListCreateView(APIView):
     def post(self, request):
         serializer = DiscountRuleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        # created_by is a legacy AppUser FK, not the real auth_user table —
+        
         # left null here, same gap as everywhere else in this codebase that
         # still references AppUser instead of settings.AUTH_USER_MODEL.
         rule = serializer.save(created_by=request.user)
@@ -1611,47 +1611,94 @@ class ReorderRecommendationDetailView(APIView):
 class NotificationListView(APIView):
     """
     GET /api/notifications/
-    Unread notifications, staff-facing (customer is null).
-    NOTE: Notification.user is still a legacy AppUser FK (same gap
-    flagged elsewhere in this project — it's never reliably
-    populated), so this currently returns ALL unread staff
-    notifications rather than filtering to "my" notifications.
-    Revisit once the AppUser → auth_user bridge is resolved.
+    GET /api/notifications/?status=unread|read|all   (default: unread)
+    Staff-facing (customer is null).
+
+    Read/dismiss state is now tracked PER USER via orders.models.NotificationRead
+    — the Notification row itself stays shared (one alert, created once), but
+    each staff member's read/dismiss status is independent. Marking read or
+    dismissing on one manager's login no longer affects another manager's view
+    of the same alert.
+
+    NOTE: Notification.user is still a legacy AppUser FK (same gap flagged
+    elsewhere in this project — it's never reliably populated), so this
+    returns ALL staff notifications matching the status filter, not
+    filtered to "my" notifications at the Notification level. Per-user
+    read/dismiss state above is unrelated to that gap and works correctly
+    regardless of it.
     """
- 
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
+        status_param = request.query_params.get('status', 'unread').lower()
+        if status_param not in ('unread', 'read', 'all'):
+            return Response(
+                {'error': 'status must be unread, read, or all'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from orders.models import NotificationRead
+
         notifications = Notification.objects.filter(
-            is_read=False, customer__isnull=True
+            customer__isnull=True
         ).order_by('-created_at')
- 
-        data = [{
-            'id': n.id,
-            'type': n.type,
-            'priority': n.priority,
-            'title': n.title,
-            'message': n.message,
-            'reference_table': n.reference_table,
-            'reference_id': n.reference_id,
-            'is_read': n.is_read,
-            'created_at': n.created_at,
-        } for n in notifications]
- 
+
+        read_states = {
+            rs.notification_id: rs
+            for rs in NotificationRead.objects.filter(
+                user=request.user, notification__in=notifications
+            )
+        }
+
+        data = []
+        for n in notifications:
+            rs = read_states.get(n.id)
+            is_read = rs.is_read if rs else False
+
+            if rs and rs.is_dismissed:
+                continue
+            if status_param == 'unread' and is_read:
+                continue
+            if status_param == 'read' and not is_read:
+                continue
+
+            data.append({
+                'id': n.id,
+                'type': n.type,
+                'priority': n.priority,
+                'title': n.title,
+                'message': n.message,
+                'reference_table': n.reference_table,
+                'reference_id': n.reference_id,
+                'is_read': is_read,
+                'read_at': rs.read_at if rs else None,
+                'created_at': n.created_at,
+            })
+
         return Response(data)
- 
- 
+
+
 class NotificationDetailView(APIView):
     """
     GET    /api/notifications/{id}/   — full detail with reference_table/id
     PATCH  /api/notifications/{id}/read/  — mark as read (separate route, see urls.py)
-    DELETE /api/notifications/{id}/   — dismiss
+    DELETE /api/notifications/{id}/   — dismiss FOR THE REQUESTING USER ONLY.
+           This is a per-user soft dismiss via NotificationRead.is_dismissed,
+           NOT a database delete — the shared Notification row is never
+           removed, so other staff members still see it until they dismiss
+           it themselves.
     """
- 
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, pk):
         try:
             n = Notification.objects.get(pk=pk)
         except Notification.DoesNotExist:
             return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
- 
+
+        from orders.models import NotificationRead
+        rs = NotificationRead.objects.filter(notification=n, user=request.user).first()
+
         return Response({
             'id': n.id,
             'type': n.type,
@@ -1660,40 +1707,48 @@ class NotificationDetailView(APIView):
             'message': n.message,
             'reference_table': n.reference_table,
             'reference_id': n.reference_id,
-            'is_read': n.is_read,
+            'is_read': rs.is_read if rs else False,
             'created_at': n.created_at,
-            'read_at': n.read_at,
+            'read_at': rs.read_at if rs else None,
             'expires_at': n.expires_at,
         })
- 
+
     def delete(self, request, pk):
         try:
             n = Notification.objects.get(pk=pk)
         except Notification.DoesNotExist:
             return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
-        n.delete()
-        return Response({'message': 'Notification dismissed'}, status=status.HTTP_204_NO_CONTENT)
- 
- 
+
+        from orders.models import NotificationRead
+        rs, _ = NotificationRead.objects.get_or_create(notification=n, user=request.user)
+        rs.is_dismissed = True
+        rs.dismissed_at = dj_timezone.now()
+        rs.save()
+
+        return Response({'message': 'Notification dismissed for you'}, status=status.HTTP_204_NO_CONTENT)
+
+
 class NotificationMarkReadView(APIView):
-    """PATCH /api/notifications/{id}/read/ — sets is_read=True, read_at=now."""
- 
+    """
+    PATCH /api/notifications/{id}/read/
+    Sets is_read=True, read_at=now — FOR THE REQUESTING USER ONLY, via
+    orders.models.NotificationRead. The shared Notification row is never
+    modified, so this has no effect on any other staff member's view.
+    """
+    permission_classes = [IsAuthenticated]
+
     def patch(self, request, pk):
         try:
             n = Notification.objects.get(pk=pk)
         except Notification.DoesNotExist:
             return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
- 
-        n.is_read = True
-        n.read_at = dj_timezone.now()
-        n.save()
- 
-        return Response({
-            'id': n.id, 'is_read': n.is_read, 'read_at': n.read_at,
-        })
-from django.http import JsonResponse
 
-def api_status(request):
-    return JsonResponse({
-        "status": "working"
-    })
+        from orders.models import NotificationRead
+        rs, _ = NotificationRead.objects.get_or_create(notification=n, user=request.user)
+        rs.is_read = True
+        rs.read_at = dj_timezone.now()
+        rs.save()
+
+        return Response({
+            'id': n.id, 'is_read': rs.is_read, 'read_at': rs.read_at,
+        })

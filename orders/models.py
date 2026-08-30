@@ -2,6 +2,7 @@ from django.db import models
 from products.models import Product
 from django.conf import settings
 
+
 class Customer(models.Model):
     name = models.CharField(max_length=150)
     contact_number = models.CharField(max_length=15, blank=True)
@@ -283,3 +284,24 @@ class Notification(models.Model):
 # field, so we only add the two attributes it's missing.
 Customer.is_authenticated = True
 Customer.is_anonymous = False
+
+
+class NotificationRead(models.Model):
+    """
+    Per-staff read/dismiss state for a Notification. The Notification
+    row stays shared (one alert, created once); this table tracks
+    what each individual staff member has done with it, so marking
+    read or dismissing on one manager's session never affects another
+    manager's view of the same alert.
+    """
+    notification = models.ForeignKey(
+        Notification, on_delete=models.CASCADE, related_name='read_states'
+    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(null=True, blank=True)
+    is_dismissed = models.BooleanField(default=False)
+    dismissed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('notification', 'user')

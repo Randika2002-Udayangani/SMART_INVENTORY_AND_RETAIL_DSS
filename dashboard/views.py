@@ -9,6 +9,12 @@ def dashboard_login(request):
 def sales_report(request):
     return render(request, 'dashboard/sales_report.html')
 
+def notifications(request):
+    return render(request, 'dashboard/notifications.html')
+
+def sales_upload(request):
+    return render(request, 'dashboard/sales_upload.html')
+
 def reports(request):
     return render(request, 'dashboard/reports.html')
 

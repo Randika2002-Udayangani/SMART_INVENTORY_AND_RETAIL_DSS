@@ -25,6 +25,7 @@
         <h4 class="mb-0 fw-bold">Inventory Health Score</h4>
         <small class="text-muted">Composite 0–100 score · 4-band classification · triggered on-demand</small>
     </div>
+    
     <div>
         <div class="d-flex align-items-center gap-2 flex-wrap">
             <button class="btn btn-primary btn-sm" id="calcBtn" onclick="runCalculation()">▶ Run Health Calculation</button>
@@ -70,13 +71,55 @@
         </div>
     </div>
 
-    <!-- Filter Buttons -->
-    <div class="mb-3 d-flex gap-2">
+    <!-- Critical Products + Category Breakdown -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-6">
+            <div class="card p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="fw-bold mb-0" style="color:#b91c1c;">Critical Products — Immediate Attention</h6>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="refreshCritical()">Refresh</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>Product</th><th>Score</th><th>Recommended Action</th></tr>
+                        </thead>
+                        <tbody id="criticalBody">
+                            <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="fw-bold mb-0">Category Health Breakdown</h6>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="refreshCategories()">Refresh</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>Category</th><th>Avg Score</th><th>Status</th><th>H/W/A/C</th></tr>
+                        </thead>
+                        <tbody id="categoryBody">
+                            <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Buttons + Search -->
+    <div class="mb-3 d-flex gap-2 align-items-center flex-wrap" id="filterButtons">
         <button class="btn btn-sm btn-outline-secondary active" onclick="filterTable('ALL', this)">All</button>
         <button class="btn btn-sm btn-outline-success" onclick="filterTable('HEALTHY', this)">Healthy</button>
         <button class="btn btn-sm btn-outline-warning" onclick="filterTable('WATCH', this)">Watch</button>
         <button class="btn btn-sm" style="border:1px solid #c2410c;color:#c2410c;" onclick="filterTable('AT RISK', this)">At Risk</button>
         <button class="btn btn-sm btn-outline-danger" onclick="filterTable('CRITICAL', this)">Critical</button>
+        <input type="text" id="productSearch" class="form-control form-control-sm ms-auto" style="max-width:260px;"
+               placeholder="Search product name or SKU..." oninput="handleSearchInput()">
     </div>
 
     <!-- Table -->
@@ -93,10 +136,11 @@
                     <th>Overall Score</th>
                     <th>Status</th>
                     <th>Recommended Action</th>
+                    <th>Details</th>
                 </tr>
             </thead>
             <tbody id="hsBody">
-                <tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>
+                <tr><td colspan="10" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
     </div>
@@ -114,6 +158,7 @@ function doLogout() {
 
 let allData = [];
 let currentFilter = 'ALL';
+let currentSearch = '';
 
 function statusBadge(s) {
     const map = {
@@ -164,15 +209,32 @@ async function fetchJson(url, options) {
 
 function filterTable(filter, btn) {
     currentFilter = filter;
-    document.querySelectorAll('.btn-group-filter button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#filterButtons button').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
     renderTable();
 }
 
+function handleSearchInput() {
+    currentSearch = document.getElementById('productSearch').value.trim().toLowerCase();
+    renderTable();
+}
+
+function matchesSearch(row, term) {
+    if (!term) return true;
+    const name = String(row.product__product_name ?? row.product_name ?? '').toLowerCase();
+    const sku = String(row.product__sku_code ?? row.sku_code ?? '').toLowerCase();
+    return name.includes(term) || sku.includes(term);
+}
+
 function renderTable() {
-    const rows = currentFilter === 'ALL' ? allData : allData.filter(r => r.status === currentFilter);
+    let rows = currentFilter === 'ALL' ? allData : allData.filter(r => r.status === currentFilter);
+    rows = rows.filter(r => matchesSearch(r, currentSearch));
     const tbody = document.getElementById('hsBody');
     if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No products found.</td></tr>';
+        const message = currentSearch
+            ? `No products match "${currentSearch}".`
+            : 'No products found.';
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted">${message}</td></tr>`;
         return;
     }
     tbody.innerHTML = rows.map(r => `
@@ -186,8 +248,108 @@ function renderTable() {
             <td><strong>${numberCell(r.overall_score)}</strong></td>
             <td>${statusBadge(r.status)}</td>
             <td><em style="color:#64748b;font-size:12px;">${r.recommended_action ?? '—'}</em></td>
+            <td><button class="btn btn-outline-secondary btn-sm" onclick="showProductDetails(${r.product ?? r.product__id ?? 'null'})">Details</button></td>
         </tr>
     `).join('');
+}
+
+// ── Product detail + history (per row "Details" button) ────────────────────
+async function showProductDetails(productId) {
+    if (!productId) {
+        alert('Product id not available for this row.');
+        return;
+    }
+    const requestOptions = { headers: { 'Authorization': 'Bearer ' + token } };
+    try {
+        const [detail, history] = await Promise.all([
+            fetchJson(`/api/health-scores/${productId}/`, requestOptions),
+            fetchJson(`/api/health-scores/history/${productId}/`, requestOptions)
+        ]);
+
+        const lines = [
+            `Product: ${detail.product_name ?? '—'}`,
+            `SKU: ${detail.sku_code ?? '—'}`,
+            `Overall score: ${numberCell(detail.overall_score)} (${detail.status ?? '—'})`,
+            `Velocity: ${numberCell(detail.velocity_score)}  Margin: ${numberCell(detail.margin_score)}`,
+            `Expiry risk: ${numberCell(detail.expiry_risk_score)}  Stock duration: ${numberCell(detail.stock_duration_score)}`,
+            `Rating score: ${detail.rating_sufficient ? numberCell(detail.rating_score) : 'not enough ratings yet'}`,
+            `Weighting mode: ${detail.weighting_mode ?? '—'}`,
+            `Recommended action: ${detail.recommended_action ?? '—'}`,
+            `Calculated at: ${formatTimestamp(detail.calculated_at)}`,
+            '',
+            `Score history (${history.length} run${history.length === 1 ? '' : 's'}):`,
+        ];
+
+        history.slice(0, 10).forEach(h => {
+            lines.push(`  ${formatTimestamp(h.calculated_at || h.calculated_date)} — ${numberCell(h.overall_score)} (${h.status})`);
+        });
+        if (history.length > 10) lines.push(`  …and ${history.length - 10} earlier run(s).`);
+        if (history.length === 0) lines.push('  No history yet — this is the first calculation for this product.');
+
+        alert(lines.join('\n'));
+    } catch (e) {
+        alert('Could not load product details: ' + e.message);
+    }
+}
+
+// ── Critical Products card — uses the dedicated critical endpoint,
+// not a client-side filter of the already-loaded general list ──────────────
+async function loadCritical() {
+    const tbody = document.getElementById('criticalBody');
+    try {
+        const rows = await fetchJson('/api/health-scores/critical/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        tbody.innerHTML = rows.length ? rows.map(r => `
+            <tr>
+                <td>${r.product__product_name ?? '—'}</td>
+                <td><strong style="color:#dc2626;">${numberCell(r.overall_score)}</strong></td>
+                <td><em style="color:#64748b;font-size:12px;">${r.recommended_action ?? '—'}</em></td>
+            </tr>
+        `).join('') : '<tr><td colspan="3" class="text-center text-muted">No critical products right now.</td></tr>';
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Could not load critical products.</td></tr>';
+    }
+}
+
+async function refreshCritical() {
+    const btn = event.currentTarget;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
+    await loadCritical();
+    btn.textContent = 'Refreshed ✓';
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 900);
+}
+
+// ── Category Health Breakdown card ──────────────────────────────────────────
+async function loadCategories() {
+    const tbody = document.getElementById('categoryBody');
+    try {
+        const rows = await fetchJson('/api/health-scores/categories/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        tbody.innerHTML = rows.length ? rows.map(r => `
+            <tr>
+                <td>${r.category__category_name ?? '—'}</td>
+                <td>${numberCell(r.avg_health_score)}</td>
+                <td>${statusBadge(r.status)}</td>
+                <td class="text-muted">${r.healthy_count ?? 0} / ${r.watch_count ?? 0} / ${r.at_risk_count ?? 0} / ${r.critical_count ?? 0}</td>
+            </tr>
+        `).join('') : '<tr><td colspan="4" class="text-center text-muted">No category data yet.</td></tr>';
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Could not load category breakdown.</td></tr>';
+    }
+}
+
+async function refreshCategories() {
+    const btn = event.currentTarget;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
+    await loadCategories();
+    btn.textContent = 'Refreshed ✓';
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 900);
 }
 
 function updateSummaryCounts() {
@@ -236,7 +398,7 @@ async function loadHealthScores() {
 
         renderTable();
     } catch(e) {
-        document.getElementById('hsBody').innerHTML = '<tr><td colspan="9" class="text-center text-muted">Could not load data.</td></tr>';
+        document.getElementById('hsBody').innerHTML = '<tr><td colspan="10" class="text-center text-muted">Could not load data.</td></tr>';
     }
 }
 
@@ -244,6 +406,14 @@ async function runCalculation() {
     const btn = document.getElementById('calcBtn');
     btn.innerHTML = '⏳ Calculating...';
     btn.disabled = true;
+
+    // Loading state on the table itself, not just the button — a full
+    // recalculation across every product can take a few seconds, and the
+    // old table data sitting there unchanged looks like nothing happened.
+    document.getElementById('hsBody').innerHTML =
+        '<tr><td colspan="10" class="text-center text-muted">Recalculating health scores across all products…</td></tr>';
+    document.querySelectorAll('#filterButtons button').forEach(b => b.disabled = true);
+
     try {
         const result = await fetchJson('/api/health-scores/calculate/', {
             method: 'POST',
@@ -253,14 +423,22 @@ async function runCalculation() {
             setLastCalculatedLabel(result.last_calculated_at, false);
         }
         await loadHealthScores();
+        // Health scores changed, so the critical list and category
+        // averages are now stale too — refresh both alongside the table.
+        await Promise.all([loadCritical(), loadCategories()]);
     } catch(e) {
         document.getElementById('lastCalculatedLabel').textContent = 'Calculation failed';
+        document.getElementById('hsBody').innerHTML =
+            '<tr><td colspan="10" class="text-center text-danger">Calculation failed. Please try again.</td></tr>';
     }
+    document.querySelectorAll('#filterButtons button').forEach(b => b.disabled = false);
     btn.innerHTML = '▶ Run Health Calculation';
     btn.disabled = false;
 }
 
 loadHealthScores();
+loadCritical();
+loadCategories();
 </script>
 </body>
 </html>

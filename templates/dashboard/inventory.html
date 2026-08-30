@@ -258,8 +258,7 @@ async function loadLedger() {
     const type = document.getElementById('ledgerType').value;
     let url = '/api/inventory/ledger/?';
     if (productId) url += `product=${productId}&`;
-    if (type) url += `transaction_type=${type}`;
-
+    if (type) url += `type=${type}`;
     try {
         const res = await fetch(url, {
             headers: { 'Authorization': 'Bearer ' + token }
@@ -273,7 +272,7 @@ async function loadLedger() {
         }
         tbody.innerHTML = ledgerData.map(l => `
             <tr>
-                <td>${l.date ?? l.created_at ?? '—'}</td>
+                <td>${l.transaction_date ?? l.date ?? l.created_at ?? '—'}</td>
                 <td>${l.product_name ?? '—'}</td>
                 <td><span class="badge bg-secondary">${l.transaction_type ?? '—'}</span></td>
                 <td style="color:${(l.quantity_change ?? 0) < 0 ? '#dc2626' : '#16a34a'}">${l.quantity_change ?? l.quantity ?? '—'}</td>

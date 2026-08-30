@@ -278,7 +278,7 @@
     <a href="/dashboard/purchases/?tab=purchases"><i class="bi bi-receipt"></i> Purchases</a>
     <a href="/dashboard/purchases/?tab=batches"><i class="bi bi-layers"></i> Batches</a>
     <a href="/dashboard/purchases/?tab=expiring"><i class="bi bi-calendar-x"></i> Expiry Alerts</a>
-    <a href="#" onclick="alert('Coming soon'); return false;"><i class="bi bi-upload"></i> Sales Upload</a>
+    <a href="/dashboard/sales-upload/"><i class="bi bi-upload"></i> Sales Upload</a>
     <a href="/dashboard/products/"><i class="bi bi-boxes"></i> Products</a>
 
     <div class="sb-sec">Decision Support</div>
@@ -295,7 +295,7 @@
     <div class="sb-sec">Reports</div>
     <a href="/dashboard/reports/"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
    <a href="/dashboard/sales-report/"><i class="bi bi-bar-chart"></i> Sales Report</a>
-    <a href="#notif"><i class="bi bi-bell"></i> Notifications <span class="badge-pill" id="sidebarAlertCount">0</span></a>
+    <a href="/dashboard/notifications/"><i class="bi bi-bell"></i> Notifications <span class="badge-pill" id="sidebarAlertCount">0</span></a>
 
   <div class="sb-sec">Administration</div>
   <a href="/dashboard/system-config/"><i class="bi bi-sliders"></i> System Config</a>
@@ -334,7 +334,7 @@
       <span class="alert-pill ap-high" id="alertHigh"><i class="bi bi-exclamation-triangle-fill" style="font-size:11px"></i> 2 HIGH — Near expiry</span>
       <span class="alert-pill ap-medium" id="alertMedium"><i class="bi bi-info-circle-fill" style="font-size:11px"></i> 1 MEDIUM — Health decline</span>
     </div>
-    <a href="#notif" class="view-all-btn">View all &rarr;</a>
+    <a href="/dashboard/notifications/" class="view-all-btn">View all &rarr;</a>
   </div>
 
   <!-- KPI CARDS — populated from the existing reporting APIs -->
@@ -495,7 +495,7 @@
     <!-- NOTIFICATIONS PANEL — /api/notifications/ -->
     <div class="card-box" id="notif">
       <div class="card-head">
-        <div><div class="cht">Notifications &amp; Alerts</div><div class="chs">CRITICAL → HIGH → MEDIUM · auto-checked on login</div></div>
+        <div><div class="cht">Notifications &amp; Alerts</div><div class="chs">10 most recent · CRITICAL → HIGH → MEDIUM</div></div>
         <span class="card-badge" id="notificationBadge">0 Unread</span>
       </div>
       <div class="card-body" style="padding:0 18px;">
@@ -540,13 +540,13 @@
 
     <div class="card-box">
       <div class="card-head">
-        <div><div class="cht">Product Health Scores</div><div class="chs">velocity · margin · expiry risk · stock duration · rating (if ≥10 ratings)</div></div>
+        <div><div class="cht">Product Health Scores</div><div class="chs">Critical items shown here · <a href="/dashboard/health-score/" style="color:var(--sidebar);font-weight:600;text-decoration:none;">View full breakdown &rarr;</a></div></div>
         <div class="hf-wrap">
-          <button class="hf-btn hf-all on" onclick="fhs('all',this)">All</button>
+          <button class="hf-btn hf-all" onclick="fhs('all',this)">All</button>
           <button class="hf-btn hf-h" onclick="fhs('HEALTHY',this)">Healthy</button>
           <button class="hf-btn hf-w" onclick="fhs('WATCH',this)">Watch</button>
           <button class="hf-btn hf-a" onclick="fhs('AT RISK',this)">At Risk</button>
-          <button class="hf-btn hf-c" onclick="fhs('CRITICAL',this)">Critical</button>
+          <button class="hf-btn hf-c on" onclick="fhs('CRITICAL',this)">Critical</button>
         </div>
       </div>
       <div style="overflow-x:auto;">
@@ -728,7 +728,7 @@
 
   // ── Health Score Table — real data, loaded from /api/health-scores/ ──
   let hsData = [];
-  let currentHsFilter = 'all';
+  let currentHsFilter = 'CRITICAL';
 
   function scoreCol(s) {
     return s>=80?'#16a34a':s>=60?'#ca8a04':s>=40?'#ea580c':'#dc2626';
@@ -743,7 +743,8 @@
   }
 
   function renderHS(filter) {
-    const rows = filter === 'all' ? hsData : hsData.filter(r => r.status === filter);
+    const filtered = filter === 'all' ? hsData : hsData.filter(r => r.status === filter);
+    const rows = filtered.slice(0, 10);
     document.getElementById('hsTbody').innerHTML = rows.length ? rows.map(r=>`
       <tr>
         <td style="font-weight:600">${escapeHtml(r.name)}</td>
@@ -824,7 +825,8 @@ async function fetchNotifications() {
     const data = await apiFetch('/api/notifications/');
         const list = document.getElementById('notifList');
         const priorityClass = { CRITICAL: 'critical', HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
-    list.innerHTML = data.length ? data.map(n => `
+        const recent = data.slice(0, 10);
+    list.innerHTML = recent.length ? recent.map(n => `
             <li class="notif-item">
                 <div class="notif-dot nd-${priorityClass[n.priority] || 'medium'}"></div>
                 <span class="notif-pri np-${priorityClass[n.priority] || 'medium'}">${n.priority}</span>
