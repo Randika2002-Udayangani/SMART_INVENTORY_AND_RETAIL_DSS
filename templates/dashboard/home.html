@@ -303,8 +303,8 @@
   <a href="/dashboard/users/"><i class="bi bi-people"></i> User Management</a>
   </nav>
   <div class="sb-footer">
-    <div class="name">Manager</div>
-    <div>Samanala Super Mart</div>
+    <div class="name" id="sbUserName">Loading...</div>
+    <div id="sbUserRole">Samanala Super Mart</div>
   </div>
 </aside>
 
@@ -819,6 +819,18 @@ function doLogout() {
     window.location.href = '/dashboard/login/';
 }
 
+// FETCH — logged-in user profile for sidebar footer (GET /api/auth/me/)
+async function fetchCurrentUser() {
+  try {
+    const data = await apiFetch('/api/auth/me/');
+    document.getElementById('sbUserName').innerText = data.username;
+    document.getElementById('sbUserRole').innerText = data.role + ' · Samanala Super Mart';
+  } catch(e) {
+    console.error('fetchCurrentUser failed:', e);
+    document.getElementById('sbUserName').innerText = 'Manager';
+  }
+}
+
 // FETCH — Notifications & Alerts panel, Active Alerts KPI card, Active Alerts banner
 async function fetchNotifications() {
     try {
@@ -1010,6 +1022,7 @@ async function runHealthCalculation(btn) {
 }
 
 // Run all fetches
+fetchCurrentUser();
 fetchNotifications();
 fetchProfitSummary();
 fetchTotalSales();
