@@ -10,15 +10,26 @@ class StoreZone(models.Model):
         ('Medium', 'Medium'),
         ('Low', 'Low'),
     ]
+    ZONE_TYPE_CHOICES = [
+        ('GENERAL', 'General'),           # regular category-area zone
+        ('HIGH_TRAFFIC', 'High Traffic'), # e.g. "Zone A" — top performers
+        ('PROMOTIONAL', 'Promotional'),   # end-of-aisle, near-expiry stock
+        ('DISCOUNT_BIN', 'Discount Bin'), # slow-moving stock
+    ]
     zone_name = models.CharField(max_length=100)
     description = models.CharField(max_length=255, blank=True)
     traffic_level = models.CharField(max_length=10, choices=TRAFFIC_CHOICES)
-
+    zone_type = models.CharField(
+        max_length=20, choices=ZONE_TYPE_CHOICES, default='GENERAL'
+    )
+ 
     class Meta:
         db_table = 'store_zone'
-
+ 
     def __str__(self):
         return self.zone_name
+ 
+
 
 
 class Category(models.Model):
