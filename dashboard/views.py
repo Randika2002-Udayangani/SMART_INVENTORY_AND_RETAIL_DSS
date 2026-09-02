@@ -42,6 +42,9 @@ def inventory(request):
 def purchases(request):
     return render(request, 'dashboard/purchases.html')
 
+def purchase_detail(request, pk):
+    return render(request, 'dashboard/purchase_detail.html', {'purchase_id': pk})
+
 def suppliers(request):
     return render(request, 'dashboard/suppliers.html')
 

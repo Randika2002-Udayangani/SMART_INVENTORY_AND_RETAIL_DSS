@@ -44,6 +44,10 @@
 
     <!-- Purchases List Tab -->
     <div id="tab-purchases">
+        <div class="mb-3">
+            <input type="text" id="purchaseSearch" class="form-control form-control-sm" style="max-width:280px;"
+                   placeholder="Search by invoice number..." oninput="handlePurchaseSearch()">
+        </div>
         <div class="card p-4">
             <table class="table table-hover">
                 <thead class="table-light">
@@ -69,10 +73,10 @@
         <div class="card p-4">
             <table class="table table-hover">
                 <thead class="table-light">
-                    <tr><th>Product</th><th>Quantity Received</th><th>Remaining</th><th>Cost Price</th><th>Expiry Date</th><th>Status</th></tr>
+                    <tr><th>Batch ID</th><th>Product</th><th>Invoice #</th><th>Quantity Received</th><th>Remaining</th><th>Cost Price</th><th>Expiry Date</th><th>Status</th><th>Action</th></tr>
                 </thead>
                 <tbody id="batchesBody">
-                    <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
+                    <tr><td colspan="9" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -171,30 +175,48 @@ function extractArray(data) {
     return data.results ?? data.purchases ?? data.batches ?? data.stock ?? data.data ?? [];
 }
 
+let allPurchases = [];
+let purchaseSearchTerm = '';
+
 async function loadPurchases() {
     try {
         const res = await fetch('/api/purchases/', {
             headers: { 'Authorization': 'Bearer ' + token }
         });
         const data = await res.json();
-        const rows = extractArray(data);
-        const tbody = document.getElementById('purchasesBody');
-        if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No purchases recorded yet.</td></tr>';
-            return;
-        }
-        tbody.innerHTML = rows.map(p => `
-            <tr>
-                <td>${p.invoice_number ?? '—'}</td>
-                <td>${p.supplier_name ?? (typeof p.supplier === 'object' ? p.supplier?.name : p.supplier) ?? '—'}</td>
-                <td>${p.purchase_date ?? '—'}</td>
-                <td>Rs ${Number(p.total_amount ?? 0).toLocaleString()}</td>
-                <td>${(p.batches ?? []).length || p.batch_count || '—'}</td>
-            </tr>
-        `).join('');
+        allPurchases = extractArray(data);
+        renderPurchasesTable();
     } catch(e) {
         document.getElementById('purchasesBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted">Could not load purchases.</td></tr>';
     }
+}
+
+function handlePurchaseSearch() {
+    purchaseSearchTerm = document.getElementById('purchaseSearch').value.trim().toLowerCase();
+    renderPurchasesTable();
+}
+
+function renderPurchasesTable() {
+    const rows = purchaseSearchTerm
+        ? allPurchases.filter(p => String(p.invoice_number ?? '').toLowerCase().includes(purchaseSearchTerm))
+        : allPurchases;
+    const tbody = document.getElementById('purchasesBody');
+    if (rows.length === 0) {
+        const message = purchaseSearchTerm
+            ? `No purchases match invoice "${purchaseSearchTerm}".`
+            : 'No purchases recorded yet.';
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">${message}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rows.map(p => `
+        <tr>
+            <td><a href="/dashboard/purchases/detail/${p.id}/">${p.invoice_number ?? '—'}</a></td>
+            <td>${p.supplier_name ?? (typeof p.supplier === 'object' ? p.supplier?.name : p.supplier) ?? '—'}</td>
+            <td>${p.purchase_date ?? '—'}</td>
+            <td>Rs ${Number(p.total_amount ?? 0).toLocaleString()}</td>
+            <td>${(p.batches ?? []).length || p.batch_count || '—'}</td>
+        </tr>
+    `).join('');
 }
 
 function batchStatusBadge(s) {
@@ -215,22 +237,83 @@ async function loadBatches() {
         const rows = extractArray(data);
         const tbody = document.getElementById('batchesBody');
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No batches found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No batches found.</td></tr>';
             return;
         }
-        tbody.innerHTML = rows.map(b => `
+        tbody.innerHTML = rows.map(b => {
+            const isPending = b.status === 'PENDING_EXPIRY';
+            const expiryCell = isPending
+                ? `<input type="date" id="expiryInput_${b.id}" class="form-control form-control-sm" style="min-width:150px;">`
+                : (b.expiry_date ?? '—');
+            const actionCell = isPending
+                ? `<button class="btn btn-sm btn-success" onclick="confirmExpiry(${b.id})">Confirm</button>`
+                : '';
+            return `
             <tr>
+                <td class="text-muted">${b.id ?? '—'}</td>
                 <td>${b.product_name ?? '—'}</td>
+                <td>${b.invoice_number ?? '—'}</td>
                 <td>${b.quantity_received ?? '—'}</td>
                 <td>${b.remaining_quantity ?? '—'}</td>
                 <td>Rs ${Number(b.cost_price ?? 0).toLocaleString()}</td>
-                <td>${b.expiry_date ?? '—'}</td>
+                <td>${expiryCell}</td>
                 <td>${batchStatusBadge(b.status)}</td>
-            </tr>
-        `).join('');
+                <td>${actionCell}</td>
+            </tr>`;
+        }).join('');
     } catch(e) {
-        document.getElementById('batchesBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Could not load batches.</td></tr>';
+        document.getElementById('batchesBody').innerHTML = '<tr><td colspan="9" class="text-center text-muted">Could not load batches.</td></tr>';
     }
+}
+
+async function confirmExpiry(batchId) {
+    const input = document.getElementById(`expiryInput_${batchId}`);
+    const expiryDate = input.value;
+    if (!expiryDate) {
+        alert('Please enter an expiry date before confirming.');
+        return;
+    }
+    try {
+        const res = await fetch(`/api/batches/${batchId}/confirm-expiry/`, {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ expiry_date: expiryDate })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            alert('Could not confirm expiry: ' + (data.error || 'request failed (' + res.status + ')'));
+            return;
+        }
+        // Once confirmed, the batch moves PENDING_EXPIRY → ACTIVE, so the
+        // input+button are no longer relevant for this row — reload the
+        // whole tab so it re-renders with the now-fixed expiry_date and
+        // ACTIVE status badge, per the "should show as fixed" requirement.
+        await loadBatches();
+    } catch(e) {
+        alert('Network error — expiry date was not confirmed. Please try again.');
+    }
+}
+
+function daysLeft(expiryDateStr) {
+    if (!expiryDateStr) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const expiry = new Date(expiryDateStr);
+    if (Number.isNaN(expiry.getTime())) return null;
+    const diffMs = expiry - today;
+    return Math.round(diffMs / (1000 * 60 * 60 * 24));
+}
+
+function daysLeftCell(expiryDateStr) {
+    const days = daysLeft(expiryDateStr);
+    if (days === null) return '—';
+    if (days < 0) return `<span class="text-danger fw-semibold">Expired ${Math.abs(days)} ago</span>`;
+    if (days <= 7) return `<span class="text-danger fw-semibold">${days}</span>`;
+    if (days <= 14) return `<span style="color:#c2410c;font-weight:600;">${days}</span>`;
+    return `${days}`;
 }
 
 async function loadExpiring(days) {
@@ -251,7 +334,7 @@ async function loadExpiring(days) {
                 <td>${b.batch_id ?? b.id ?? '—'}</td>
                 <td>${b.remaining_quantity ?? '—'}</td>
                 <td>${b.expiry_date ?? '—'}</td>
-                <td>${b.days_until_expiry ?? '—'}</td>
+                <td>${daysLeftCell(b.expiry_date)}</td>
             </tr>
         `).join('');
     } catch(e) {

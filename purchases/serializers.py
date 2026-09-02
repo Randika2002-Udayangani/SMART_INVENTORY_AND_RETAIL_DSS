@@ -20,13 +20,17 @@ class PurchaseBatchSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(
         source='product.product_name', read_only=True
     )
+    invoice_number = serializers.CharField(
+        source='purchase.invoice_number', read_only=True, allow_null=True, default=None
+    )
 
     class Meta:
         model  = PurchaseBatch
         fields = [
             'id', 'product', 'product_name',
             'quantity_received', 'cost_price',
-            'expiry_date', 'remaining_quantity', 'status'
+            'expiry_date', 'remaining_quantity', 'status',
+            'purchase', 'invoice_number',
         ]
         extra_kwargs = {
             'remaining_quantity': {'required': False},

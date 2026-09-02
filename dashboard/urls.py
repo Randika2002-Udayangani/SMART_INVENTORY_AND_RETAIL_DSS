@@ -16,6 +16,7 @@ urlpatterns = [
     path('discount-engine/', views.discount_engine, name='discount_engine'),
     path('inventory/', views.inventory, name='inventory'),
     path('purchases/', views.purchases, name='purchases'),
+    path('purchases/detail/<int:pk>/', views.purchase_detail, name='purchase_detail'),
     path('suppliers/', views.suppliers, name='suppliers'),
     path('products/', views.products, name='products'),
     path('system-config/', views.system_config, name='system_config'),
