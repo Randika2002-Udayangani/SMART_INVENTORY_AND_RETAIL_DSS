@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
+from products.models import Product
 
 from .models import (
     Customer,
@@ -10,6 +11,8 @@ from .models import (
     ProductRatingSummary,
     Notification,
 )
+
+
 
 class CustomerRegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
@@ -179,3 +182,33 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = "__all__"
+
+
+
+
+class RatingCreateSerializer(serializers.Serializer):
+    """
+    Validates the POST /api/ratings/ body. A plain Serializer
+    (not ModelSerializer) on purpose — customer and is_verified
+    are set server-side in the view, never taken from the request
+    body, so they're deliberately excluded here.
+    """
+    product = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.filter(is_active=True)
+    )
+    rating = serializers.IntegerField(min_value=1, max_value=5)
+    feedback_text = serializers.CharField(
+        max_length=500, required=False, allow_blank=True
+    )
+
+
+class ProductRatingPublicSerializer(serializers.ModelSerializer):
+    """
+    Public-facing read serializer for GET /api/ratings/product/{id}/.
+    Deliberately omits `customer` — see the note in
+    ProductRatingListView about the "internal only" vs "public
+    endpoint" contradiction in the API doc.
+    """
+    class Meta:
+        model = ProductRating
+        fields = ["id", "rating", "feedback_text", "is_verified", "created_at"]
