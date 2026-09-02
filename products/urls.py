@@ -11,6 +11,7 @@ urlpatterns = [
     path('categories/<int:pk>/', views.CategoryDetailView.as_view(), name='category-detail'),
 
     # Store Zones
+    path('zones/recommendations/calculate/', views.ZoneRecommendationCalculateView.as_view(), name='zone-recommendations-calculate'),
     path('zones/recommendations/', views.ZoneRecommendationListView.as_view(), name='zone-recommendations'),
     path('zones/', views.StoreZoneListCreateView.as_view(), name='zone-list'),
     path('zones/<int:pk>/', views.StoreZoneDetailView.as_view(), name='zone-detail'),

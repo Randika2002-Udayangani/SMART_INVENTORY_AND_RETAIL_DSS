@@ -495,3 +495,31 @@ class ReclassifyProductsView(APIView):
             'total_processed':      result['total_processed'],
         }, status=status.HTTP_200_OK)
 
+
+
+class ZoneRecommendationCalculateView(APIView):
+    """
+    POST /api/zones/recommendations/calculate/
+ 
+    Manager triggers zone placement recalculation for all active
+    products. Reads each product's latest InventoryHealthScore and
+    writes ZoneRecommendation rows for products that should move —
+    see inventory/services/zone_recommendation.py for the scoring
+    rule and the StoreZone data-model limitation noted there (no
+    zone "purpose" field, so this maps onto traffic_level only).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def post(self, request):
+        # Local import — same reasoning as RecalculateWACView above:
+        # avoids any risk of a circular import between products and
+        # inventory apps.
+        from inventory.services.zone_recommendation import calculate_zone_recommendations
+ 
+        result = calculate_zone_recommendations()
+ 
+        return Response({
+            "message": "Zone recommendations recalculated",
+            **result,
+        })
+
