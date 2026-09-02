@@ -8,6 +8,7 @@ from core.permissions import ReadPublicWriteAuthenticated
 from core.authentication import LenientJWTAuthentication
 from users.audit import log_action
 import pandas as pd
+from users.permissions import IsManagerOrAdmin
 
 from .models import Brand, Category, StoreZone, Product, ZoneRecommendation
 from .serializers import (
@@ -171,8 +172,10 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
     # After:  GET → public (customers view product detail)
     #         PUT/PATCH/DELETE → authenticated staff only
     def get_permissions(self):
-        if self.request.method in ('PUT', 'PATCH', 'DELETE'):
-            return [permissions.IsAuthenticated()]
+        if self.request.method == 'DELETE':
+            return [permissions.IsAuthenticated(), IsManagerOrAdmin()]
+        if self.request.method in ('PUT', 'PATCH'):
+             return [permissions.IsAuthenticated()]
         return [permissions.AllowAny()]
 
     def perform_update(self, serializer):
