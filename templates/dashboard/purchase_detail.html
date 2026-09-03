@@ -4,233 +4,101 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Purchase Detail — Smart Inventory DSS</title>
-
-    <link
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
-        rel="stylesheet"
-    >
-
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body {
-            background: #f0f4f8;
-            font-family: 'Segoe UI', sans-serif;
-        }
-
-        .page-header {
-            background: white;
-            padding: 20px 30px;
-            border-bottom: 1px solid #e2e8f0;
-            margin-bottom: 24px;
-        }
-
-        .btn-primary {
-            background: #2d6a4f;
-            border: none;
-        }
-
-        .btn-primary:hover {
-            background: #1b4332;
-        }
-
-        .card {
-            border-radius: 12px;
-            border: 1px solid #e2e8f0;
-        }
-
-        .kpi-card {
-            background: white;
-            border-radius: 12px;
-            padding: 18px;
-            border: 1px solid #e2e8f0;
-        }
-
-        .kpi-lbl {
-            font-size: 11px;
-            color: #64748b;
-            text-transform: uppercase;
-        }
-
-        .kpi-val {
-            font-size: 18px;
-            font-weight: 700;
-        }
-
-        .badge-active {
-            background: #dcfce7;
-            color: #16a34a;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-
-        .badge-expired {
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-
-        .badge-disposed {
-            background: #f3f4f6;
-            color: #374151;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-
-        .badge-pending {
-            background: #fef9c3;
-            color: #854d0e;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 600;
+        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
+        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
+        .btn-primary { background:#2d6a4f; border:none; }
+        .btn-primary:hover { background:#1b4332; }
+        .card { border-radius:12px; border:1px solid #e2e8f0; }
+        .kpi-card { background:white; border-radius:12px; padding:18px; border:1px solid #e2e8f0; }
+        .kpi-lbl { font-size:11px; color:#64748b; text-transform:uppercase; }
+        .kpi-val { font-size:18px; font-weight:700; }
+        .badge-active { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .badge-expired { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .badge-disposed { background:#f3f4f6; color:#374151; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .badge-pending { background:#fef9c3; color:#854d0e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .table thead.table-light th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background-color: #f8f9fa;
         }
     </style>
 </head>
-
 <body>
-
 <div class="page-header d-flex justify-content-between align-items-center">
     <div>
         <h4 class="mb-0 fw-bold">Purchase Detail</h4>
-        <small class="text-muted">
-            Samanala Super Mart — GRN breakdown and batch status
-        </small>
+        <small class="text-muted">Samanala Super Mart — GRN breakdown and batch status</small>
     </div>
-
     <div>
-        <a
-            href="/dashboard/purchases/"
-            class="btn btn-outline-secondary btn-sm me-2"
-        >
-            ← Back to Purchases
-        </a>
-
-        <button
-            onclick="doLogout()"
-            class="btn btn-sm"
-            style="background:#ef4444;color:white;"
-        >
-            Logout
-        </button>
+        <a href="/dashboard/purchases/" class="btn btn-outline-secondary btn-sm me-2">← Back to Purchases</a>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
     </div>
 </div>
 
 <div class="container-fluid px-4">
 
-    <div
-        id="loadError"
-        class="alert alert-danger d-none"
-        role="alert"
-    ></div>
-
-    <!-- Purchase ID passed from Django -->
-    <div
-        id="purchase-page"
-        data-purchase-id="{{ purchase_id }}"
-    ></div>
+    <div id="loadError" class="alert alert-danger d-none" role="alert"></div>
 
     <!-- Purchase summary -->
     <div class="row g-3 mb-4" id="summaryRow">
-
         <div class="col-md-3">
             <div class="kpi-card">
                 <div class="kpi-lbl">Invoice #</div>
                 <div class="kpi-val" id="sInvoice">—</div>
             </div>
         </div>
-
         <div class="col-md-3">
             <div class="kpi-card">
                 <div class="kpi-lbl">Supplier</div>
                 <div class="kpi-val" id="sSupplier">—</div>
             </div>
         </div>
-
         <div class="col-md-3">
             <div class="kpi-card">
                 <div class="kpi-lbl">Purchase Date</div>
                 <div class="kpi-val" id="sDate">—</div>
             </div>
         </div>
-
         <div class="col-md-3">
             <div class="kpi-card">
                 <div class="kpi-lbl">Total Amount</div>
                 <div class="kpi-val" id="sTotal">—</div>
             </div>
         </div>
-
     </div>
 
     <div class="row g-3 mb-4">
-
         <div class="col-md-4">
             <div class="kpi-card">
                 <div class="kpi-lbl">Order Date</div>
-                <div
-                    class="kpi-val"
-                    id="sOrderDate"
-                    style="font-size:14px;"
-                >
-                    —
-                </div>
+                <div class="kpi-val" id="sOrderDate" style="font-size:14px;">—</div>
             </div>
         </div>
-
         <div class="col-md-4">
             <div class="kpi-card">
                 <div class="kpi-lbl">Expected Days</div>
-                <div
-                    class="kpi-val"
-                    id="sExpectedDays"
-                    style="font-size:14px;"
-                >
-                    —
-                </div>
+                <div class="kpi-val" id="sExpectedDays" style="font-size:14px;">—</div>
             </div>
         </div>
-
         <div class="col-md-4">
             <div class="kpi-card">
                 <div class="kpi-lbl">Actual Days</div>
-                <div
-                    class="kpi-val"
-                    id="sActualDays"
-                    style="font-size:14px;"
-                >
-                    —
-                </div>
+                <div class="kpi-val" id="sActualDays" style="font-size:14px;">—</div>
             </div>
         </div>
-
     </div>
 
     <!-- Batches in this purchase -->
     <div class="card p-4">
-
         <div class="d-flex justify-content-between align-items-center mb-3">
-
             <h5 class="mb-0">Batches in this Purchase</h5>
-
-            <button
-                class="btn btn-outline-secondary btn-sm"
-                onclick="refreshDetail(this)"
-            >
-                Refresh
-            </button>
-
+            <button class="btn btn-outline-secondary btn-sm" onclick="refreshDetail()">Refresh</button>
         </div>
-
         <div class="table-responsive">
-
             <table class="table table-hover">
-
                 <thead class="table-light">
                     <tr>
                         <th>Product</th>
@@ -242,309 +110,114 @@
                         <th>Status</th>
                     </tr>
                 </thead>
-
                 <tbody id="batchesBody">
-                    <tr>
-                        <td
-                            colspan="7"
-                            class="text-center text-muted"
-                        >
-                            Loading...
-                        </td>
-                    </tr>
+                    <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
-
             </table>
-
         </div>
     </div>
-
 </div>
 
 <script>
-
 const token = sessionStorage.getItem('access_token');
+if (!token) { window.location.href = '/dashboard/login/'; }
 
-if (!token) {
-    window.location.href = '/dashboard/login/';
-}
+// Passed in from the Django view via URL <int:pk> — server-validated as an
+// integer by the URL converter, so this is safe to drop straight into JS
+// without escaping (it can never contain anything but digits).
+const purchaseId = {{ purchase_id }};
 
-
-/*
- * Get purchase ID from the HTML data attribute.
- *
- * This avoids putting Django {{ purchase_id }}
- * directly inside JavaScript, which was causing
- * the VS Code JavaScript syntax errors.
- */
-const purchasePage = document.getElementById('purchase-page');
-
-const purchaseId = purchasePage.dataset.purchaseId;
-
-
-/* Logout */
 function doLogout() {
-
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('refresh_token');
-
     window.location.href = '/dashboard/login/';
 }
 
-
-/* Escape HTML to prevent unsafe HTML injection */
 function escapeHtml(v) {
-
     return String(v ?? '').replace(/[&<>"']/g, c => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[c]));
-
 }
 
-
-/* Calculate days remaining until expiry */
+// Same day-left calculation established on the Purchases list page —
+// the backend never sends a computed days_until_expiry field, so this
+// derives it from expiry_date client-side, consistently in both places.
 function daysLeftCell(expiryDateStr) {
-
-    if (!expiryDateStr) {
-        return '—';
-    }
-
+    if (!expiryDateStr) return '—';
     const today = new Date();
-
     today.setHours(0, 0, 0, 0);
-
     const expiry = new Date(expiryDateStr);
-
-    if (Number.isNaN(expiry.getTime())) {
-        return '—';
-    }
-
-    const days = Math.round(
-        (expiry - today) / (1000 * 60 * 60 * 24)
-    );
-
-    if (days < 0) {
-
-        return `
-            <span class="text-danger fw-semibold">
-                Expired ${Math.abs(days)} ago
-            </span>
-        `;
-
-    }
-
-    if (days <= 7) {
-
-        return `
-            <span class="text-danger fw-semibold">
-                ${days}
-            </span>
-        `;
-
-    }
-
-    if (days <= 14) {
-
-        return `
-            <span style="color:#c2410c;font-weight:600;">
-                ${days}
-            </span>
-        `;
-
-    }
-
+    if (Number.isNaN(expiry.getTime())) return '—';
+    const days = Math.round((expiry - today) / (1000 * 60 * 60 * 24));
+    if (days < 0) return `<span class="text-danger fw-semibold">Expired ${Math.abs(days)} ago</span>`;
+    if (days <= 7) return `<span class="text-danger fw-semibold">${days}</span>`;
+    if (days <= 14) return `<span style="color:#c2410c;font-weight:600;">${days}</span>`;
     return `${days}`;
 }
 
-
-/* Batch status badge */
 function batchStatusBadge(s) {
-
     const map = {
         'ACTIVE': 'badge-active',
         'EXPIRED': 'badge-expired',
         'DISPOSED': 'badge-disposed',
-        'PENDING_EXPIRY': 'badge-pending'
+        'PENDING_EXPIRY': 'badge-pending',
     };
-
-    return `
-        <span class="${map[s] || 'badge-active'}">
-            ${escapeHtml(s) || '—'}
-        </span>
-    `;
+    return `<span class="${map[s] || 'badge-active'}">${escapeHtml(s) || '—'}</span>`;
 }
 
-
-/* Load purchase details */
 async function loadDetail() {
-
     const errorBox = document.getElementById('loadError');
-
     errorBox.classList.add('d-none');
 
     try {
-
-        const res = await fetch(
-            `/api/purchases/${purchaseId}/`,
-            {
-                headers: {
-                    'Authorization': 'Bearer ' + token
-                }
-            }
-        );
-
+        const res = await fetch(`/api/purchases/${purchaseId}/`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
         if (!res.ok) {
-
-            throw new Error(
-                res.status === 404
-                    ? 'Purchase not found.'
-                    : `Request failed (${res.status})`
-            );
-
+            throw new Error(res.status === 404 ? 'Purchase not found.' : `Request failed (${res.status})`);
         }
-
         const p = await res.json();
 
-
-        /* Purchase summary */
-
-        document.getElementById('sInvoice').textContent =
-            p.invoice_number ?? '—';
-
-        document.getElementById('sSupplier').textContent =
-            p.supplier_name ?? '—';
-
-        document.getElementById('sDate').textContent =
-            p.purchase_date ?? '—';
-
-        document.getElementById('sTotal').textContent =
-            'Rs ' +
-            Number(p.total_amount ?? 0).toLocaleString();
-
-        document.getElementById('sOrderDate').textContent =
-            p.order_date ?? '—';
-
-        document.getElementById('sExpectedDays').textContent =
-            p.expected_days ?? '—';
-
-        document.getElementById('sActualDays').textContent =
-            p.actual_days ?? '—';
-
-
-        /* Batches */
+        document.getElementById('sInvoice').textContent = p.invoice_number ?? '—';
+        document.getElementById('sSupplier').textContent = p.supplier_name ?? '—';
+        document.getElementById('sDate').textContent = p.purchase_date ?? '—';
+        document.getElementById('sTotal').textContent = 'Rs ' + Number(p.total_amount ?? 0).toLocaleString();
+        document.getElementById('sOrderDate').textContent = p.order_date ?? '—';
+        document.getElementById('sExpectedDays').textContent = p.expected_days ?? '—';
+        document.getElementById('sActualDays').textContent = p.actual_days ?? '—';
 
         const batches = p.batches ?? [];
-
         const tbody = document.getElementById('batchesBody');
-
-
-        tbody.innerHTML = batches.length
-
-            ? batches.map(b => `
-
-                <tr>
-
-                    <td>
-                        ${escapeHtml(b.product_name) || '—'}
-                    </td>
-
-                    <td>
-                        ${b.quantity_received ?? '—'}
-                    </td>
-
-                    <td>
-                        ${b.remaining_quantity ?? '—'}
-                    </td>
-
-                    <td>
-                        Rs ${Number(
-                            b.cost_price ?? 0
-                        ).toLocaleString()}
-                    </td>
-
-                    <td>
-                        ${b.expiry_date ?? '—'}
-                    </td>
-
-                    <td>
-                        ${daysLeftCell(b.expiry_date)}
-                    </td>
-
-                    <td>
-                        ${batchStatusBadge(b.status)}
-                    </td>
-
-                </tr>
-
-            `).join('')
-
-            : `
-                <tr>
-                    <td
-                        colspan="7"
-                        class="text-center text-muted"
-                    >
-                        No batches recorded for this purchase.
-                    </td>
-                </tr>
-            `;
-
-    }
-
-    catch (e) {
-
-        errorBox.textContent =
-            'Could not load purchase: ' + e.message;
-
-        errorBox.classList.remove('d-none');
-
-        document.getElementById('batchesBody').innerHTML =
-            `
+        tbody.innerHTML = batches.length ? batches.map(b => `
             <tr>
-                <td
-                    colspan="7"
-                    class="text-center text-muted"
-                >
-                    Could not load data.
-                </td>
+                <td>${escapeHtml(b.product_name) || '—'}</td>
+                <td>${b.quantity_received ?? '—'}</td>
+                <td>${b.remaining_quantity ?? '—'}</td>
+                <td>Rs ${Number(b.cost_price ?? 0).toLocaleString()}</td>
+                <td>${b.expiry_date ?? '—'}</td>
+                <td>${daysLeftCell(b.expiry_date)}</td>
+                <td>${batchStatusBadge(b.status)}</td>
             </tr>
-            `;
-
+        `).join('') : '<tr><td colspan="7" class="text-center text-muted">No batches recorded for this purchase.</td></tr>';
+    } catch (e) {
+        errorBox.textContent = 'Could not load purchase: ' + e.message;
+        errorBox.classList.remove('d-none');
+        document.getElementById('batchesBody').innerHTML =
+            '<tr><td colspan="7" class="text-center text-muted">Could not load data.</td></tr>';
     }
 }
 
-
-/* Refresh button */
-async function refreshDetail(btn) {
-
+async function refreshDetail() {
+    const btn = event.currentTarget;
     const original = btn.textContent;
-
     btn.disabled = true;
-
     btn.textContent = 'Refreshing...';
-
     await loadDetail();
-
     btn.textContent = 'Refreshed ✓';
-
-    setTimeout(() => {
-
-        btn.textContent = original;
-
-        btn.disabled = false;
-
-    }, 900);
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 900);
 }
 
-
-/* Initial load */
 loadDetail();
-
 </script>
-
 </body>
 </html>
