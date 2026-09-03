@@ -13,6 +13,7 @@
         .card { border-radius:12px; border:1px solid #e2e8f0; }
         .nav-tabs .nav-link.active { background:#2d6a4f; color:white; border-color:#2d6a4f; }
         .nav-tabs .nav-link { color:#374151; }
+        .crud-form { max-width: 520px; }
     </style>
 </head>
 <body>
@@ -29,14 +30,52 @@
 
 <div class="container-fluid px-4">
 
-    <ul class="nav nav-tabs mb-3" id="prodTabs">
+    <ul class="nav nav-tabs mb-3 flex-wrap" id="prodTabs">
         <li class="nav-item"><button class="nav-link active" onclick="switchTab('list', this)">Product List</button></li>
         <li class="nav-item"><button class="nav-link" onclick="switchTab('import', this)">Import Excel</button></li>
         <li class="nav-item"><button class="nav-link" onclick="switchTab('zones', this)">Zone Recommendations</button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchTab('brands', this)">Brands</button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchTab('categories', this)">Categories</button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchTab('zones-crud', this)">Store Zones</button></li>
     </ul>
 
     <!-- Product List -->
     <div id="tab-list">
+         <!-- Edit/Add Product Form (hidden by default) -->
+    <div id="prodForm" class="card p-4 mb-3" style="display:none;">
+        <h6 class="fw-bold mb-3" id="prodFormTitle">Edit Product</h6>
+        <input type="hidden" id="prodId">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Product Name</label>
+                <input type="text" id="prodName" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">SKU Code</label>
+                <input type="text" id="prodSku" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Unit Price</label>
+                <input type="number" step="0.01" id="prodPrice" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Cost Price</label>
+                <input type="number" step="0.01" id="prodCostPrice" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Category</label>
+                <select id="prodCategoryId" class="form-select">
+                    <option value="">Select category</option>
+                </select>
+            </div>
+        </div>
+        <div class="mt-3">
+            <button class="btn btn-primary" onclick="saveProduct()">Save</button>
+            <button class="btn btn-outline-secondary" onclick="hideEditForm()">Cancel</button>
+            <button class="btn btn-outline-danger" onclick="deleteProduct()" id="prodDeleteBtn">Delete</button>
+        </div>
+        <div id="prodMsg" class="mt-3"></div>
+    </div>
         <div class="mb-3 d-flex gap-2">
             <input type="text" id="prodSearch" class="form-control form-control-sm" style="width:260px;" placeholder="Search product name...">
             <select id="prodCategory" class="form-select form-select-sm" style="width:180px;">
@@ -44,6 +83,7 @@
             </select>
             <button class="btn btn-primary btn-sm" onclick="loadProducts()">Search</button>
             <button class="btn btn-outline-secondary btn-sm" onclick="reclassify()">Reclassify Products</button>
+            <button class="btn btn-primary btn-sm" onclick="openAddForm()">+ Add Product</button>
         </div>
         <div class="card p-4">
             <table class="table table-hover">
@@ -56,6 +96,9 @@
             </table>
         </div>
     </div>
+       
+
+    <!-- Import Tab -->
 
     <!-- Import Tab -->
     <div id="tab-import" style="display:none;">
@@ -69,6 +112,9 @@
 
     <!-- Zone Recommendations Tab -->
     <div id="tab-zones" style="display:none;">
+        <div class="mb-3">
+            <button class="btn btn-primary" onclick="calculateZoneRecommendations()">Calculate Recommendations</button>
+        </div>
         <div class="card p-4">
             <table class="table table-hover">
                 <thead class="table-light">
@@ -81,25 +127,214 @@
         </div>
     </div>
 
+    <!-- Brands Tab -->
+    <div id="tab-brands" style="display:none;">
+        <div class="card p-4 mb-3 crud-form">
+            <h6 class="fw-bold mb-3" id="brandFormTitle">Add Brand</h6>
+            <input type="hidden" id="brandId">
+            <div class="mb-3">
+                <label class="form-label">Brand Name</label>
+                <input type="text" id="brandName" class="form-control">
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" onclick="saveBrand()">Save</button>
+                <button class="btn btn-outline-secondary" onclick="resetBrandForm()">Cancel</button>
+            </div>
+            <div id="brandMsg" class="mt-3"></div>
+        </div>
+
+        <div class="card p-4">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr><th>ID</th><th>Brand Name</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="brandsBody">
+                    <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Categories Tab -->
+    <div id="tab-categories" style="display:none;">
+        <div class="card p-4 mb-3 crud-form">
+            <h6 class="fw-bold mb-3" id="categoryFormTitle">Add Category</h6>
+            <input type="hidden" id="categoryId">
+            <div class="mb-3">
+                <label class="form-label">Category Name</label>
+                <input type="text" id="categoryName" class="form-control">
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" onclick="saveCategory()">Save</button>
+                <button class="btn btn-outline-secondary" onclick="resetCategoryForm()">Cancel</button>
+            </div>
+            <div id="categoryMsg" class="mt-3"></div>
+        </div>
+
+        <div class="card p-4">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr><th>ID</th><th>Category Name</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="categoriesBody">
+                    <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Store Zones Tab -->
+    <div id="tab-zones-crud" style="display:none;">
+        <div class="card p-4 mb-3 crud-form">
+            <h6 class="fw-bold mb-3" id="zoneFormTitle">Add Store Zone</h6>
+            <input type="hidden" id="zoneId">
+            <div class="mb-3">
+                <label class="form-label">Zone Name</label>
+                <input type="text" id="zoneName" class="form-control">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Traffic Level</label>
+                <select id="zoneTrafficLevel" class="form-select">
+                    <option value="">Select level</option>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Description</label>
+                <input type="text" id="zoneDescription" class="form-control">
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" onclick="saveZone()">Save</button>
+                <button class="btn btn-outline-secondary" onclick="resetZoneForm()">Cancel</button>
+            </div>
+            <div id="zoneMsg" class="mt-3"></div>
+        </div>
+
+        <div class="card p-4">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr><th>ID</th><th>Zone Name</th><th>Traffic</th><th>Description</th><th>Actions</th></tr>
+                </thead>
+                <tbody id="zonesCrudBody">
+                    <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="productDetailModal" class="modal fade" tabindex="-1" aria-hidden="true" style="display:none;">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Product Details</h5>
+                <button type="button" class="btn-close" aria-label="Close" onclick="hideProductDetailModal()"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="productDetailLoading" class="p-4 text-center text-muted">
+                    Loading product details...
+                </div>
+
+                <div id="productDetailContent" style="display:none;">
+                    <div class="p-4">
+                        <div class="card border-0 bg-light">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <div>
+                                        <div class="text-uppercase small text-muted fw-semibold mb-1">Product</div>
+                                        <h5 id="detailProductName" class="mb-0 fw-bold">—</h5>
+                                    </div>
+                                    <span id="detailAvailabilityBadge" class="badge rounded-pill px-3 py-2">—</span>
+                                </div>
+
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <div class="small text-muted">SKU</div>
+                                        <div id="detailSku" class="fw-semibold">—</div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="small text-muted">Category</div>
+                                        <div id="detailCategory" class="fw-semibold">—</div>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <div class="small text-muted">Brand</div>
+                                        <div id="detailBrand" class="fw-semibold">—</div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="small text-muted">Status</div>
+                                        <div id="detailStatusText" class="fw-semibold">—</div>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <div class="small text-muted">Unit Price</div>
+                                        <div id="detailUnitPrice" class="fw-semibold">—</div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="small text-muted">Cost Price</div>
+                                        <div id="detailCostPrice" class="fw-semibold">—</div>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <div class="small text-muted">Avg Cost Price</div>
+                                        <div id="detailAvgCostPrice" class="fw-semibold">—</div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="small text-muted">Can Order?</div>
+                                        <div id="detailCanOrder" class="fw-semibold">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="hideProductDetailModal()">Close</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
 const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
 
+// Load user role from auth/me endpoint
+async function loadUserRole() {
+    try {
+        const res = await fetch('/api/auth/me/', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.role) {
+                sessionStorage.setItem('role', data.role);
+            }
+        }
+    } catch(e) {
+        console.log('Could not load user role');
+    }
+}
+
 function doLogout() {
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('role');
     window.location.href = '/dashboard/login/';
 }
 
 function switchTab(name, btn) {
-    ['list','import','zones'].forEach(t => {
-        document.getElementById('tab-' + t).style.display = (t === name) ? 'block' : 'none';
+    ['list','import','zones','brands','categories','zones-crud'].forEach(t => {
+        const el = document.getElementById('tab-' + t);
+        if (el) el.style.display = (t === name) ? 'block' : 'none';
     });
     document.querySelectorAll('#prodTabs .nav-link').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
+    if (btn) btn.classList.add('active');
     if (name === 'zones') loadZones();
+    if (name === 'brands') loadBrands();
+    if (name === 'categories') loadCategoriesCrud();
+    if (name === 'zones-crud') loadStoreZones();
 }
 
 function extractArray(data) {
@@ -107,18 +342,39 @@ function extractArray(data) {
     return data.results ?? data.products ?? data.data ?? [];
 }
 
+function populateCategorySelect(selectEl, selectedValue = '') {
+    if (!selectEl) return;
+    const cats = JSON.parse(sessionStorage.getItem('product_categories') || '[]');
+    selectEl.innerHTML = '<option value="">Select category</option>';
+    cats.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id ?? c.category_id;
+        opt.textContent = c.category_name ?? c.name;
+        if (String(selectedValue) === String(opt.value)) opt.selected = true;
+        selectEl.appendChild(opt);
+    });
+}
+
 async function loadCategories() {
     try {
         const res = await fetch('/api/categories/', { headers: { 'Authorization': 'Bearer ' + token } });
         const data = await res.json();
         const cats = extractArray(data);
+        sessionStorage.setItem('product_categories', JSON.stringify(cats));
+
         const sel = document.getElementById('prodCategory');
-        cats.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.id ?? c.category_id;
-            opt.innerText = c.category_name ?? c.name;
-            sel.appendChild(opt);
-        });
+        if (sel) {
+            sel.innerHTML = '<option value="">All Categories</option>';
+            cats.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id ?? c.category_id;
+                opt.innerText = c.category_name ?? c.name;
+                sel.appendChild(opt);
+            });
+        }
+
+        const formSelect = document.getElementById('prodCategoryId');
+        if (formSelect) populateCategorySelect(formSelect, formSelect.value || '');
     } catch(e) {}
 }
 
@@ -145,7 +401,13 @@ async function loadProducts() {
                 <td>${p.brand_name ?? '—'}</td>
                 <td>${p.sku_code ?? '—'}</td>
                 <td>Rs ${Number(p.unit_price ?? 0).toLocaleString()}</td>
-                <td><button class="btn btn-sm btn-outline-secondary" onclick="alert('Edit form not built yet — product ID: ${p.id}')">Edit</button></td>
+                <td>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button class="btn btn-sm btn-outline-secondary" onclick='openEditForm(${JSON.stringify(p)})'>Edit</button>
+                        <button class="btn btn-sm btn-outline-primary" onclick='viewProductAvailability(${p.id})'>View</button>
+                        <button class="btn btn-sm btn-outline-warning" onclick='recalculateWAC(${p.id})'>WAC</button>
+                    </div>
+                </td>
             </tr>
         `).join('');
     } catch(e) {
@@ -211,7 +473,7 @@ async function loadZones() {
         tbody.innerHTML = rows.map(z => `
             <tr>
                 <td>${z.product_name ?? '—'}</td>
-                <td>${z.recommended_zone ?? z.zone_name ?? '—'}</td>
+                <td>${z.suggested_zone_name ?? '—'}</td>
                 <td>${z.reason ?? '—'}</td>
             </tr>
         `).join('');
@@ -220,8 +482,566 @@ async function loadZones() {
     }
 }
 
+async function calculateZoneRecommendations() {
+    if (!confirm('Recalculate zone recommendations now?')) return;
+    try {
+        const res = await fetch('/api/zones/recommendations/calculate/', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+            alert('Zone recommendations recalculated successfully.');
+            loadZones();
+        } else {
+            const err = await res.json().catch(() => ({}));
+            alert('Calculation failed: ' + (err.message || err.error || 'Unknown error'));
+        }
+    } catch(e) {
+        alert('Network error during calculation.');
+    }
+}
+
+loadUserRole();
 loadCategories();
 loadProducts();
+
+function openAddForm() {
+    document.getElementById('prodFormTitle').innerText = 'Add Product';
+    document.getElementById('prodId').value = '';
+    document.getElementById('prodName').value = '';
+    document.getElementById('prodSku').value = '';
+    document.getElementById('prodPrice').value = '';
+    document.getElementById('prodCostPrice').value = '';
+    populateCategorySelect(document.getElementById('prodCategoryId'), '');
+    document.getElementById('prodMsg').innerHTML = '';
+    document.getElementById('prodDeleteBtn').style.display = 'none';
+    document.getElementById('prodForm').style.display = 'block';
+}
+
+function isUserManagerOrAdmin() {
+    const role = sessionStorage.getItem('role');
+    return role === 'ADMIN' || role === 'MANAGER';
+}
+
+function openEditForm(p) {
+    document.getElementById('prodFormTitle').innerText = 'Edit Product';
+    document.getElementById('prodId').value = p.id ?? '';
+    document.getElementById('prodName').value = p.product_name ?? '';
+    document.getElementById('prodSku').value = p.sku_code ?? '';
+    document.getElementById('prodPrice').value = p.unit_price ?? '';
+    document.getElementById('prodCostPrice').value = p.cost_price ?? p.avg_cost_price ?? '';
+    const categoryValue = (typeof p.category === 'object' ? p.category?.id : p.category) ?? '';
+    populateCategorySelect(document.getElementById('prodCategoryId'), categoryValue);
+    document.getElementById('prodMsg').innerHTML = '';
+    // Show delete button only for ADMIN or MANAGER roles
+    document.getElementById('prodDeleteBtn').style.display = isUserManagerOrAdmin() ? 'inline-block' : 'none';
+    document.getElementById('prodForm').style.display = 'block';
+}
+
+function hideEditForm() {
+    document.getElementById('prodForm').style.display = 'none';
+}
+
+function formatCurrency(value) {
+    const num = Number(value ?? 0);
+    if (!Number.isFinite(num)) return '—';
+    return 'Rs ' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function getAvailabilityBadgeClass(status) {
+    const normalized = (status || '').toUpperCase();
+    if (normalized === 'AVAILABLE') return 'bg-success';
+    if (normalized === 'LIMITED_STOCK') return 'bg-warning text-dark';
+    if (normalized === 'UNAVAILABLE') return 'bg-danger';
+    return 'bg-secondary';
+}
+
+function showProductDetailModal(product, availability = {}) {
+    const statusText = (availability.status || 'UNKNOWN').replace('_', ' ');
+    const canOrder = availability.can_order === true ? 'Yes' : 'No';
+
+    document.getElementById('detailProductName').textContent = product.product_name || '—';
+    document.getElementById('detailSku').textContent = product.sku_code || '—';
+    document.getElementById('detailCategory').textContent = product.category_name || '—';
+    document.getElementById('detailBrand').textContent = product.brand_name || '—';
+    document.getElementById('detailStatusText').textContent = statusText;
+    document.getElementById('detailCanOrder').textContent = canOrder;
+    document.getElementById('detailUnitPrice').textContent = formatCurrency(product.unit_price);
+    document.getElementById('detailCostPrice').textContent = formatCurrency(product.cost_price);
+    document.getElementById('detailAvgCostPrice').textContent = product.avg_cost_price != null ? formatCurrency(product.avg_cost_price) : '—';
+
+    const badge = document.getElementById('detailAvailabilityBadge');
+    badge.textContent = statusText;
+    badge.className = 'badge rounded-pill px-3 py-2 ' + getAvailabilityBadgeClass(availability.status);
+
+    document.getElementById('productDetailLoading').style.display = 'none';
+    document.getElementById('productDetailContent').style.display = 'block';
+
+    const modal = document.getElementById('productDetailModal');
+    if (window.bootstrap && window.bootstrap.Modal) {
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+    } else {
+        modal.style.display = 'block';
+        modal.classList.add('show');
+        document.body.classList.add('modal-open');
+
+        const backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop fade show';
+        backdrop.id = 'productDetailBackdrop';
+        document.body.appendChild(backdrop);
+    }
+}
+
+function hideProductDetailModal() {
+    const modal = document.getElementById('productDetailModal');
+    const backdrop = document.getElementById('productDetailBackdrop');
+
+    if (window.bootstrap && window.bootstrap.Modal) {
+        const bsModal = bootstrap.Modal.getInstance(modal);
+        if (bsModal) bsModal.hide();
+    } else {
+        modal.style.display = 'none';
+        modal.classList.remove('show');
+        document.body.classList.remove('modal-open');
+    }
+
+    if (backdrop) backdrop.remove();
+
+    document.getElementById('productDetailLoading').style.display = 'block';
+    document.getElementById('productDetailContent').style.display = 'none';
+}
+
+async function viewProductAvailability(id) {
+    const headers = { 'Authorization': 'Bearer ' + token };
+
+    try {
+        const [productRes, availabilityRes] = await Promise.all([
+            fetch(`/api/products/${id}/`, { headers }),
+            fetch(`/api/products/${id}/availability/`, { headers })
+        ]);
+
+        if (!productRes.ok) throw new Error('Product details request failed');
+
+        const product = await productRes.json();
+        const availability = availabilityRes.ok ? await availabilityRes.json() : {};
+        showProductDetailModal(product, availability);
+    } catch (e) {
+        const modal = document.getElementById('productDetailModal');
+        document.getElementById('productDetailLoading').style.display = 'none';
+        document.getElementById('productDetailContent').style.display = 'block';
+
+        document.getElementById('detailProductName').textContent = 'Unable to load';
+        document.getElementById('detailSku').textContent = '—';
+        document.getElementById('detailCategory').textContent = '—';
+        document.getElementById('detailBrand').textContent = '—';
+        document.getElementById('detailStatusText').textContent = 'Error';
+        document.getElementById('detailCanOrder').textContent = 'Unknown';
+        document.getElementById('detailUnitPrice').textContent = '—';
+        document.getElementById('detailCostPrice').textContent = '—';
+        document.getElementById('detailAvgCostPrice').textContent = '—';
+
+        const badge = document.getElementById('detailAvailabilityBadge');
+        badge.textContent = 'ERROR';
+        badge.className = 'badge rounded-pill px-3 py-2 bg-secondary';
+
+        if (window.bootstrap && window.bootstrap.Modal) {
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+        } else {
+            modal.style.display = 'block';
+            modal.classList.add('show');
+            document.body.classList.add('modal-open');
+
+            const backdrop = document.createElement('div');
+            backdrop.className = 'modal-backdrop fade show';
+            backdrop.id = 'productDetailBackdrop';
+            document.body.appendChild(backdrop);
+        }
+    }
+}
+
+async function recalculateWAC(id) {
+    if (!confirm('Recalculate WAC for this product?')) return;
+    try {
+        const res = await fetch(`/api/products/${id}/recalculate-wac/`, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+            alert(data.message || 'WAC recalculated successfully.');
+            loadProducts();
+        } else {
+            alert(data.detail || data.error || 'WAC recalculation failed.');
+        }
+    } catch (e) {
+        alert('Network error while recalculating WAC.');
+    }
+}
+
+async function saveProduct() {
+    const id = document.getElementById('prodId').value;
+    const body = {
+        product_name: document.getElementById('prodName').value,
+        sku_code: document.getElementById('prodSku').value,
+        unit_price: Number(document.getElementById('prodPrice').value),
+        cost_price: Number(document.getElementById('prodCostPrice').value),
+        category: Number(document.getElementById('prodCategoryId').value) || null
+    };
+    const msgBox = document.getElementById('prodMsg');
+
+    if (!body.product_name || !body.unit_price) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Product name and unit price are required.</div>';
+        return;
+    }
+
+    try {
+        const url = id ? `/api/products/${id}/` : '/api/products/';
+        const method = id ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+            method,
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (res.ok) {
+            msgBox.innerHTML = '<div class="alert alert-success py-2">Saved successfully.</div>';
+            loadProducts();
+            setTimeout(hideEditForm, 1000);
+        } else {
+            const err = await res.json().catch(() => ({}));
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${JSON.stringify(err)}</div>`;
+        }
+    } catch(e) {
+        msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
+    }
+}
+
+async function deleteProduct() {
+    const id = document.getElementById('prodId').value;
+    if (!id) return;
+    if (!confirm('Deactivate this product? This cannot be undone easily.')) return;
+
+    try {
+        const res = await fetch(`/api/products/${id}/`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+            alert('Product deactivated.');
+            hideEditForm();
+            loadProducts();
+        } else {
+            alert('Could not delete product.');
+        }
+    } catch(e) {
+        alert('Network error.');
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BRANDS CRUD
+   ═══════════════════════════════════════════════════════════════ */
+async function loadBrands() {
+    try {
+        const res = await fetch('/api/brands/', { headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        const rows = extractArray(data);
+        const tbody = document.getElementById('brandsBody');
+
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No brands found.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = rows.map(b => `
+            <tr>
+                <td>${b.id ?? '—'}</td>
+                <td>${b.brand_name ?? '—'}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick='editBrand(${JSON.stringify(b)})'>Edit</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteBrand(${b.id})'>Delete</button>
+                </td>
+            </tr>
+        `).join('');
+    } catch(e) {
+        document.getElementById('brandsBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading brands.</td></tr>';
+    }
+}
+
+function editBrand(brand) {
+    document.getElementById('brandFormTitle').textContent = 'Edit Brand';
+    document.getElementById('brandId').value = brand.id ?? '';
+    document.getElementById('brandName').value = brand.brand_name ?? '';
+    document.getElementById('brandMsg').innerHTML = '';
+}
+
+function resetBrandForm() {
+    document.getElementById('brandFormTitle').textContent = 'Add Brand';
+    document.getElementById('brandId').value = '';
+    document.getElementById('brandName').value = '';
+    document.getElementById('brandMsg').innerHTML = '';
+}
+
+async function saveBrand() {
+    const id = document.getElementById('brandId').value;
+    const name = document.getElementById('brandName').value.trim();
+    const msgBox = document.getElementById('brandMsg');
+
+    if (!name) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Brand name is required.</div>';
+        return;
+    }
+
+    try {
+        const url = id ? `/api/brands/${id}/` : '/api/brands/';
+        const method = id ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+            method,
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ brand_name: name })
+        });
+
+        if (res.ok) {
+            msgBox.innerHTML = '<div class="alert alert-success py-2">Saved successfully.</div>';
+            loadBrands();
+            setTimeout(resetBrandForm, 1000);
+        } else {
+            const err = await res.json().catch(() => ({}));
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${JSON.stringify(err)}</div>`;
+        }
+    } catch(e) {
+        msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
+    }
+}
+
+async function confirmDeleteBrand(id) {
+    if (!confirm('Delete this brand?')) return;
+    try {
+        const res = await fetch(`/api/brands/${id}/`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+            alert('Brand deleted.');
+            loadBrands();
+        } else {
+            alert('Could not delete brand.');
+        }
+    } catch(e) {
+        alert('Network error.');
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CATEGORIES CRUD
+   ═══════════════════════════════════════════════════════════════ */
+async function loadCategoriesCrud() {
+    try {
+        const res = await fetch('/api/categories/', { headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        const rows = extractArray(data);
+        const tbody = document.getElementById('categoriesBody');
+
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No categories found.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = rows.map(c => `
+            <tr>
+                <td>${c.id ?? '—'}</td>
+                <td>${c.category_name ?? '—'}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick='editCategory(${JSON.stringify(c)})'>Edit</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteCategory(${c.id})'>Delete</button>
+                </td>
+            </tr>
+        `).join('');
+    } catch(e) {
+        document.getElementById('categoriesBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading categories.</td></tr>';
+    }
+}
+
+function editCategory(cat) {
+    document.getElementById('categoryFormTitle').textContent = 'Edit Category';
+    document.getElementById('categoryId').value = cat.id ?? '';
+    document.getElementById('categoryName').value = cat.category_name ?? '';
+    document.getElementById('categoryMsg').innerHTML = '';
+}
+
+function resetCategoryForm() {
+    document.getElementById('categoryFormTitle').textContent = 'Add Category';
+    document.getElementById('categoryId').value = '';
+    document.getElementById('categoryName').value = '';
+    document.getElementById('categoryMsg').innerHTML = '';
+}
+
+async function saveCategory() {
+    const id = document.getElementById('categoryId').value;
+    const name = document.getElementById('categoryName').value.trim();
+    const msgBox = document.getElementById('categoryMsg');
+
+    if (!name) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Category name is required.</div>';
+        return;
+    }
+
+    try {
+        const url = id ? `/api/categories/${id}/` : '/api/categories/';
+        const method = id ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+            method,
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ category_name: name })
+        });
+
+        if (res.ok) {
+            msgBox.innerHTML = '<div class="alert alert-success py-2">Saved successfully.</div>';
+            loadCategoriesCrud();
+            loadCategories(); // Refresh product form category dropdown
+            setTimeout(resetCategoryForm, 1000);
+        } else {
+            const err = await res.json().catch(() => ({}));
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${JSON.stringify(err)}</div>`;
+        }
+    } catch(e) {
+        msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
+    }
+}
+
+async function confirmDeleteCategory(id) {
+    if (!confirm('Delete this category?')) return;
+    try {
+        const res = await fetch(`/api/categories/${id}/`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+            alert('Category deleted.');
+            loadCategoriesCrud();
+            loadCategories(); // Refresh product form category dropdown
+        } else {
+            alert('Could not delete category.');
+        }
+    } catch(e) {
+        alert('Network error.');
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   STORE ZONES CRUD
+   ═══════════════════════════════════════════════════════════════ */
+async function loadStoreZones() {
+    try {
+        const res = await fetch('/api/zones/', { headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        const rows = extractArray(data);
+        const tbody = document.getElementById('zonesCrudBody');
+
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No zones found.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = rows.map(z => `
+            <tr>
+                <td>${z.id ?? '—'}</td>
+                <td>${z.zone_name ?? '—'}</td>
+                <td>${z.traffic_level ?? '—'}</td>
+                <td>${z.description ?? '—'}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick='editZone(${JSON.stringify(z)})'>Edit</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteZone(${z.id})'>Delete</button>
+                </td>
+            </tr>
+        `).join('');
+    } catch(e) {
+        document.getElementById('zonesCrudBody').innerHTML = '<tr><td colspan="5" class="text-center text-danger">Error loading zones.</td></tr>';
+    }
+}
+
+function editZone(zone) {
+    document.getElementById('zoneFormTitle').textContent = 'Edit Store Zone';
+    document.getElementById('zoneId').value = zone.id ?? '';
+    document.getElementById('zoneName').value = zone.zone_name ?? '';
+    document.getElementById('zoneTrafficLevel').value = zone.traffic_level ?? '';
+    document.getElementById('zoneDescription').value = zone.description ?? '';
+    document.getElementById('zoneMsg').innerHTML = '';
+}
+
+function resetZoneForm() {
+    document.getElementById('zoneFormTitle').textContent = 'Add Store Zone';
+    document.getElementById('zoneId').value = '';
+    document.getElementById('zoneName').value = '';
+    document.getElementById('zoneTrafficLevel').value = '';
+    document.getElementById('zoneDescription').value = '';
+    document.getElementById('zoneMsg').innerHTML = '';
+}
+
+async function saveZone() {
+    const id = document.getElementById('zoneId').value;
+    const name = document.getElementById('zoneName').value.trim();
+    const traffic = document.getElementById('zoneTrafficLevel').value;
+    const desc = document.getElementById('zoneDescription').value.trim();
+    const msgBox = document.getElementById('zoneMsg');
+
+    if (!name) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Zone name is required.</div>';
+        return;
+    }
+
+    if (!traffic) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Traffic level is required.</div>';
+        return;
+    }
+
+    try {
+        const url = id ? `/api/zones/${id}/` : '/api/zones/';
+        const method = id ? 'PUT' : 'POST';
+        const body = {
+            zone_name: name,
+            traffic_level: traffic,
+            description: desc || ''
+        };
+
+        const res = await fetch(url, {
+            method,
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        if (res.ok) {
+            msgBox.innerHTML = '<div class="alert alert-success py-2">Saved successfully.</div>';
+            loadStoreZones();
+            setTimeout(resetZoneForm, 1000);
+        } else {
+            const err = await res.json().catch(() => ({}));
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${JSON.stringify(err)}</div>`;
+        }
+    } catch(e) {
+        msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
+    }
+}
+
+async function confirmDeleteZone(id) {
+    if (!confirm('Delete this zone?')) return;
+    try {
+        const res = await fetch(`/api/zones/${id}/`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+            alert('Zone deleted.');
+            loadStoreZones();
+        } else {
+            alert('Could not delete zone.');
+        }
+    } catch(e) {
+        alert('Network error.');
+    }
+}
 </script>
 </body>
 </html>
