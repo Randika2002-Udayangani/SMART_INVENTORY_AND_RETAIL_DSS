@@ -1,171 +1,193 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Purchases — Smart Inventory DSS</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
-        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
-        .btn-primary { background:#2d6a4f; border:none; }
-        .btn-primary:hover { background:#1b4332; }
-        .card { border-radius:12px; border:1px solid #e2e8f0; }
-        .kpi-card { background:white; border-radius:12px; padding:18px; border:1px solid #e2e8f0; text-align:center; }
-        .kpi-val { font-size:24px; font-weight:700; }
-        .kpi-lbl { font-size:11px; color:#64748b; text-transform:uppercase; }
-        .nav-tabs .nav-link.active { background:#2d6a4f; color:white; border-color:#2d6a4f; }
-        .nav-tabs .nav-link { color:#374151; }
-        .badge-active { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-expired { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-disposed { background:#f3f4f6; color:#374151; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .table thead.table-light th {
-            position: sticky;
-            top: 0;
-            z-index: 2;
-            background-color: #f8f9fa;
-        }
-    </style>
-</head>
-<body>
-<div class="page-header d-flex justify-content-between align-items-center">
+{% extends "dashboard/base.html" %}
+
+{% block title %}Purchases & Batches — Smart Inventory DSS{% endblock %}
+
+{% block extra_css %}
+<style>
+    .card { border-radius:12px; border:1px solid var(--border); background: var(--card); }
+    .kpi-card { background:var(--card); border-radius:12px; padding:18px; border:1px solid var(--border); text-align:center; }
+    .kpi-val { font-size:24px; font-weight:700; color: var(--txt); }
+    .kpi-lbl { font-size:11px; color:var(--muted); text-transform:uppercase; }
+    .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
+    .nav-tabs .nav-link { color:var(--txt); }
+    .badge-active { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-expired { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-disposed { background:#f3f4f6; color:#374151; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-pending { background:#fef9c3; color:#854d0e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .table thead.table-light th {
+        position: sticky;
+        top: var(--topbar-height, 56px); /* set dynamically in base.html to match the actual topbar height on this page */
+        z-index: 120;
+        background-color: var(--card2);
+    }
+    .btn-primary { background: var(--sidebar); border: none; }
+    .btn-primary:hover { background: #0a2b2c; }
+    .restricted-cell { color: var(--muted); font-style: italic; font-size: 11.5px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="topbar">
     <div>
-        <h4 class="mb-0 fw-bold">Purchases & Batches</h4>
-        <small class="text-muted">Samanala Super Mart — supplier GRNs, batch tracking, expiry monitoring</small>
+        <h1>Purchases & Batches</h1>
+        <div class="sub">Samanala Super Mart — supplier GRNs, batch tracking, expiry monitoring</div>
     </div>
     <div>
-        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
         <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
     </div>
 </div>
 
-<div class="container-fluid px-4">
+<ul class="nav nav-tabs mb-3" id="purTabs">
+    <li class="nav-item"><button class="nav-link active" onclick="switchTab('purchases', this)">Purchases</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('batches', this)">Batches</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('expiring', this)">Expiring Soon</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('new', this)">New Purchase</button></li>
+</ul>
 
-    <ul class="nav nav-tabs mb-3" id="purTabs">
-        <li class="nav-item"><button class="nav-link active" onclick="switchTab('purchases', this)">Purchases</button></li>
-        <li class="nav-item"><button class="nav-link" onclick="switchTab('batches', this)">Batches</button></li>
-        <li class="nav-item"><button class="nav-link" onclick="switchTab('expiring', this)">Expiring Soon</button></li>
-        <li class="nav-item"><button class="nav-link" onclick="switchTab('new', this)">New Purchase</button></li>
-    </ul>
-
-    <!-- Purchases List Tab -->
-    <div id="tab-purchases">
-        <div class="mb-3">
-            <input type="text" id="purchaseSearch" class="form-control form-control-sm" style="max-width:280px;"
-                   placeholder="Search by invoice number..." oninput="handlePurchaseSearch()">
-        </div>
-        <div class="card p-4">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr><th>Invoice #</th><th>Supplier</th><th>Purchase Date</th><th>Total Amount</th><th>Batches</th></tr>
-                </thead>
-                <tbody id="purchasesBody">
-                    <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
-                </tbody>
-            </table>
-        </div>
+<!-- Purchases List Tab -->
+<div id="tab-purchases">
+    <div class="mb-3">
+        <input type="text" id="purchaseSearch" class="form-control form-control-sm" style="max-width:280px;"
+               placeholder="Search by invoice number..." oninput="handlePurchaseSearch()">
     </div>
-
-    <!-- Batches Tab -->
-    <div id="tab-batches" style="display:none;">
-        <div class="mb-3 d-flex gap-2">
-            <select id="batchStatusFilter" class="form-select form-select-sm" style="width:180px;" onchange="loadBatches()">
-                <option value="">All Status</option>
-                <option value="ACTIVE">ACTIVE</option>
-                <option value="EXPIRED">EXPIRED</option>
-                <option value="DISPOSED">DISPOSED</option>
-            </select>
-        </div>
-        <div class="card p-4">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr><th>Batch ID</th><th>Product</th><th>Invoice #</th><th>Quantity Received</th><th>Remaining</th><th>Cost Price</th><th>Expiry Date</th><th>Status</th><th>Action</th></tr>
-                </thead>
-                <tbody id="batchesBody">
-                    <tr><td colspan="9" class="text-center text-muted">Loading...</td></tr>
-                </tbody>
-            </table>
-        </div>
+    <div class="card p-4">
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr><th>Invoice #</th><th>Supplier</th><th>Purchase Date</th><th id="totalAmountHeader">Total Amount</th><th>Batches</th></tr>
+            </thead>
+            <tbody id="purchasesBody">
+                <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
+            </tbody>
+        </table>
     </div>
-
-    <!-- Expiring Soon Tab -->
-    <div id="tab-expiring" style="display:none;">
-        <div class="mb-3 d-flex gap-2">
-            <button class="btn btn-sm btn-outline-secondary" onclick="loadExpiring(7)">7 Days</button>
-            <button class="btn btn-sm btn-outline-secondary" onclick="loadExpiring(14)">14 Days</button>
-            <button class="btn btn-sm btn-outline-secondary" onclick="loadExpiring(30)">30 Days</button>
-        </div>
-        <div class="card p-4">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr><th>Product</th><th>Batch</th><th>Remaining Qty</th><th>Expiry Date</th><th>Days Left</th></tr>
-                </thead>
-                <tbody id="expiringBody">
-                    <tr><td colspan="5" class="text-center text-muted">Select a window above.</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- New Purchase Tab -->
-    <div id="tab-new" style="display:none;">
-        <div class="card p-4" style="max-width:700px;">
-            <h6 class="fw-bold mb-3">Record New Purchase (GRN)</h6>
-            <div class="row g-3 mb-3">
-                <div class="col-md-6">
-                    <label class="form-label">Supplier ID</label>
-                    <input type="number" id="npSupplier" class="form-control" placeholder="e.g. 3">
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Invoice Number</label>
-                    <input type="text" id="npInvoice" class="form-control" placeholder="e.g. INV-2026-0045">
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Order Date</label>
-                    <input type="date" id="npOrderDate" class="form-control">
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Purchase Date</label>
-                    <input type="date" id="npPurchaseDate" class="form-control">
-                </div>
-            </div>
-
-            <h6 class="fw-bold mb-2">Batch Items</h6>
-            <div id="batchItemsContainer">
-                <div class="row g-2 mb-2 batch-item">
-                    <div class="col-md-3"><input type="number" class="form-control form-control-sm bi-product" placeholder="Product ID"></div>
-                    <div class="col-md-3"><input type="number" class="form-control form-control-sm bi-qty" placeholder="Quantity"></div>
-                    <div class="col-md-3"><input type="number" step="0.01" class="form-control form-control-sm bi-cost" placeholder="Cost Price"></div>
-                    <div class="col-md-3"><input type="date" class="form-control form-control-sm bi-expiry"></div>
-                </div>
-            </div>
-            <button class="btn btn-sm btn-outline-secondary mb-3" onclick="addBatchRow()">+ Add another item</button>
-            <br>
-            <button class="btn btn-primary" onclick="submitPurchase()">Submit Purchase</button>
-            <div id="npMsg" class="mt-3"></div>
-        </div>
-    </div>
-
 </div>
 
-<script>
-const token = sessionStorage.getItem('access_token');
-if (!token) { window.location.href = '/dashboard/login/'; }
+<!-- Batches Tab -->
+<div id="tab-batches" style="display:none;">
+    <div class="mb-3 d-flex gap-2">
+        <select id="batchStatusFilter" class="form-select form-select-sm" style="width:180px;" onchange="loadBatches()">
+            <option value="">All Status</option>
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="EXPIRED">EXPIRED</option>
+            <option value="DISPOSED">DISPOSED</option>
+        </select>
+    </div>
+    <div class="card p-4">
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr><th>Batch ID</th><th>Product</th><th>Invoice #</th><th>Quantity Received</th><th>Remaining</th><th id="costPriceHeader">Cost Price</th><th>Expiry Date</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody id="batchesBody">
+                <tr><td colspan="9" class="text-center text-muted">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
 
+<!-- Expiring Soon Tab -->
+<div id="tab-expiring" style="display:none;">
+    <div class="mb-3 d-flex gap-2">
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadExpiring(7)">7 Days</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadExpiring(14)">14 Days</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadExpiring(30)">30 Days</button>
+    </div>
+    <div class="card p-4">
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr><th>Product</th><th>Batch</th><th>Remaining Qty</th><th>Expiry Date</th><th>Days Left</th></tr>
+            </thead>
+            <tbody id="expiringBody">
+                <tr><td colspan="5" class="text-center text-muted">Select a window above.</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- New Purchase Tab — Cost Price input stays visible to all roles: this is
+     data-entry (staff recording a GRN), not viewing aggregate financials. -->
+<div id="tab-new" style="display:none;">
+    <div class="card p-4" style="max-width:700px;">
+        <h6 class="fw-bold mb-3">Record New Purchase (GRN)</h6>
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <label class="form-label">Supplier</label>
+                <input type="text" id="npSupplierSearch" class="form-control" list="supplierOptions" placeholder="Search supplier name...">
+                <input type="hidden" id="npSupplier">
+                <datalist id="supplierOptions"></datalist>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Invoice Number</label>
+                <input type="text" id="npInvoice" class="form-control" placeholder="e.g. INV-2026-0045">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Order Date</label>
+                <input type="date" id="npOrderDate" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Purchase Date</label>
+                <input type="date" id="npPurchaseDate" class="form-control">
+            </div>
+        </div>
+
+        <h6 class="fw-bold mb-2">Batch Items</h6>
+        <datalist id="productOptions"></datalist>
+        <div id="batchItemsContainer">
+            <div class="row g-2 mb-2 batch-item">
+                <div class="col-md-3">
+                    <input type="text" class="form-control form-control-sm bi-product-search" list="productOptions" placeholder="Search product name...">
+                    <input type="hidden" class="bi-product">
+                </div>
+                <div class="col-md-3"><input type="number" class="form-control form-control-sm bi-qty" placeholder="Quantity"></div>
+                <div class="col-md-3"><input type="number" step="0.01" class="form-control form-control-sm bi-cost" placeholder="Cost Price"></div>
+                <div class="col-md-3"><input type="date" class="form-control form-control-sm bi-expiry"></div>
+            </div>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary mb-3" onclick="addBatchRow()">+ Add another item</button>
+        <br>
+        <button class="btn btn-primary" onclick="submitPurchase()">Submit Purchase</button>
+        <div id="npMsg" class="mt-3"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+// Role gating — set once fetchCurrentUser() (shared, in base.html) resolves.
+// Money fields (Total Amount, Cost Price) are blanked for non-ADMIN/MANAGER
+// roles; everything else on this page (batch tracking, expiry, new-purchase
+// data entry) stays fully usable for STAFF.
+let canSeeFinancials = false;
+
+// Highlights exactly one sidebar link, matching whichever tab is currently
+// open — replaces the old hardcoded triple-active state.
+function highlightSidebar(tab) {
+    const hrefs = {
+        purchases: '/dashboard/purchases/?tab=purchases',
+        batches: '/dashboard/purchases/?tab=batches',
+        expiring: '/dashboard/purchases/?tab=expiring'
+    };
+    document.querySelectorAll('.sb-nav a').forEach(a => a.classList.remove('active'));
+    const href = hrefs[tab];
+    if (href) {
+        const link = document.querySelector(`.sb-nav a[href="${href}"]`);
+        if (link) link.classList.add('active');
+    }
+    // "New Purchase" has no dedicated sidebar entry — leave nothing
+    // highlighted rather than falsely marking an unrelated link active.
+}
+
+// Re-highlight the correct sidebar link based on ?tab= in the URL, since
+// this one template serves three different sidebar entries.
 document.addEventListener('DOMContentLoaded', () => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab');
     if (tab === 'purchases' || tab === 'batches' || tab === 'expiring' || tab === 'new') {
         const btn = document.querySelector(`.nav-link[onclick*="'${tab}'"]`);
         if (btn) switchTab(tab, btn);
+    } else {
+        highlightSidebar('purchases');
     }
 });
-
-function doLogout() {
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('refresh_token');
-    window.location.href = '/dashboard/login/';
-}
 
 function switchTab(name, btn) {
     ['purchases','batches','expiring','new'].forEach(t => {
@@ -173,8 +195,82 @@ function switchTab(name, btn) {
     });
     document.querySelectorAll('#purTabs .nav-link').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
+    highlightSidebar(name);
     if (name === 'batches') loadBatches();
 }
+
+// ── Supplier name search for New Purchase form ──────────────────────
+// Same pattern as the product search above: supplierLookup maps the
+// exact text shown in the search box to the real supplier ID.
+let supplierLookup = {};
+
+async function loadSuppliersForAutocomplete() {
+    try {
+        const data = await apiFetch('/api/suppliers/');
+        const suppliers = extractArray(data);
+        const datalist = document.getElementById('supplierOptions');
+        datalist.innerHTML = '';
+        supplierLookup = {};
+        suppliers.forEach(s => {
+            const id = s.id ?? s.supplier_id;
+            const name = s.name ?? s.supplier_name ?? 'Unnamed supplier';
+            if (id == null) return;
+            supplierLookup[name] = id;
+            const opt = document.createElement('option');
+            opt.value = name;
+            datalist.appendChild(opt);
+        });
+    } catch(e) {
+        console.error('loadSuppliersForAutocomplete failed:', e);
+    }
+}
+
+document.getElementById('npSupplierSearch').addEventListener('input', (e) => {
+    const hiddenInput = document.getElementById('npSupplier');
+    const matchedId = supplierLookup[e.target.value];
+    hiddenInput.value = matchedId ?? '';
+    e.target.classList.toggle('is-invalid', e.target.value.length > 0 && matchedId === undefined);
+});
+
+// ── Product name search for New Purchase form ──────────────────────
+// Product names/IDs aren't financial data, so this loads for every role.
+// productLookup maps the exact text shown in the search box to the real
+// product ID, since batch items need to POST product_id, not a name.
+let productLookup = {};
+
+async function loadProductsForAutocomplete() {
+    try {
+        const data = await apiFetch('/api/products/');
+        const products = extractArray(data);
+        const datalist = document.getElementById('productOptions');
+        datalist.innerHTML = '';
+        productLookup = {};
+        products.forEach(p => {
+            const id = p.id ?? p.product_id;
+            const name = p.product_name ?? p.name ?? 'Unnamed product';
+            const sku = p.sku_code ?? p.sku ?? '';
+            const label = sku ? `${name} (${sku})` : name;
+            if (id == null) return;
+            productLookup[label] = id;
+            const opt = document.createElement('option');
+            opt.value = label;
+            datalist.appendChild(opt);
+        });
+    } catch(e) {
+        console.error('loadProductsForAutocomplete failed:', e);
+    }
+}
+
+// Event delegation so this also covers rows added later via addBatchRow()
+document.getElementById('batchItemsContainer').addEventListener('input', (e) => {
+    if (!e.target.classList.contains('bi-product-search')) return;
+    const row = e.target.closest('.batch-item');
+    const hiddenInput = row.querySelector('.bi-product');
+    const matchedId = productLookup[e.target.value];
+    hiddenInput.value = matchedId ?? '';
+    // Visual cue: red border if what's typed doesn't match a real product yet
+    e.target.classList.toggle('is-invalid', e.target.value.length > 0 && matchedId === undefined);
+});
 
 function extractArray(data) {
     if (Array.isArray(data)) return data;
@@ -186,10 +282,7 @@ let purchaseSearchTerm = '';
 
 async function loadPurchases() {
     try {
-        const res = await fetch('/api/purchases/', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
+        const data = await apiFetch('/api/purchases/');
         allPurchases = extractArray(data);
         renderPurchasesTable();
     } catch(e) {
@@ -219,14 +312,14 @@ function renderPurchasesTable() {
             <td><a href="/dashboard/purchases/detail/${p.id}/">${p.invoice_number ?? '—'}</a></td>
             <td>${p.supplier_name ?? (typeof p.supplier === 'object' ? p.supplier?.name : p.supplier) ?? '—'}</td>
             <td>${p.purchase_date ?? '—'}</td>
-            <td>Rs ${Number(p.total_amount ?? 0).toLocaleString()}</td>
+            <td>${canSeeFinancials ? 'Rs ' + Number(p.total_amount ?? 0).toLocaleString() : '<span class="restricted-cell">Restricted</span>'}</td>
             <td>${(p.batches ?? []).length || p.batch_count || '—'}</td>
         </tr>
     `).join('');
 }
 
 function batchStatusBadge(s) {
-    const map = { 'ACTIVE': 'badge-active', 'EXPIRED': 'badge-expired', 'DISPOSED': 'badge-disposed' };
+    const map = { 'ACTIVE': 'badge-active', 'EXPIRED': 'badge-expired', 'DISPOSED': 'badge-disposed', 'PENDING_EXPIRY': 'badge-pending' };
     return `<span class="${map[s] || 'badge-active'}">${s ?? '—'}</span>`;
 }
 
@@ -236,10 +329,7 @@ async function loadBatches() {
     if (status) url += `status=${status}`;
 
     try {
-        const res = await fetch(url, {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
+        const data = await apiFetch(url);
         const rows = extractArray(data);
         const tbody = document.getElementById('batchesBody');
         if (rows.length === 0) {
@@ -254,6 +344,9 @@ async function loadBatches() {
             const actionCell = isPending
                 ? `<button class="btn btn-sm btn-success" onclick="confirmExpiry(${b.id})">Confirm</button>`
                 : '';
+            const costCell = canSeeFinancials
+                ? 'Rs ' + Number(b.cost_price ?? 0).toLocaleString()
+                : '<span class="restricted-cell">Restricted</span>';
             return `
             <tr>
                 <td class="text-muted">${b.id ?? '—'}</td>
@@ -261,7 +354,7 @@ async function loadBatches() {
                 <td>${b.invoice_number ?? '—'}</td>
                 <td>${b.quantity_received ?? '—'}</td>
                 <td>${b.remaining_quantity ?? '—'}</td>
-                <td>Rs ${Number(b.cost_price ?? 0).toLocaleString()}</td>
+                <td>${costCell}</td>
                 <td>${expiryCell}</td>
                 <td>${batchStatusBadge(b.status)}</td>
                 <td>${actionCell}</td>
@@ -280,26 +373,18 @@ async function confirmExpiry(batchId) {
         return;
     }
     try {
-        const res = await fetch(`/api/batches/${batchId}/confirm-expiry/`, {
+        const data = await apiFetch(`/api/batches/${batchId}/confirm-expiry/`, {
             method: 'POST',
-            headers: {
-                'Authorization': 'Bearer ' + token,
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ expiry_date: expiryDate })
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-            alert('Could not confirm expiry: ' + (data.error || 'request failed (' + res.status + ')'));
-            return;
-        }
         // Once confirmed, the batch moves PENDING_EXPIRY → ACTIVE, so the
         // input+button are no longer relevant for this row — reload the
         // whole tab so it re-renders with the now-fixed expiry_date and
-        // ACTIVE status badge, per the "should show as fixed" requirement.
+        // ACTIVE status badge.
         await loadBatches();
     } catch(e) {
-        alert('Network error — expiry date was not confirmed. Please try again.');
+        alert('Could not confirm expiry. Please try again.');
     }
 }
 
@@ -324,10 +409,7 @@ function daysLeftCell(expiryDateStr) {
 
 async function loadExpiring(days) {
     try {
-        const res = await fetch(`/api/batches/expiring-soon/?days=${days}`, {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
+        const data = await apiFetch(`/api/batches/expiring-soon/?days=${days}`);
         const rows = extractArray(data);
         const tbody = document.getElementById('expiringBody');
         if (rows.length === 0) {
@@ -353,7 +435,10 @@ function addBatchRow() {
     const row = document.createElement('div');
     row.className = 'row g-2 mb-2 batch-item';
     row.innerHTML = `
-        <div class="col-md-3"><input type="number" class="form-control form-control-sm bi-product" placeholder="Product ID"></div>
+        <div class="col-md-3">
+            <input type="text" class="form-control form-control-sm bi-product-search" list="productOptions" placeholder="Search product name...">
+            <input type="hidden" class="bi-product">
+        </div>
         <div class="col-md-3"><input type="number" class="form-control form-control-sm bi-qty" placeholder="Quantity"></div>
         <div class="col-md-3"><input type="number" step="0.01" class="form-control form-control-sm bi-cost" placeholder="Cost Price"></div>
         <div class="col-md-3"><input type="date" class="form-control form-control-sm bi-expiry"></div>
@@ -364,9 +449,15 @@ function addBatchRow() {
 async function submitPurchase() {
     const msgBox = document.getElementById('npMsg');
     const supplier_id = document.getElementById('npSupplier').value;
+    const supplier_search = document.getElementById('npSupplierSearch').value;
     const invoice_number = document.getElementById('npInvoice').value;
     const order_date = document.getElementById('npOrderDate').value;
     const purchase_date = document.getElementById('npPurchaseDate').value;
+
+    if (supplier_search && !supplier_id) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Supplier name doesn\'t match any supplier — pick a suggestion from the dropdown as you type.</div>';
+        return;
+    }
 
     if (!supplier_id || !invoice_number || !purchase_date) {
         msgBox.innerHTML = '<div class="alert alert-warning py-2">Please fill in supplier, invoice number, and purchase date.</div>';
@@ -374,14 +465,17 @@ async function submitPurchase() {
     }
 
     const batches = [];
+    let hasUnmatchedProduct = false;
     document.querySelectorAll('.batch-item').forEach(row => {
         const product_id = row.querySelector('.bi-product').value;
+        const product_search = row.querySelector('.bi-product-search').value;
         const quantity_received = row.querySelector('.bi-qty').value;
         const cost_price = row.querySelector('.bi-cost').value;
         const expiry_date = row.querySelector('.bi-expiry').value;
+        if (product_search && !product_id) hasUnmatchedProduct = true;
         if (product_id && quantity_received && cost_price && expiry_date) {
             batches.push({
-                product_id: Number(product_id),
+                product: Number(product_id),
                 quantity_received: Number(quantity_received),
                 cost_price: Number(cost_price),
                 expiry_date: expiry_date
@@ -389,30 +483,60 @@ async function submitPurchase() {
         }
     });
 
+    if (hasUnmatchedProduct) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">One or more products don\'t match a product in the list — pick a suggestion from the dropdown as you type.</div>';
+        return;
+    }
+
     if (batches.length === 0) {
         msgBox.innerHTML = '<div class="alert alert-warning py-2">Please add at least one complete batch item.</div>';
         return;
     }
 
+    // Uses a raw fetch here (not the shared apiFetch helper) specifically to
+    // preserve the backend's exact validation error text — apiFetch collapses
+    // failed responses into a generic message, which hides the real reason
+    // a submission was rejected (e.g. duplicate invoice, invalid product).
     try {
         const res = await fetch('/api/purchases/', {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ supplier_id: Number(supplier_id), invoice_number, order_date, purchase_date, batches })
+            headers: {
+                'Authorization': 'Bearer ' + sessionStorage.getItem('access_token'),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ supplier: Number(supplier_id), invoice_number, order_date, purchase_date, batches })
         });
+        if (res.status === 401) {
+            sessionStorage.removeItem('access_token');
+            sessionStorage.removeItem('refresh_token');
+            window.location.href = '/dashboard/login/';
+            return;
+        }
+        const data = await res.json().catch(() => ({}));
         if (res.ok) {
             msgBox.innerHTML = '<div class="alert alert-success py-2">Purchase recorded successfully.</div>';
             loadPurchases();
         } else {
-            const err = await res.json().catch(() => ({}));
-            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${JSON.stringify(err)}</div>`;
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${escapeHtmlPurchase(JSON.stringify(data))}</div>`;
         }
     } catch(e) {
         msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error submitting purchase.</div>';
     }
 }
 
-loadPurchases();
+function escapeHtmlPurchase(v) {
+    return String(v ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+// fetchCurrentUser() lives in base.html — resolve the role, gate financial
+// columns, then load data.
+fetchCurrentUser().then(role => {
+    canSeeFinancials = role === 'ADMIN' || role === 'MANAGER';
+    loadPurchases();
+    loadProductsForAutocomplete();
+    loadSuppliersForAutocomplete();
+});
 </script>
-</body>
-</html>
+{% endblock %}

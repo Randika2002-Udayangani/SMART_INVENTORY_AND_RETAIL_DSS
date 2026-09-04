@@ -35,6 +35,15 @@ class PurchaseBatchSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'remaining_quantity': {'required': False},
             'status'            : {'required': False},
+            # Fix 11: 'purchase' is a required FK on the model, but its ID
+            # cannot exist yet when a client is submitting a NEW purchase's
+            # batches — the parent Purchase row doesn't exist until
+            # PurchaseCreateSerializer.create() runs below, which assigns
+            # purchase=purchase manually after creating it. Without this,
+            # nested batch validation always rejected with
+            # {"batches": [{"purchase": ["This field is required."]}]}
+            # regardless of what the client sent.
+            'purchase'          : {'required': False},
         }
 
 
@@ -76,6 +85,14 @@ class PurchaseSerializer(serializers.ModelSerializer):
 #   Fix 8  — WAC recalculated once per unique product after all batches saved
 #   Fix 9  — logger imported once at module level not inside loops
 #   Fix 10 — Decimal arithmetic throughout, no float() precision loss
+#
+# Fixes applied (Randika):
+#   Fix 11 — 'purchase' FK on nested batch made required=False (see
+#            PurchaseBatchSerializer.Meta.extra_kwargs above) — nested
+#            batch creation was being rejected before create() could run
+#   Fix 12 — expected_days / actual_days auto-calculated in create()
+#            rather than left null, since the New Purchase form doesn't
+#            collect either directly
 # ─────────────────────────────────────────────────────────────────
 class PurchaseCreateSerializer(serializers.ModelSerializer):
     batches = PurchaseBatchSerializer(many=True, write_only=True)
@@ -197,6 +214,29 @@ class PurchaseCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         batches_data = validated_data.pop('batches')
+
+        # ── Fix 12: auto-calculate expected_days / actual_days ────
+        # Neither is collected directly from the New Purchase form —
+        # both are derivable from data already present, so compute
+        # them here rather than leaving them null.
+        #
+        # expected_days: snapshot the supplier's lead_time_days at the
+        # moment of purchase, rather than always reading live from
+        # Supplier — keeps this record historically accurate even if
+        # the supplier's lead time changes later.
+        #
+        # actual_days: order_date → purchase_date gap. order_date is
+        # optional on the model (null=True), so if it wasn't provided,
+        # actual_days correctly stays null too rather than crashing.
+        supplier      = validated_data.get('supplier')
+        order_date    = validated_data.get('order_date')
+        purchase_date = validated_data.get('purchase_date')
+
+        if validated_data.get('expected_days') is None and supplier:
+            validated_data['expected_days'] = supplier.lead_time_days
+
+        if validated_data.get('actual_days') is None and order_date and purchase_date:
+            validated_data['actual_days'] = (purchase_date - order_date).days
 
         with transaction.atomic():
             # Step 1 — Create the Purchase (GRN header)

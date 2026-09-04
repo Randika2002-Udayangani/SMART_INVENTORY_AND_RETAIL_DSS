@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}Smart Inventory DSS — Dashboard{% endblock %}</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:       #e8f5eb;
+      --card:     #f4faf5;
+      --card2:    #eaf6ed;
+      --border:   #b8dfc2;
+      --txt:      #1a2e1e;
+      --muted:    #5a8266;
+      --sidebar:  #0f3d3e;
+      --green1:   #34d17a;
+      --green2:   #22c55e;
+      --amber:    #f59e0b;
+      --red:      #ef4444;
+      --purple:   #8b5cf6;
+      --orange:   #ea580c;
+      --sidebar-w: 220px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--txt); min-height: 100vh; }
+
+    /* ── SIDEBAR ─────────────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-w); height: 100vh; background: var(--sidebar);
+      position: fixed; top: 0; left: 0;
+      display: flex; flex-direction: column; z-index: 200;
+      border-right: 1px solid rgba(255,255,255,0.06);
+      transition: transform 0.25s ease;
+      overflow-y: auto;
+    }
+    /* Collapsed state — slides fully off-canvas */
+    body.sidebar-collapsed .sidebar { transform: translateX(-100%); }
+    body.sidebar-collapsed .main { margin-left: 0; }
+    body.sidebar-collapsed .sb-toggle { left: 16px; }
+
+    .sb-logo { padding: 20px 18px 14px; border-bottom: 1px solid rgba(255,255,255,0.15); }
+    .sb-logo .lt { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #d4f7e0; }
+    .sb-logo .ls { font-size: 9.5px; color: rgba(255,255,255,0.5); margin-top: 2px; }
+    .sb-nav { padding: 12px 8px; flex: 1; overflow-y: auto; }
+    .sb-sec { font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 0 10px 6px; margin-top: 10px; }
+    .sb-nav a {
+      display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+      border-radius: 7px; color: rgba(255,255,255,0.72); text-decoration: none;
+      font-size: 13px; font-weight: 500; transition: all 0.14s; margin-bottom: 1px;
+    }
+    .sb-nav a:hover { background: rgba(255,255,255,0.13); color: #fff; }
+    .sb-nav a.active { background: rgba(255,255,255,0.20); color: #fff; font-weight: 600; }
+    .sb-nav a i { font-size: 15px; width: 17px; text-align: center; }
+    .sb-nav a .badge-pill {
+      margin-left: auto; background: rgba(239,68,68,0.85); color: #fff;
+      font-size: 9.5px; font-weight: 700; border-radius: 10px;
+      padding: 1px 7px; line-height: 1.5;
+    }
+    .sb-footer { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.15); font-size: 11.5px; color: rgba(255,255,255,0.5); }
+    .sb-footer .name { color: #fff; font-weight: 600; font-size: 12.5px; }
+
+    /* ── HAMBURGER TOGGLE ─────────────────────────────────── */
+    /* Fixed button, always visible, slides with the sidebar edge */
+    .sb-toggle {
+      position: fixed; top: 18px; left: calc(var(--sidebar-w) + 12px);
+      z-index: 250; width: 36px; height: 36px; border-radius: 8px;
+      background: var(--card); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: left 0.25s ease, box-shadow 0.15s ease;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .sb-toggle:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+    .sb-toggle i { font-size: 17px; color: var(--sidebar); }
+
+    /* ── MAIN ────────────────────────────────────────────── */
+    .main { margin-left: var(--sidebar-w); padding: 68px 28px 40px; transition: margin-left 0.25s ease; }
+
+    /* ── SHARED TOPBAR (kept minimal — pages can extend) ─── */
+    .topbar {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      margin-bottom: 22px;
+      position: sticky; top: 0; z-index: 150;
+      background: var(--bg);
+      padding: 12px 0 8px;
+      margin-left: -28px; margin-right: -28px; padding-left: 28px; padding-right: 28px;
+    }
+    .topbar h1 { font-size: 19px; font-weight: 700; }
+    .topbar .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+    /* ── RESPONSIVE — on small screens default to collapsed ── */
+    @media (max-width: 960px) {
+      .main { padding-top: 68px; }
+    }
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<!-- ── HAMBURGER TOGGLE ──────────────────────────────────── -->
+<button class="sb-toggle" id="sbToggle" title="Toggle sidebar" aria-label="Toggle sidebar">
+  <i class="bi bi-list"></i>
+</button>
+
+<!-- ── SIDEBAR — shared across every dashboard page ─────────
+     Include this partial and set request.resolver_match.url_name
+     (or a page-specific block variable) to control which link gets .active -->
+<aside class="sidebar" id="sidebar">
+  <div class="sb-logo">
+    <div class="lt">Smart Inventory</div>
+    <div class="ls">Decision Support System — Samanala Super Mart</div>
+  </div>
+  <nav class="sb-nav">
+    <div class="sb-sec">Overview</div>
+    <a href="/dashboard/" class="{% block nav_dashboard %}{% endblock %}"><i class="bi bi-grid-1x2"></i> Dashboard <span class="badge-pill" id="dashboardNavBadge">0</span></a>
+    <a href="/dashboard/analytics/" class="{% block nav_analytics %}{% endblock %}"><i class="bi bi-bar-chart-line"></i> Analytics</a>
+
+    <div class="sb-sec">Inventory</div>
+    <a href="/dashboard/inventory/" class="{% block nav_inventory %}{% endblock %}"><i class="bi bi-box-seam"></i> Product Management</a>
+    <a href="/dashboard/purchases/?tab=purchases" class="{% block nav_purchases %}{% endblock %}"><i class="bi bi-receipt"></i> Purchases</a>
+    <a href="/dashboard/purchases/?tab=batches" class="{% block nav_batches %}{% endblock %}"><i class="bi bi-layers"></i> Batches</a>
+    <a href="/dashboard/purchases/?tab=expiring" class="{% block nav_expiry %}{% endblock %}"><i class="bi bi-calendar-x"></i> Expiring Soon</a>
+    <a href="/dashboard/sales-upload/" class="{% block nav_sales_upload %}{% endblock %}"><i class="bi bi-upload"></i> Sales Upload</a>
+    <a href="/dashboard/products/" class="{% block nav_products %}{% endblock %}"><i class="bi bi-boxes"></i> Products</a>
+
+    <div class="sb-sec">Decision Support</div>
+    <a href="/dashboard/health-score/" class="{% block nav_health %}{% endblock %}"><i class="bi bi-heart-pulse"></i> Health Score</a>
+    <a href="/dashboard/discount-engine/" class="{% block nav_discount %}{% endblock %}"><i class="bi bi-tag"></i> Discount Engine</a>
+    <a href="/dashboard/reorder/" class="{% block nav_reorder %}{% endblock %}"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
+    <a href="/dashboard/loss-analysis/" class="{% block nav_loss %}{% endblock %}"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
+    <a href="/dashboard/lifecycle/" class="{% block nav_lifecycle %}{% endblock %}"><i class="bi bi-activity"></i> Lifecycle</a>
+
+    <div class="sb-sec">Operations</div>
+    <a href="#" onclick="alert('Coming soon'); return false;"><i class="bi bi-receipt"></i> Order Management</a>
+    <a href="/dashboard/suppliers/" class="{% block nav_suppliers %}{% endblock %}"><i class="bi bi-truck"></i> Suppliers</a>
+
+    <div class="sb-sec">Reports</div>
+    <a href="/dashboard/reports/" class="{% block nav_reports %}{% endblock %}"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
+    <a href="/dashboard/sales-report/" class="{% block nav_sales_report %}{% endblock %}"><i class="bi bi-bar-chart"></i> Sales Report</a>
+    <a href="/dashboard/notifications/" class="{% block nav_notifications %}{% endblock %}"><i class="bi bi-bell"></i> Notifications <span class="badge-pill" id="sidebarAlertCount">0</span></a>
+
+    <div class="sb-sec">Administration</div>
+    <a href="/dashboard/system-config/" class="{% block nav_config %}{% endblock %}"><i class="bi bi-sliders"></i> System Config</a>
+    <a href="/dashboard/audit-log/" class="{% block nav_audit %}{% endblock %}"><i class="bi bi-journal-text"></i> Audit Log</a>
+    <a href="/dashboard/users/" class="{% block nav_users %}{% endblock %}"><i class="bi bi-people"></i> User Management</a>
+  </nav>
+  <div class="sb-footer">
+    <div class="name" id="sbUserName">Loading...</div>
+    <div id="sbUserRole">Samanala Super Mart</div>
+  </div>
+</aside>
+
+<!-- ── MAIN CONTENT — each page fills this block ────────── -->
+<main class="main">
+  {% block content %}{% endblock %}
+</main>
+
+<!-- ── SHARED SCRIPTS ────────────────────────────────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+<script>
+  // ── SIDEBAR TOGGLE — persists collapsed/open state across pages ──
+  (function() {
+    const STORAGE_KEY = 'sidebar_collapsed';
+    const toggle = document.getElementById('sbToggle');
+    const body = document.body;
+
+    // Restore saved state on load (per-browser preference, not per-page)
+    if (localStorage.getItem(STORAGE_KEY) === 'true') {
+      body.classList.add('sidebar-collapsed');
+    }
+
+    toggle.addEventListener('click', function() {
+      body.classList.toggle('sidebar-collapsed');
+      localStorage.setItem(STORAGE_KEY, body.classList.contains('sidebar-collapsed'));
+    });
+
+    // Default to collapsed on small screens the first time a user visits,
+    // but don't override an explicit choice they've already made
+    if (window.innerWidth <= 960 && localStorage.getItem(STORAGE_KEY) === null) {
+      body.classList.add('sidebar-collapsed');
+    }
+  })();
+
+  // ── STICKY TOPBAR HEIGHT — exposed as a CSS variable ──
+  // Pages with sticky table headers (e.g. purchases, purchase detail) need
+  // to know exactly how tall the topbar renders, since it varies by page
+  // (some have a tab bar underneath, some don't). Measuring it here means
+  // no page has to hardcode a guessed pixel offset.
+  function setTopbarHeightVar() {
+    const topbar = document.querySelector('.topbar');
+    if (topbar) {
+      document.documentElement.style.setProperty('--topbar-height', topbar.offsetHeight + 'px');
+    }
+  }
+  window.addEventListener('load', setTopbarHeightVar);
+  window.addEventListener('resize', setTopbarHeightVar);
+
+  // JWT CHECK — shared across every dashboard page
+  function checkAuth() {
+    const token = sessionStorage.getItem('access_token');
+    if (!token) { window.location.href = '/dashboard/login/'; }
+  }
+  checkAuth();
+
+  // Logout — shared across every dashboard page
+  function doLogout() {
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
+    window.location.href = '/dashboard/login/';
+  }
+
+  async function apiFetch(url, options = {}) {
+    const token = sessionStorage.getItem('access_token');
+    const headers = new Headers(options.headers || {});
+    headers.set('Authorization', 'Bearer ' + token);
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401) {
+      sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('refresh_token');
+      window.location.href = '/dashboard/login/';
+      throw new Error('Authentication expired');
+    }
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    return response.json();
+  }
+
+  // FETCH — logged-in user profile for sidebar footer (GET /api/auth/me/)
+  // Every page should call this and read window.currentUserRole afterward
+  // for its own role-based hiding (e.g. money widgets on home.html).
+  window.currentUserRole = null;
+  async function fetchCurrentUser() {
+    try {
+      const data = await apiFetch('/api/auth/me/');
+      document.getElementById('sbUserName').innerText = data.username;
+      document.getElementById('sbUserRole').innerText = data.role + ' · Samanala Super Mart';
+      window.currentUserRole = data.role;
+      return data.role;
+    } catch(e) {
+      console.error('fetchCurrentUser failed:', e);
+      document.getElementById('sbUserName').innerText = 'Staff';
+      return null;
+    }
+  }
+</script>
+{% block extra_js %}{% endblock %}
+{% block page_scripts %}{% endblock %}
+</body>
+</html>
