@@ -392,12 +392,23 @@ def slow_moving(start_date, end_date, product_results=None):
 # F05-E: Sales Trend (Chart Data)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def sales_trend(period='daily', months=6):
+def sales_trend(period='daily', months=6, start_date=None, end_date=None):
     """
     Buckets sales into daily / weekly / monthly totals for chart
     rendering — per API Design Doc §10:
     "Daily/weekly/monthly sales trend data for chart.
     Pass ?period=daily/weekly/monthly and ?months=6"
+
+    Fix (analytics overview rebuild): originally this only ever computed
+    its own date range from `months` back from today() — meaning the
+    trend chart could never share the same date range as every other
+    analytics endpoint on the page, which all take explicit
+    date_from/date_to. That's the "inconsistent date filter" bug.
+
+    start_date/end_date, when both given, now take priority over
+    months and are used as-is. months stays as the fallback for any
+    caller (e.g. a manager-dashboard trend widget) that just wants
+    "last N months from today" without picking exact dates.
 
     Uses Django's Trunc* DB functions to do the bucketing inside
     the database (single aggregate query) rather than pulling every
@@ -429,8 +440,9 @@ def sales_trend(period='daily', months=6):
     }
     trunc_fn = trunc_map.get(period, TruncDate)
 
-    end_date   = date.today()
-    start_date = end_date - timedelta(days=months * 30)
+    if start_date is None or end_date is None:
+        end_date   = date.today()
+        start_date = end_date - timedelta(days=months * 30)
 
     bucketed = (
         ItemSalesRecord.objects
