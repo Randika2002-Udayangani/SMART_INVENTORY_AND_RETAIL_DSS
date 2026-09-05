@@ -205,7 +205,7 @@ def check_reorder_needs(as_of: date = None) -> list:
         # [LR] "current_stock = SUM(remaining_quantity) from ACTIVE batches"
         stock_agg = PurchaseBatch.objects.filter(
             product=product,
-            status='ACTIVE',
+            status__in=['ACTIVE', 'PENDING_EXPIRY'],   # ← was status='ACTIVE'
             remaining_quantity__gt=0,
         ).aggregate(total_stock=Sum('remaining_quantity'))
 
@@ -270,15 +270,9 @@ def check_reorder_needs(as_of: date = None) -> list:
 # ════════════════════════════════════════════════════════════════════════════
 
 def get_current_stock(product_id: int) -> int:
-    """
-    Return total remaining_quantity across all ACTIVE PurchaseBatch records.
-
-    Public helper — also called by health_score.py and lifecycle.py.
-    [PC] "stock = getCurrentStock(product.id)"
-    """
     agg = PurchaseBatch.objects.filter(
         product_id=product_id,
-        status='ACTIVE',
+        status__in=['ACTIVE', 'PENDING_EXPIRY'],   # ← was status='ACTIVE'
         remaining_quantity__gt=0,
     ).aggregate(total=Sum('remaining_quantity'))
 
