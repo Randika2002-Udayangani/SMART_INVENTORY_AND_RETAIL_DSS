@@ -1,142 +1,193 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reorder — Smart Inventory DSS</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
-        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
-        .btn-primary { background:#2d6a4f; border:none; }
-        .badge-critical { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-high { background:#fed7aa; color:#c2410c; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-medium { background:#fef9c3; color:#854d0e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-low { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-    </style>
-</head>
-<body>
-<div class="page-header d-flex justify-content-between align-items-center">
+{% extends "dashboard/base.html" %}
+
+{% block title %}Reorder — Smart Inventory DSS{% endblock %}
+
+{% block extra_css %}
+<style>
+  .reorder-page-header { margin-bottom: 24px; }
+  .reorder-actions { display: flex; align-items: center; gap: 8px; }
+  .reorder-table-wrap { overflow: visible; }
+  .reorder-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+  .reorder-table thead th {
+    position: sticky;
+    top: calc(var(--topbar-height, 58px) + 1px);
+    z-index: 10;
+    background: var(--card2) !important;
+    box-shadow: 0 1px 0 var(--border);
+  }
+  .reorder-error { color: #b91c1c; }
+  .badge-critical { background: #fee2e2; color: #dc2626; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-high { background: #fed7aa; color: #c2410c; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-medium { background: #fef9c3; color: #854d0e; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-low { background: #dcfce7; color: #16a34a; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+
+  @media (max-width: 960px) {
+    .reorder-table-wrap { overflow-x: auto; }
+    .reorder-table { min-width: 900px; }
+    .reorder-actions { flex-wrap: wrap; }
+  }
+</style>
+{% endblock %}
+
+{% block nav_reorder %}active{% endblock %}
+
+{% block content %}
+  <div class="topbar reorder-page-header">
     <div>
-        <h4 class="mb-0 fw-bold">Reorder Recommendations</h4>
-        <small class="text-muted">Samanala Super Mart — Decision Support System</small>
+      <h1>Reorder Recommendations</h1>
+      <div class="sub">Samanala Super Mart — Decision Support System</div>
     </div>
-    <div>
-        <button class="btn btn-primary btn-sm me-2" id="calcBtn" onclick="runCalculate()">▶ Calculate Reorder</button>
-        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
-        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+    <div class="reorder-actions">
+      <button class="btn btn-primary btn-sm" id="calcBtn" onclick="runCalculate()" hidden>&#9654; Calculate Reorder</button>
+      <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+        <i class="bi bi-box-arrow-right"></i> Logout
+      </button>
     </div>
-</div>
+  </div>
 
-<div class="container-fluid px-4">
-    <!-- Filter -->
-    <div class="mb-3 d-flex gap-2">
-        <select id="urgencyFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadRecommendations()">
-            <option value="">All Urgency</option>
-            <option value="CRITICAL">CRITICAL</option>
-            <option value="HIGH">HIGH</option>
-            <option value="MEDIUM">MEDIUM</option>
-            <option value="LOW">LOW</option>
-        </select>
-        <select id="statusFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadRecommendations()">
-            <option value="">All Status</option>
-            <option value="PENDING">PENDING</option>
-            <option value="ORDERED">ORDERED</option>
-            <option value="IGNORED">IGNORED</option>
-        </select>
-    </div>
+  <div id="errorState" class="alert alert-danger reorder-error" role="alert" hidden></div>
 
-    <div class="card p-4">
-        <table class="table table-hover">
-            <thead class="table-light">
-                <tr><th>Product</th><th>Current Stock</th><th>Reorder Point</th><th>Suggested Qty</th><th>Urgency</th><th>Status</th><th>Action</th></tr>
-            </thead>
-            <tbody id="reorderBody">
-                <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
-</div>
+  <div class="mb-3 d-flex gap-2 flex-wrap">
+    <select id="urgencyFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadRecommendations()">
+      <option value="">All Urgency</option>
+      <option value="CRITICAL">CRITICAL</option>
+      <option value="HIGH">HIGH</option>
+      <option value="MEDIUM">MEDIUM</option>
+      <option value="LOW">LOW</option>
+    </select>
+    <select id="statusFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadRecommendations()">
+      <option value="">All Status</option>
+      <option value="PENDING">PENDING</option>
+      <option value="ORDERED">ORDERED</option>
+      <option value="IGNORED">IGNORED</option>
+      <option value="AUTO_RESOLVED">AUTO_RESOLVED</option>
+    </select>
+  </div>
 
+  <div class="card p-4">
+    <div class="reorder-table-wrap">
+      <table class="table table-hover reorder-table">
+        <thead class="table-light">
+          <tr><th>Product</th><th>Current Stock</th><th>Reorder Point</th><th>Suggested Qty</th><th>Urgency</th><th>Status</th><th id="actionHeader">Action</th></tr>
+        </thead>
+        <tbody id="reorderBody">
+          <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}
+
+{% block page_scripts %}
 <script>
-const token = sessionStorage.getItem('access_token');
-if (!token) { window.location.href = '/dashboard/login/'; }
+  let canManageReorders = false;
 
-function doLogout() {
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('refresh_token');
-    window.location.href = '/dashboard/login/';
-}
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    }[char]));
+  }
 
-function urgencyBadge(u) {
-    const map = { 'CRITICAL':'badge-critical', 'HIGH':'badge-high', 'MEDIUM':'badge-medium', 'LOW':'badge-low' };
-    return `<span class="${map[u] || 'badge-low'}">${u}</span>`;
-}
+  function urgencyBadge(urgency) {
+    const map = { CRITICAL: 'badge-critical', HIGH: 'badge-high', MEDIUM: 'badge-medium', LOW: 'badge-low' };
+    const safeUrgency = String(urgency ?? '—');
+    return `<span class="${map[safeUrgency] || 'badge-low'}">${escapeHtml(safeUrgency)}</span>`;
+  }
 
-async function loadRecommendations() {
+  function showError(message) {
+    const errorState = document.getElementById('errorState');
+    errorState.innerText = message;
+    errorState.hidden = false;
+  }
+
+  function clearError() {
+    document.getElementById('errorState').hidden = true;
+  }
+
+  function renderActionCell(recommendation) {
+    return `
+      <button class="btn btn-sm btn-success me-1" onclick="updateStatus(${recommendation.id}, 'ORDERED')">Ordered</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="updateStatus(${recommendation.id}, 'IGNORED')">Ignore</button>
+    `;
+  }
+
+  async function loadRecommendations() {
+    clearError();
     const urgency = document.getElementById('urgencyFilter').value;
     const status = document.getElementById('statusFilter').value;
-    let url = '/api/reorder/recommendations/?';
-    if (urgency) url += `urgency=${urgency}&`;
-    if (status) url += `status=${status}`;
+    const params = new URLSearchParams();
+    if (urgency) params.set('urgency', urgency);
+    if (status) params.set('status', status);
 
     try {
-        const res = await fetch(url, {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
-        const rows = Array.isArray(data) ? data : (data.results ?? []);
-        const tbody = document.getElementById('reorderBody');
-        if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No recommendations found. Click Calculate Reorder.</td></tr>';
-            return;
-        }
-        tbody.innerHTML = rows.map(r => `
-            <tr>
-                <td>${r.product_name ?? '—'}</td>
-                <td>${r.current_stock ?? '—'}</td>
-                <td>${r.safety_stock ?? '—'}</td>
-                <td>${r.suggested_quantity ?? '—'}</td>
-                <td>${urgencyBadge(r.urgency)}</td>
-                <td><span class="badge bg-secondary">${r.status ?? '—'}</span></td>
-                <td>
-                    <button class="btn btn-sm btn-success me-1" onclick="updateStatus(${r.id},'ORDERED')">Ordered</button>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="updateStatus(${r.id},'IGNORED')">Ignore</button>
-                </td>
-            </tr>
-        `).join('');
-    } catch(e) {
-        document.getElementById('reorderBody').innerHTML = '<tr><td colspan="7" class="text-center text-muted">Could not load data.</td></tr>';
+      const query = params.toString();
+      const data = await apiFetch(`/api/reorder/recommendations/${query ? `?${query}` : ''}`);
+      const rows = Array.isArray(data) ? data : (data.results ?? []);
+      const tbody = document.getElementById('reorderBody');
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${canManageReorders ? 7 : 6}" class="text-center text-muted">No recommendations found. Click Calculate Reorder.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map(recommendation => `
+        <tr>
+          <td>${escapeHtml(recommendation.product_name)}</td>
+          <td>${escapeHtml(recommendation.current_stock)}</td>
+          <td>${escapeHtml(recommendation.safety_stock)}</td>
+          <td>${escapeHtml(recommendation.suggested_quantity)}</td>
+          <td>${urgencyBadge(recommendation.urgency)}</td>
+          <td><span class="badge bg-secondary">${escapeHtml(recommendation.status)}</span></td>
+          <td class="action-cell">${renderActionCell(recommendation)}</td>
+        </tr>
+      `).join('');
+      document.querySelectorAll('.action-cell').forEach(cell => { cell.hidden = !canManageReorders; });
+    } catch (error) {
+      console.error('loadRecommendations failed:', error);
+      document.getElementById('reorderBody').innerHTML = `<tr><td colspan="${canManageReorders ? 7 : 6}" class="text-center text-muted">Could not load recommendations.</td></tr>`;
+      showError('Reorder recommendations could not be loaded. Please try again.');
     }
-}
+  }
 
-async function updateStatus(id, status) {
+  async function updateStatus(id, nextStatus) {
+    if (!canManageReorders) return;
     try {
-        await fetch(`/api/reorder/recommendations/${id}/`, {
-            method: 'PATCH',
-            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status })
-        });
-        loadRecommendations();
-    } catch(e) {}
-}
+      await apiFetch(`/api/reorder/recommendations/${id}/`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus })
+      });
+      await loadRecommendations();
+    } catch (error) {
+      console.error('updateStatus failed:', error);
+      showError('Recommendation status could not be updated.');
+    }
+  }
 
-async function runCalculate() {
-    const btn = document.getElementById('calcBtn');
-    btn.innerHTML = '⏳ Calculating...';
-    btn.disabled = true;
+  async function runCalculate() {
+    if (!canManageReorders) return;
+    const button = document.getElementById('calcBtn');
+    button.innerHTML = '&#8987; Calculating...';
+    button.disabled = true;
+    clearError();
     try {
-        await fetch('/api/reorder/calculate/', {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        await loadRecommendations();
-    } catch(e) {}
-    btn.innerHTML = '▶ Calculate Reorder';
-    btn.disabled = false;
-}
+      await apiFetch('/api/reorder/calculate/', { method: 'POST' });
+      await loadRecommendations();
+    } catch (error) {
+      console.error('runCalculate failed:', error);
+      showError('Reorder calculation failed. Please try again.');
+    } finally {
+      button.innerHTML = '&#9654; Calculate Reorder';
+      button.disabled = false;
+    }
+  }
 
-loadRecommendations();
+  async function initializeReorderPage() {
+    const role = await fetchCurrentUser();
+    canManageReorders = role === 'ADMIN' || role === 'MANAGER';
+    document.getElementById('calcBtn').hidden = !canManageReorders;
+    document.getElementById('actionHeader').hidden = !canManageReorders;
+    await loadRecommendations();
+  }
+
+  initializeReorderPage();
 </script>
-</body>
-</html>
+{% endblock %}

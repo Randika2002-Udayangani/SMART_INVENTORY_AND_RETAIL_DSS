@@ -12,6 +12,7 @@ from .audit import log_action
 from .models import SystemConfig
 from .models import AuditLog
 from .models import UserLoginSecurity
+from .permissions import IsManagerOrAdmin
 
 
 # ============================================================
@@ -306,7 +307,7 @@ class SystemConfigListView(APIView):
 class SystemConfigDetailView(APIView):
     """
     GET /api/config/{key}/  — any authenticated staff
-    PUT /api/config/{key}/  — Admin only. Body: {"value": "12"}. Writes Audit_Log.
+    PUT /api/config/{key}/  — Manager/Admin only. Body: {"value": "12"}. Writes Audit_Log.
     """
  
     def get(self, request, key):
@@ -320,8 +321,11 @@ class SystemConfigDetailView(APIView):
         })
  
     def put(self, request, key):
-        if not (request.user.is_superuser or request.user.groups.filter(name='ADMIN').exists()):
-            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+        if not (
+            request.user.is_superuser
+            or request.user.groups.filter(name__in=['ADMIN', 'MANAGER']).exists()
+        ):
+            return Response({'error': 'Manager or Admin access required'}, status=status.HTTP_403_FORBIDDEN)
  
         try:
             c = SystemConfig.objects.get(key=key)
@@ -350,19 +354,18 @@ class SystemConfigDetailView(APIView):
 class AuditLogListView(APIView):
     """
     GET /api/audit-log/
-    Admin only. Filter by ?user=<id>, ?table_name=, ?action=,
-    ?date_from=YYYY-MM-DD, ?date_to=YYYY-MM-DD
+    Manager/Admin only. Filter by ?user=<id>, ?table_name=, ?action=,
+    ?record_id=<id>, ?date_from=YYYY-MM-DD, ?date_to=YYYY-MM-DD
     """
+    permission_classes = [IsManagerOrAdmin]
  
     def get(self, request):
-        if not (request.user.is_superuser or request.user.groups.filter(name='ADMIN').exists()):
-            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
- 
         logs = AuditLog.objects.all().order_by('-timestamp')
  
         user_id = request.query_params.get('user')
         table_name = request.query_params.get('table_name')
         action = request.query_params.get('action')
+        record_id = request.query_params.get('record_id')
         date_from = request.query_params.get('date_from')
         date_to = request.query_params.get('date_to')
  
@@ -372,6 +375,14 @@ class AuditLogListView(APIView):
             logs = logs.filter(table_name=table_name)
         if action:
             logs = logs.filter(action=action)
+        if record_id:
+            try:
+                logs = logs.filter(record_id=int(record_id))
+            except ValueError:
+                return Response(
+                    {'error': 'record_id must be a whole number'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         if date_from:
             logs = logs.filter(timestamp__date__gte=date_from)
         if date_to:
@@ -394,13 +405,11 @@ class AuditLogListView(APIView):
 class AuditLogDetailView(APIView):
     """
     GET /api/audit-log/{id}/
-    Admin only. Full entry including old_value/new_value JSON.
+    Manager/Admin only. Full entry including old_value/new_value JSON.
     """
+    permission_classes = [IsManagerOrAdmin]
  
     def get(self, request, pk):
-        if not (request.user.is_superuser or request.user.groups.filter(name='ADMIN').exists()):
-            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
- 
         try:
             log = AuditLog.objects.get(pk=pk)
         except AuditLog.DoesNotExist:

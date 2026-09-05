@@ -6,9 +6,6 @@ def dashboard_home(request):
 def dashboard_login(request):
     return render(request, 'dashboard/login.html')
 
-def sales_report(request):
-    return render(request, 'dashboard/sales_report.html')
-
 def notifications(request):
     return render(request, 'dashboard/notifications.html')
 

@@ -41,7 +41,6 @@ MANAGER_PASSWORD = "Admin123@"
 # Real routes confirmed by grepping dashboard/urls.py on week6/lavanya
 DASHBOARD_PAGES = [
     ("Home",             "/dashboard/"),
-    ("Sales Report",     "/dashboard/sales-report/"),
     ("Loss Analysis",    "/dashboard/loss-analysis/"),
     ("Lifecycle",        "/dashboard/lifecycle/"),
     ("Health Score",     "/dashboard/health-score/"),

@@ -1,77 +1,175 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reports - Smart Inventory DSS</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-    <style>
-        body { background:#f0f4f8; color:#1a2e1e; font-family:'Segoe UI',sans-serif; }
-        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
-        .card { border-radius:12px; border:1px solid #e2e8f0; height:100%; }
-        .report-card { transition:transform .15s, box-shadow .15s; }
-        .report-card:hover { transform:translateY(-2px); box-shadow:0 4px 16px rgba(0,0,0,.08); }
-        .btn-primary { background:#2d6a4f; border:none; }
-        .btn-primary:hover { background:#1b4332; }
-        .btn-report-pdf { border:1px solid #1c6b3f; color:#1c6b3f; background-color:white; }
-        .btn-report-pdf:hover { background-color:#e8f5e9; color:#1c6b3f; cursor:pointer; }
-        .download-actions { display:flex; flex-wrap:wrap; gap:8px; }
-        .report-message { min-height:24px; font-size:12px; margin-top:10px; }
-        .report-icon { color:#2d6a4f; font-size:22px; }
-        .description { color:#64748b; font-size:13px; min-height:40px; }
-        .date-label { color:#64748b; font-size:11px; font-weight:600; text-transform:uppercase; }
-        #toast { position:fixed; right:24px; bottom:24px; z-index:1050; min-width:280px; }
-    </style>
-</head>
-<body>
-<div class="page-header d-flex justify-content-between align-items-center">
+{% extends "dashboard/base.html" %}
+
+{% block title %}Reports — Smart Inventory DSS{% endblock %}
+{% block nav_reports %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+    .card { border-radius:12px; border:1px solid var(--border); background: var(--card); height:100%; }
+    .report-card { transition:transform .15s, box-shadow .15s; }
+    .report-card:hover { transform:translateY(-2px); box-shadow:0 4px 16px rgba(0,0,0,.08); }
+    .btn-primary { background: var(--sidebar); border:none; }
+    .btn-primary:hover { background:#0a2b2c; }
+    .btn-report-pdf { border:1px solid var(--sidebar); color:var(--sidebar); background-color:var(--card); }
+    .btn-report-pdf:hover { background-color: var(--card2); color: var(--sidebar); cursor:pointer; }
+    .download-actions { display:flex; flex-wrap:wrap; gap:8px; }
+    .report-message { min-height:24px; font-size:12px; margin-top:10px; }
+    .report-icon { color: var(--sidebar); font-size:22px; }
+    .description { color: var(--muted); font-size:13px; min-height:40px; }
+    .date-label { color: var(--muted); font-size:11px; font-weight:600; text-transform:uppercase; }
+    #toast { position:fixed; right:24px; bottom:24px; z-index:1050; min-width:280px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="topbar">
     <div>
-        <h4 class="mb-0 fw-bold">Reports</h4>
-        <small class="text-muted">Download manager reports from the current system data</small>
+        <h1>Reports</h1>
+        <div class="sub">Download manager reports from the current system data</div>
     </div>
     <div>
-        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
         <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
     </div>
 </div>
 
-<div class="container-fluid px-4">
-    <div id="toast" class="alert d-none" role="status"></div>
-    <div class="row g-4">
-        <div class="col-12 col-lg-6">
-            <div class="card report-card p-4">
-                <div class="d-flex justify-content-between"><h5>Sales Report</h5><span class="report-icon">▤</span></div>
-                <p class="description">Detailed sales revenue, units sold, and best-selling products.</p>
-                <div class="row g-2 mb-3"><div class="col"><label class="date-label" for="salesFrom">From</label><input type="date" id="salesFrom" class="form-control form-control-sm"></div><div class="col"><label class="date-label" for="salesTo">To</label><input type="date" id="salesTo" class="form-control form-control-sm"></div></div>
-                <div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadDateReport('/api/reports/sales/','sales_report','excel','salesFrom','salesTo',this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadDateReport('/api/reports/sales/','sales_report','pdf','salesFrom','salesTo',this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div>
+<div id="toast" class="alert d-none" role="status"></div>
+
+<div class="row g-4">
+    <!-- Sales Report — revenue data. Financial: hidden from STAFF. -->
+    <div class="col-12 col-lg-6 fin-restricted">
+        <div class="card report-card p-4">
+            <div class="d-flex justify-content-between"><h5>Sales Report</h5><span class="report-icon">▤</span></div>
+            <p class="description">Detailed sales revenue, units sold, and best-selling products.</p>
+            <div class="row g-2 mb-3">
+                <div class="col"><label class="date-label" for="salesFrom">From</label><input type="date" id="salesFrom" class="form-control form-control-sm"></div>
+                <div class="col"><label class="date-label" for="salesTo">To</label><input type="date" id="salesTo" class="form-control form-control-sm"></div>
             </div>
-        </div>
-        <div class="col-12 col-lg-6">
-            <div class="card report-card p-4">
-                <div class="d-flex justify-content-between"><h5>Profit Report</h5><span class="report-icon">↗</span></div>
-                <p class="description">WAC-based revenue, cost, gross profit, and margin results.</p>
-                <div class="row g-2 mb-3"><div class="col"><label class="date-label" for="profitFrom">From</label><input type="date" id="profitFrom" class="form-control form-control-sm"></div><div class="col"><label class="date-label" for="profitTo">To</label><input type="date" id="profitTo" class="form-control form-control-sm"></div></div>
-                <div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadDateReport('/api/reports/profit/','profit_report','excel','profitFrom','profitTo',this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadDateReport('/api/reports/profit/','profit_report','pdf','profitFrom','profitTo',this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div>
+            <div class="download-actions">
+                <button class="btn btn-primary btn-sm" onclick="downloadDateReport('/api/reports/sales/','sales_report','excel','salesFrom','salesTo',this)">Download Excel</button>
+                <button class="btn btn-report-pdf btn-sm" onclick="downloadDateReport('/api/reports/sales/','sales_report','pdf','salesFrom','salesTo',this)">Download PDF</button>
             </div>
+            <div class="report-message" aria-live="polite"></div>
         </div>
-        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Inventory Report</h5><span class="report-icon">▦</span></div><p class="description">Current stock, reorder thresholds, and stock status.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/inventory/','inventory_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/inventory/','inventory_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
-        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Health Score Report</h5><span class="report-icon">♥</span></div><p class="description">Product health scores and their component assessments.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/health-scores/','health_score_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/health-scores/','health_score_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
-        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Supplier Report</h5><span class="report-icon"><i class="bi bi-truck"></i></span></div><p class="description">Supplier records, purchasing activity, and performance data.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/supplier/','supplier_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/supplier/','supplier_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
-        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Lifecycle Report</h5><span class="report-icon"><i class="bi bi-bezier2"></i></span></div><p class="description">Lifecycle status, sales velocity, and recommendations.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/lifecycle/','lifecycle_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/lifecycle/','lifecycle_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
-        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Loss Report</h5><span class="report-icon">↘</span></div><p class="description">Recorded losses, expiry damage, and loss values.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/loss/','loss_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/loss/','loss_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
-        <div class="col-12 col-lg-6 col-xl-4"><div class="card report-card p-4"><div class="d-flex justify-content-between"><h5>Reorder Report</h5><span class="report-icon">⟳</span></div><p class="description">Reorder recommendations, urgency, quantities, and costs.</p><div class="download-actions"><button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/reorder/','reorder_report','excel',{},this)">Download Excel</button><button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/reorder/','reorder_report','pdf',{},this)">Download PDF</button></div><div class="report-message" aria-live="polite"></div></div></div>
+    </div>
+
+    <!-- Profit Report — cost/margin data. Financial: hidden from STAFF. -->
+    <div class="col-12 col-lg-6 fin-restricted">
+        <div class="card report-card p-4">
+            <div class="d-flex justify-content-between"><h5>Profit Report</h5><span class="report-icon">↗</span></div>
+            <p class="description">WAC-based revenue, cost, gross profit, and margin results.</p>
+            <div class="row g-2 mb-3">
+                <div class="col"><label class="date-label" for="profitFrom">From</label><input type="date" id="profitFrom" class="form-control form-control-sm"></div>
+                <div class="col"><label class="date-label" for="profitTo">To</label><input type="date" id="profitTo" class="form-control form-control-sm"></div>
+            </div>
+            <div class="download-actions">
+                <button class="btn btn-primary btn-sm" onclick="downloadDateReport('/api/reports/profit/','profit_report','excel','profitFrom','profitTo',this)">Download Excel</button>
+                <button class="btn btn-report-pdf btn-sm" onclick="downloadDateReport('/api/reports/profit/','profit_report','pdf','profitFrom','profitTo',this)">Download PDF</button>
+            </div>
+            <div class="report-message" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <!-- Inventory Report — stock levels/thresholds only, no money. Visible to all. -->
+    <div class="col-12 col-lg-6 col-xl-4">
+        <div class="card report-card p-4">
+            <div class="d-flex justify-content-between"><h5>Inventory Report</h5><span class="report-icon">▦</span></div>
+            <p class="description">Current stock, reorder thresholds, and stock status.</p>
+            <div class="download-actions">
+                <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/inventory/','inventory_report','excel',{},this)">Download Excel</button>
+                <button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/inventory/','inventory_report','pdf',{},this)">Download PDF</button>
+            </div>
+            <div class="report-message" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <!-- Health Score Report — normalized scores only, no money. Visible to all. -->
+    <div class="col-12 col-lg-6 col-xl-4">
+        <div class="card report-card p-4">
+            <div class="d-flex justify-content-between"><h5>Health Score Report</h5><span class="report-icon">♥</span></div>
+            <p class="description">Product health scores and their component assessments.</p>
+            <div class="download-actions">
+                <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/health-scores/','health_score_report','excel',{},this)">Download Excel</button>
+                <button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/health-scores/','health_score_report','pdf',{},this)">Download PDF</button>
+            </div>
+            <div class="report-message" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <!-- Supplier Report — purchasing activity. Financial: hidden from STAFF. -->
+    <div class="col-12 col-lg-6 col-xl-4 fin-restricted">
+        <div class="card report-card p-4">
+            <div class="d-flex justify-content-between"><h5>Supplier Report</h5><span class="report-icon"><i class="bi bi-truck"></i></span></div>
+            <p class="description">Supplier records, purchasing activity, and performance data.</p>
+            <div class="download-actions">
+                <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/supplier/','supplier_report','excel',{},this)">Download Excel</button>
+                <button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/supplier/','supplier_report','pdf',{},this)">Download PDF</button>
+            </div>
+            <div class="report-message" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <!-- Lifecycle Report — status/velocity only, no money. Visible to all. -->
+    <div class="col-12 col-lg-6 col-xl-4">
+        <div class="card report-card p-4">
+            <div class="d-flex justify-content-between"><h5>Lifecycle Report</h5><span class="report-icon"><i class="bi bi-bezier2"></i></span></div>
+            <p class="description">Lifecycle status, sales velocity, and recommendations.</p>
+            <div class="download-actions">
+                <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/lifecycle/','lifecycle_report','excel',{},this)">Download Excel</button>
+                <button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/lifecycle/','lifecycle_report','pdf',{},this)">Download PDF</button>
+            </div>
+            <div class="report-message" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <!-- Loss Report — loss values. Financial: hidden from STAFF. -->
+    <div class="col-12 col-lg-6 col-xl-4 fin-restricted">
+        <div class="card report-card p-4">
+            <div class="d-flex justify-content-between"><h5>Loss Report</h5><span class="report-icon">↘</span></div>
+            <p class="description">Recorded losses, expiry damage, and loss values.</p>
+            <div class="download-actions">
+                <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/loss/','loss_report','excel',{},this)">Download Excel</button>
+                <button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/loss/','loss_report','pdf',{},this)">Download PDF</button>
+            </div>
+            <div class="report-message" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <!-- Reorder Report — includes costs. Financial: hidden from STAFF. -->
+    <div class="col-12 col-lg-6 col-xl-4 fin-restricted">
+        <div class="card report-card p-4">
+            <div class="d-flex justify-content-between"><h5>Reorder Report</h5><span class="report-icon">⟳</span></div>
+            <p class="description">Reorder recommendations, urgency, quantities, and costs.</p>
+            <div class="download-actions">
+                <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/reorder/','reorder_report','excel',{},this)">Download Excel</button>
+                <button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/reorder/','reorder_report','pdf',{},this)">Download PDF</button>
+            </div>
+            <div class="report-message" aria-live="polite"></div>
+        </div>
     </div>
 </div>
+{% endblock %}
 
+{% block page_scripts %}
 <script>
-const token = sessionStorage.getItem('access_token');
-if (!token) { window.location.href = '/dashboard/login/'; }
-
-function doLogout() {
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('refresh_token');
-    window.location.href = '/dashboard/login/';
+// checkAuth(), doLogout() and the shared apiFetch() JSON helper live in
+// base.html. Downloads here return file blobs rather than JSON, so they
+// use their own small fetch wrapper (below) rather than apiFetch, but it
+// still attaches the bearer token and handles an expired-session 401 the
+// same way apiFetch does.
+async function fetchBlob(url) {
+    const token = sessionStorage.getItem('access_token');
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+    if (res.status === 401) {
+        sessionStorage.removeItem('access_token');
+        sessionStorage.removeItem('refresh_token');
+        window.location.href = '/dashboard/login/';
+        throw new Error('Authentication expired');
+    }
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Download failed');
+    }
+    return res.blob();
 }
 
 function showMessage(message, type = 'success') {
@@ -112,29 +210,24 @@ function setDownloadLoading(button, loading) {
 }
 
 function setDefaultDates() {
+    // Guarded lookups: the Sales/Profit date inputs may not exist for
+    // STAFF once fetchCurrentUser() removes their (financial) cards.
     const to = new Date();
     const from = new Date(to);
     from.setDate(from.getDate() - 30);
     const format = date => date.toISOString().slice(0, 10);
-    document.getElementById('salesFrom').value = format(from);
-    document.getElementById('salesTo').value = format(to);
-    document.getElementById('profitFrom').value = format(from);
-    document.getElementById('profitTo').value = format(to);
+    const setVal = (id, value) => { const el = document.getElementById(id); if (el) el.value = value; };
+    setVal('salesFrom', format(from));
+    setVal('salesTo', format(to));
+    setVal('profitFrom', format(from));
+    setVal('profitTo', format(to));
 }
 
 async function downloadReport(endpoint, filenameBase, format, extraParams = {}, button = null) {
-    const token = sessionStorage.getItem('access_token');
     const params = new URLSearchParams({ format, ...extraParams });
     setDownloadLoading(button, true);
     try {
-        const res = await fetch(`${endpoint}?${params}`, {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.error || 'Download failed');
-        }
-        const blob = await res.blob();
+        const blob = await fetchBlob(`${endpoint}?${params}`);
         const ext = format === 'excel' ? 'xlsx' : 'pdf';
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -166,7 +259,19 @@ function downloadDateReport(endpoint, filenameBase, format, fromId, toId, button
     downloadReport(endpoint, filenameBase, format, { date_from, date_to }, button);
 }
 
+// Sales, Profit, Supplier, Loss, and Reorder reports all surface real
+// money (revenue, cost, margin, loss values, reorder costs) with no
+// non-financial view of the same data — so unlike Health Score, the whole
+// card is hidden for STAFF rather than gating individual fields.
+// applyRoleBasedSidebar() in base.html separately hides the standalone
+// Sales Report page's nav link using the same role check.
+fetchCurrentUser().then(role => {
+    const canSeeFinancials = role === 'ADMIN' || role === 'MANAGER';
+    if (!canSeeFinancials) {
+        document.querySelectorAll('.fin-restricted').forEach(el => el.remove());
+    }
+});
+
 setDefaultDates();
 </script>
-</body>
-</html>
+{% endblock %}

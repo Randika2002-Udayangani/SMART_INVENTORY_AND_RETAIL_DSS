@@ -139,7 +139,6 @@
 
     <div class="sb-sec">Reports</div>
     <a href="/dashboard/reports/" class="{% block nav_reports %}{% endblock %}"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
-    <a href="/dashboard/sales-report/" class="{% block nav_sales_report %}{% endblock %}"><i class="bi bi-bar-chart"></i> Sales Report</a>
     <a href="/dashboard/notifications/" class="{% block nav_notifications %}{% endblock %}"><i class="bi bi-bell"></i> Notifications <span class="badge-pill" id="sidebarAlertCount">0</span></a>
 
     <div class="sb-sec">Administration</div>
@@ -223,7 +222,16 @@
       window.location.href = '/dashboard/login/';
       throw new Error('Authentication expired');
     }
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      let data = {};
+      try { data = await response.json(); } catch (e) {}
+      const detail = data.error || data.message || (Array.isArray(data.errors) ? data.errors.join('; ') : '');
+      const error = new Error(detail || `${response.status} ${response.statusText}`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    if (response.status === 204) return null;
     return response.json();
   }
 

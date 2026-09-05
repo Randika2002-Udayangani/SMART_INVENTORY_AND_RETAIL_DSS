@@ -1,130 +1,141 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Health Score — Smart Inventory DSS</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
-        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
-        .btn-primary { background:#2d6a4f; border:none; }
-        .btn-primary:hover { background:#1b4332; }
-        .badge-healthy { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-watch { background:#fef9c3; color:#854d0e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-atrisk { background:#fed7aa; color:#c2410c; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-critical { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .kpi-card { background:white; border-radius:12px; padding:20px; border:1px solid #e2e8f0; text-align:center; }
-        .kpi-val { font-size:28px; font-weight:700; }
-        .kpi-lbl { font-size:12px; color:#64748b; text-transform:uppercase; }
-    </style>
-</head>
-<body>
-<div class="page-header d-flex justify-content-between align-items-center">
+{% extends "dashboard/base.html" %}
+
+{% block title %}Health Score — Smart Inventory DSS{% endblock %}
+{% block nav_health %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+    .card { border-radius:12px; border:1px solid var(--border); background: var(--card); }
+    .btn-primary { background: var(--sidebar); border: none; }
+    .btn-primary:hover { background: #0a2b2c; }
+    .badge-healthy { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-watch { background:#fef9c3; color:#854d0e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-atrisk { background:#fed7aa; color:#c2410c; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-critical { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .kpi-card { background:var(--card); border-radius:12px; padding:20px; border:1px solid var(--border); text-align:center; }
+    .kpi-val { font-size:28px; font-weight:700; color: var(--txt); }
+    .kpi-lbl { font-size:12px; color:var(--muted); text-transform:uppercase; }
+    .table thead.table-light th {
+        background-color: var(--card2);
+    }
+    /* Sticky header applies ONLY to the main Health Score table below —
+       it's the one long enough (hundreds of rows) to actually scroll under
+       a pinned header. The Critical Products and Category Breakdown cards
+       are short, always-fit-on-screen tables; giving them position:sticky
+       too made their header get stuck mid-table instead of at the top,
+       since there's no room for it to "travel" within such a short table. */
+    #hsMainTable thead.table-light th {
+        position: sticky;
+        top: var(--topbar-height, 56px); /* set dynamically in base.html to match the actual topbar height on this page */
+        z-index: 120;
+        background-color: var(--card2);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="topbar">
     <div>
-        <h4 class="mb-0 fw-bold">Inventory Health Score</h4>
-        <small class="text-muted">Composite 0–100 score · 4-band classification · triggered on-demand</small>
+        <h1>Inventory Health Score</h1>
+        <div class="sub">Composite 0–100 score · 4-band classification · triggered on-demand</div>
     </div>
-    
     <div>
-        <div class="d-flex align-items-center gap-2 flex-wrap">
+        <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
             <button class="btn btn-primary btn-sm" id="calcBtn" onclick="runCalculation()">▶ Run Health Calculation</button>
             <small id="lastCalculatedLabel" class="text-muted">Last calculated: --</small>
         </div>
         <div class="mt-2 d-flex justify-content-end">
-            <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
             <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
         </div>
     </div>
 </div>
 
-<div class="container-fluid px-4">
-    <!-- Band Cards -->
-    <div class="row g-3 mb-4">
-        <div class="col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-lbl" style="color:#16a34a;">HEALTHY · 80–100</div>
-                <div class="kpi-val" style="color:#16a34a;" id="countHealthy">0</div>
-                <small class="text-muted">Monitor normally</small>
-            </div>
+<!-- Band Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="kpi-card">
+            <div class="kpi-lbl" style="color:#16a34a;">HEALTHY · 80–100</div>
+            <div class="kpi-val" style="color:#16a34a;" id="countHealthy">0</div>
+            <small class="text-muted">Monitor normally</small>
         </div>
-        <div class="col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-lbl" style="color:#854d0e;">WATCH · 60–79</div>
-                <div class="kpi-val" style="color:#ca8a04;" id="countWatch">0</div>
-                <small class="text-muted">Keep an eye on these</small>
-            </div>
+    </div>
+    <div class="col-md-3">
+        <div class="kpi-card">
+            <div class="kpi-lbl" style="color:#854d0e;">WATCH · 60–79</div>
+            <div class="kpi-val" style="color:#ca8a04;" id="countWatch">0</div>
+            <small class="text-muted">Keep an eye on these</small>
         </div>
-        <div class="col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-lbl" style="color:#c2410c;">AT RISK · 40–59</div>
-                <div class="kpi-val" style="color:#ea580c;" id="countAtRisk">0</div>
-                <small class="text-muted">Needs attention soon</small>
-            </div>
+    </div>
+    <div class="col-md-3">
+        <div class="kpi-card">
+            <div class="kpi-lbl" style="color:#c2410c;">AT RISK · 40–59</div>
+            <div class="kpi-val" style="color:#ea580c;" id="countAtRisk">0</div>
+            <small class="text-muted">Needs attention soon</small>
         </div>
-        <div class="col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-lbl" style="color:#b91c1c;">CRITICAL · 0–39</div>
-                <div class="kpi-val" style="color:#dc2626;" id="countCritical">0</div>
-                <small class="text-muted">Immediate action required</small>
+    </div>
+    <div class="col-md-3">
+        <div class="kpi-card">
+            <div class="kpi-lbl" style="color:#b91c1c;">CRITICAL · 0–39</div>
+            <div class="kpi-val" style="color:#dc2626;" id="countCritical">0</div>
+            <small class="text-muted">Immediate action required</small>
+        </div>
+    </div>
+</div>
+
+<!-- Critical Products + Category Breakdown -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-6">
+        <div class="card p-3 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold mb-0" style="color:#b91c1c;">Critical Products — Immediate Attention</h6>
+                <button class="btn btn-outline-secondary btn-sm" onclick="refreshCritical()">Refresh</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>Product</th><th>Score</th><th>Recommended Action</th></tr>
+                    </thead>
+                    <tbody id="criticalBody">
+                        <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
-
-    <!-- Critical Products + Category Breakdown -->
-    <div class="row g-3 mb-4">
-        <div class="col-lg-6">
-            <div class="card p-3 h-100">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h6 class="fw-bold mb-0" style="color:#b91c1c;">Critical Products — Immediate Attention</h6>
-                    <button class="btn btn-outline-secondary btn-sm" onclick="refreshCritical()">Refresh</button>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover mb-0">
-                        <thead class="table-light">
-                            <tr><th>Product</th><th>Score</th><th>Recommended Action</th></tr>
-                        </thead>
-                        <tbody id="criticalBody">
-                            <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
+    <div class="col-lg-6">
+        <div class="card p-3 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold mb-0">Category Health Breakdown</h6>
+                <button class="btn btn-outline-secondary btn-sm" onclick="refreshCategories()">Refresh</button>
             </div>
-        </div>
-        <div class="col-lg-6">
-            <div class="card p-3 h-100">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h6 class="fw-bold mb-0">Category Health Breakdown</h6>
-                    <button class="btn btn-outline-secondary btn-sm" onclick="refreshCategories()">Refresh</button>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover mb-0">
-                        <thead class="table-light">
-                            <tr><th>Category</th><th>Avg Score</th><th>Status</th><th>H/W/A/C</th></tr>
-                        </thead>
-                        <tbody id="categoryBody">
-                            <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>Category</th><th>Avg Score</th><th>Status</th><th>H/W/A/C</th></tr>
+                    </thead>
+                    <tbody id="categoryBody">
+                        <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Filter Buttons + Search -->
-    <div class="mb-3 d-flex gap-2 align-items-center flex-wrap" id="filterButtons">
-        <button class="btn btn-sm btn-outline-secondary active" onclick="filterTable('ALL', this)">All</button>
-        <button class="btn btn-sm btn-outline-success" onclick="filterTable('HEALTHY', this)">Healthy</button>
-        <button class="btn btn-sm btn-outline-warning" onclick="filterTable('WATCH', this)">Watch</button>
-        <button class="btn btn-sm" style="border:1px solid #c2410c;color:#c2410c;" onclick="filterTable('AT RISK', this)">At Risk</button>
-        <button class="btn btn-sm btn-outline-danger" onclick="filterTable('CRITICAL', this)">Critical</button>
-        <input type="text" id="productSearch" class="form-control form-control-sm ms-auto" style="max-width:260px;"
-               placeholder="Search product name or SKU..." oninput="handleSearchInput()">
-    </div>
+<!-- Filter Buttons + Search -->
+<div class="mb-3 d-flex gap-2 align-items-center flex-wrap" id="filterButtons">
+    <button class="btn btn-sm btn-outline-secondary active" onclick="filterTable('ALL', this)">All</button>
+    <button class="btn btn-sm btn-outline-success" onclick="filterTable('HEALTHY', this)">Healthy</button>
+    <button class="btn btn-sm btn-outline-warning" onclick="filterTable('WATCH', this)">Watch</button>
+    <button class="btn btn-sm" style="border:1px solid #c2410c;color:#c2410c;" onclick="filterTable('AT RISK', this)">At Risk</button>
+    <button class="btn btn-sm btn-outline-danger" onclick="filterTable('CRITICAL', this)">Critical</button>
+    <input type="text" id="productSearch" class="form-control form-control-sm ms-auto" style="max-width:260px;"
+           placeholder="Search product name or SKU..." oninput="handleSearchInput()">
+</div>
 
-    <!-- Table -->
-    <div class="card p-4">
-        <table class="table table-hover">
+<!-- Table -->
+<div class="card p-4">
+    <table class="table table-hover" id="hsMainTable">
             <thead class="table-light">
                 <tr>
                     <th>Product</th>
@@ -143,18 +154,22 @@
                 <tr><td colspan="10" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
-    </div>
 </div>
+{% endblock %}
 
+{% block page_scripts %}
 <script>
-const token = sessionStorage.getItem('access_token');
-if (!token) { window.location.href = '/dashboard/login/'; }
-
-function doLogout() {
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('refresh_token');
-    window.location.href = '/dashboard/login/';
-}
+// NOTE: checkAuth(), doLogout(), and apiFetch() (which attaches the bearer
+// token and redirects to /dashboard/login/ on a 401) now live in base.html
+// and are shared across every dashboard page — no need to duplicate them
+// here, so all calls below go through apiFetch() instead of raw fetch().
+//
+// This page shows only normalized 0-100 scores (velocity/margin/expiry
+// risk/stock duration/overall) — never a raw currency figure — so unlike
+// purchases/purchase_detail there's no canSeeFinancials gating here. If the
+// business wants "Margin" itself hidden from STAFF as a profitability
+// proxy, that's a policy call, not a data-leak fix; flag it and it's a
+// one-line addition mirroring the purchases pattern.
 
 let allData = [];
 let currentFilter = 'ALL';
@@ -197,14 +212,6 @@ function setLastCalculatedLabel(rawValue, fallbackToNow = false) {
     const labelText = timestamp ? 'Last calculated' : 'Last refreshed';
     const valueText = timestamp ? formatTimestamp(timestamp) : '—';
     document.getElementById('lastCalculatedLabel').textContent = `${labelText}: ${valueText}`;
-}
-
-async function fetchJson(url, options) {
-    const response = await fetch(url, options);
-    if (!response.ok) {
-        throw new Error(`Request failed (${response.status})`);
-    }
-    return response.json();
 }
 
 function filterTable(filter, btn) {
@@ -259,11 +266,10 @@ async function showProductDetails(productId) {
         alert('Product id not available for this row.');
         return;
     }
-    const requestOptions = { headers: { 'Authorization': 'Bearer ' + token } };
     try {
         const [detail, history] = await Promise.all([
-            fetchJson(`/api/health-scores/${productId}/`, requestOptions),
-            fetchJson(`/api/health-scores/history/${productId}/`, requestOptions)
+            apiFetch(`/api/health-scores/${productId}/`),
+            apiFetch(`/api/health-scores/history/${productId}/`)
         ]);
 
         const lines = [
@@ -297,9 +303,7 @@ async function showProductDetails(productId) {
 async function loadCritical() {
     const tbody = document.getElementById('criticalBody');
     try {
-        const rows = await fetchJson('/api/health-scores/critical/', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
+        const rows = await apiFetch('/api/health-scores/critical/');
         tbody.innerHTML = rows.length ? rows.map(r => `
             <tr>
                 <td>${r.product__product_name ?? '—'}</td>
@@ -326,9 +330,7 @@ async function refreshCritical() {
 async function loadCategories() {
     const tbody = document.getElementById('categoryBody');
     try {
-        const rows = await fetchJson('/api/health-scores/categories/', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
+        const rows = await apiFetch('/api/health-scores/categories/');
         tbody.innerHTML = rows.length ? rows.map(r => `
             <tr>
                 <td>${r.category__category_name ?? '—'}</td>
@@ -373,10 +375,7 @@ function updateSummaryCounts() {
 
 async function loadHealthScores() {
     try {
-        const requestOptions = {
-            headers: { 'Authorization': 'Bearer ' + token }
-        };
-        const data = await fetchJson('/api/analytics/health-scores/', requestOptions);
+        const data = await apiFetch('/api/analytics/health-scores/');
 
         const summaryTimestamp = data?.last_calculated_at || data?.summary?.last_calculated_at || null;
         if (summaryTimestamp) {
@@ -385,7 +384,7 @@ async function loadHealthScores() {
             setLastCalculatedLabel(null, true);
         }
 
-        const listData = await fetchJson('/api/health-scores/', requestOptions);
+        const listData = await apiFetch('/api/health-scores/');
         allData = Array.isArray(listData) ? listData : (listData.results ?? []);
 
         updateSummaryCounts();
@@ -415,10 +414,7 @@ async function runCalculation() {
     document.querySelectorAll('#filterButtons button').forEach(b => b.disabled = true);
 
     try {
-        const result = await fetchJson('/api/health-scores/calculate/', {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
+        const result = await apiFetch('/api/health-scores/calculate/', { method: 'POST' });
         if (result.last_calculated_at) {
             setLastCalculatedLabel(result.last_calculated_at, false);
         }
@@ -436,9 +432,12 @@ async function runCalculation() {
     btn.disabled = false;
 }
 
+// fetchCurrentUser() lives in base.html — populates the sidebar footer
+// (username/role). No financial gating on this page (see note above), so
+// data loads unconditionally rather than waiting on the role to resolve.
+fetchCurrentUser();
 loadHealthScores();
 loadCritical();
 loadCategories();
 </script>
-</body>
-</html>
+{% endblock %}

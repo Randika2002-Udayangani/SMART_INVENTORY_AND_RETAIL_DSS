@@ -1,39 +1,227 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>User Management - Smart Inventory DSS</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>body{background:#f0f4f8;color:#1a2e1e;font-family:'Segoe UI',sans-serif}.page-header{background:#0f3d3e;color:#fff;padding:20px 30px}.card{border:1px solid #d8e4dc;border-radius:10px}.muted{color:#64748b}.table{font-size:13px}</style>
-</head>
-<body>
-<header class="page-header d-flex justify-content-between align-items-center"><div><h4 class="mb-1">User Management</h4><small>Staff accounts, roles, status, and lockout recovery</small></div><div><a href="/dashboard/" class="btn btn-light btn-sm me-2">Dashboard</a><button onclick="logout()" class="btn btn-danger btn-sm">Logout</button></div></header>
-<main class="container-fluid p-4"><div id="message" class="alert d-none"></div><div class="card bg-white p-4 mb-4"><h5>Add staff user</h5><div class="row g-2"><div class="col-md-3"><input id="newUsername" class="form-control" placeholder="Username"></div><div class="col-md-3"><input id="newPassword" type="password" class="form-control" placeholder="Password"></div><div class="col-md-3"><select id="newRole" class="form-select"><option>STAFF</option><option>MANAGER</option><option>ADMIN</option></select></div><div class="col-md-3"><button class="btn btn-primary w-100" onclick="createUser()">Create user</button></div></div></div><div class="card bg-white p-4"><div class="d-flex justify-content-between mb-3"><h5 class="mb-0">Staff accounts</h5><button class="btn btn-outline-secondary btn-sm" onclick="refreshUsers()">Refresh</button></div><div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead><tbody id="userBody"><tr><td colspan="6" class="text-center muted">Loading...</td></tr></tbody></table></div></div></main>
+{% extends "dashboard/base.html" %}
+
+{% block title %}User Management — Smart Inventory DSS{% endblock %}
+
+{% block extra_css %}
+<style>
+  .users-page-header { margin-bottom: 24px; }
+  .muted { color: var(--muted); }
+  .users-table-wrap { overflow: visible; }
+  .users-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  .users-table thead th {
+    position: sticky;
+    top: calc(var(--topbar-height, 58px) + 1px);
+    z-index: 10;
+    background: var(--card2) !important;
+    box-shadow: 0 1px 0 var(--border);
+  }
+  .user-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+  .access-denied { max-width: 620px; margin: 36px auto; text-align: center; }
+
+  @media (max-width: 960px) {
+    .users-table-wrap { overflow-x: auto; }
+    .users-table { min-width: 820px; }
+  }
+</style>
+{% endblock %}
+
+{% block nav_users %}active{% endblock %}
+
+{% block content %}
+  <div class="topbar users-page-header">
+    <div>
+      <h1>User Management</h1>
+      <div class="sub">Staff accounts, roles, status, and lockout recovery</div>
+    </div>
+    <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+      <i class="bi bi-box-arrow-right"></i> Logout
+    </button>
+  </div>
+
+  <div id="accessDenied" class="card p-4 access-denied" hidden>
+    <i class="bi bi-shield-lock fs-1 text-danger"></i>
+    <h4 class="mt-3">Admin access required</h4>
+    <p class="muted mb-0">User accounts can only be managed by an administrator.</p>
+  </div>
+
+  <div id="adminContent" hidden>
+    <div id="message" class="alert" hidden></div>
+
+    <div class="card p-4 mb-4">
+      <h5>Add staff user</h5>
+      <div class="row g-2">
+        <div class="col-md-3"><input id="newUsername" class="form-control" placeholder="Username" autocomplete="off"></div>
+        <div class="col-md-3"><input id="newPassword" type="password" class="form-control" placeholder="Password" autocomplete="new-password"></div>
+        <div class="col-md-3"><select id="newRole" class="form-select"><option>STAFF</option><option>MANAGER</option><option>ADMIN</option></select></div>
+        <div class="col-md-3"><button class="btn btn-primary w-100" id="createUserButton" onclick="createUser()">Create user</button></div>
+      </div>
+    </div>
+
+    <div class="card p-4">
+      <div class="d-flex justify-content-between mb-3">
+        <h5 class="mb-0">Staff accounts</h5>
+        <button class="btn btn-outline-secondary btn-sm" onclick="refreshUsers(this)">Refresh</button>
+      </div>
+      <div class="users-table-wrap">
+        <table class="table table-hover align-middle users-table">
+          <thead>
+            <tr><th>ID</th><th>Username</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="userBody"><tr><td colspan="6" class="text-center muted">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="passwordModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Reset password</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body">
+          <p>Set a new password for <strong id="resetUsername"></strong>.</p>
+          <input id="resetPassword" type="password" class="form-control" placeholder="Minimum 6 characters" autocomplete="new-password">
+          <div id="resetPasswordError" class="text-danger small mt-2" hidden></div>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-primary" id="resetPasswordButton" onclick="submitPasswordReset()">Reset password</button></div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block page_scripts %}
 <script>
-const token=sessionStorage.getItem('access_token');if(!token)location.href='/dashboard/login/';
-function logout(){sessionStorage.clear();location.href='/dashboard/login/';}
-function message(text,type='success'){const e=document.getElementById('message');e.className='alert alert-'+type;e.textContent=text;}
-async function api(url,options={}){const h=new Headers(options.headers||{});h.set('Authorization','Bearer '+token);const r=await fetch(url,{...options,headers:h});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Request failed');return d;}
-async function loadUsers(){try{const rows=await api('/api/users/');userBody.innerHTML=rows.length?rows.map(u=>{
-  let statusHtml;
-  if(!u.is_active){
-    statusHtml='<span class="text-danger">Inactive</span>';
-  }else if(u.is_locked){
-    const until=u.locked_until?new Date(u.locked_until).toLocaleTimeString():'';
-    statusHtml=`<span class="text-danger fw-semibold">🔒 Locked</span>${until?`<br><small class="muted">until ${until}</small>`:''}`;
-  }else{
-    statusHtml='<span class="text-success">Active</span>';
-    if(u.failed_login_count>0){
-      statusHtml+=`<br><small class="muted">${u.failed_login_count} failed attempt${u.failed_login_count===1?'':'s'}</small>`;
+  let resetUserId = null;
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, character => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[character]));
+  }
+
+  function showMessage(text, type = 'success') {
+    const element = document.getElementById('message');
+    element.className = `alert alert-${type}`;
+    element.innerText = text;
+    element.hidden = false;
+  }
+
+  function roleLabel(user) {
+    return `<span class="badge text-bg-secondary">${escapeHtml(user.role)}</span>`;
+  }
+
+  function statusLabel(user) {
+    if (!user.is_active) return '<span class="text-danger">Inactive</span>';
+    if (user.is_locked) {
+      const until = user.locked_until ? new Date(user.locked_until).toLocaleTimeString() : '';
+      return `<span class="text-danger fw-semibold"><i class="bi bi-lock-fill"></i> Locked</span>${until ? `<br><small class="muted">until ${escapeHtml(until)}</small>` : ''}`;
+    }
+    const failed = Number(user.failed_login_count || 0);
+    return `<span class="text-success">Active</span>${failed ? `<br><small class="muted">${failed} failed attempt${failed === 1 ? '' : 's'}</small>` : ''}`;
+  }
+
+  async function loadUsers() {
+    try {
+      const rows = await apiFetch('/api/users/');
+      const body = document.getElementById('userBody');
+      body.innerHTML = rows.length ? rows.map(user => {
+        const showUnlock = user.is_locked || Number(user.failed_login_count || 0) > 0;
+        return `<tr>
+          <td>${escapeHtml(user.id)}</td>
+          <td>${escapeHtml(user.username)}</td>
+          <td>${roleLabel(user)}</td>
+          <td>${statusLabel(user)}</td>
+          <td>${user.date_joined ? escapeHtml(new Date(user.date_joined).toLocaleDateString()) : '-'}</td>
+          <td><div class="user-actions">
+            <button class="btn btn-outline-secondary btn-sm" data-user-action="toggle" data-user-id="${user.id}" data-active="${user.is_active}">${user.is_active ? 'Deactivate' : 'Activate'}</button>
+            ${showUnlock ? `<button class="btn btn-outline-warning btn-sm" data-user-action="unlock" data-user-id="${user.id}">Unlock</button>` : ''}
+            <button class="btn btn-outline-primary btn-sm" data-user-action="reset" data-user-id="${user.id}" data-username="${escapeHtml(user.username)}">Reset password</button>
+          </div></td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="6" class="text-center muted">No users found.</td></tr>';
+    } catch (error) {
+      document.getElementById('userBody').innerHTML = `<tr><td colspan="6" class="text-center text-danger">${escapeHtml(error.message)}</td></tr>`;
+      showMessage(error.message, 'danger');
     }
   }
-  const showUnlock=u.is_locked||u.failed_login_count>0;
-  return `<tr><td>${u.id}</td><td>${escapeHtml(u.username)}</td><td><span class="badge text-bg-secondary">${escapeHtml(u.role)}</span></td><td>${statusHtml}</td><td>${u.date_joined?new Date(u.date_joined).toLocaleDateString():'-'}</td><td class="d-flex flex-wrap gap-1"><button class="btn btn-outline-secondary btn-sm" onclick="toggleUser(${u.id},${u.is_active})">${u.is_active?'Deactivate':'Activate'}</button>${showUnlock?`<button class="btn btn-outline-warning btn-sm" onclick="unlock(${u.id})">Unlock</button>`:''}<button class="btn btn-outline-primary btn-sm" onclick="resetPassword(${u.id},'${escapeHtml(u.username)}')">Reset password</button></td></tr>`;
-}).join(''):'<tr><td colspan="6" class="text-center muted">No users found.</td></tr>';}catch(e){userBody.innerHTML='<tr><td colspan="6" class="text-center text-danger">'+escapeHtml(e.message)+'</td></tr>';}}
-async function refreshUsers(){const btn=event.currentTarget;const original=btn.textContent;btn.disabled=true;btn.textContent='Refreshing...';await loadUsers();btn.textContent='Refreshed ✓';setTimeout(()=>{btn.textContent=original;btn.disabled=false;},900);}
-async function resetPassword(id,username){const pw=prompt('New password for '+username+' (min 6 characters):');if(pw===null)return;if(pw.trim().length<6){message('Password must be at least 6 characters.','danger');return;}try{await api('/api/users/'+id+'/',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw.trim()})});message('Password reset for '+username+'.');loadUsers();}catch(e){message(e.message,'danger');}}
-async function createUser(){try{await api('/api/users/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:newUsername.value,password:newPassword.value,role:newRole.value})});message('User created.');newUsername.value='';newPassword.value='';loadUsers();}catch(e){message(e.message,'danger');}}
-async function toggleUser(id,isActive){try{await api('/api/users/'+id+'/',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:!isActive})});loadUsers();}catch(e){message(e.message,'danger');}}
-async function unlock(id){try{await api('/api/users/'+id+'/unlock/',{method:'POST'});message('Account unlocked.');loadUsers();}catch(e){message(e.message,'danger');}}
-function escapeHtml(v){return String(v??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));}loadUsers();
-</script></body></html>
+
+  async function refreshUsers(button) {
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Refreshing...';
+    await loadUsers();
+    button.textContent = 'Refreshed';
+    setTimeout(() => { button.textContent = original; button.disabled = false; }, 900);
+  }
+
+  async function createUser() {
+    const button = document.getElementById('createUserButton');
+    const username = document.getElementById('newUsername').value.trim();
+    const password = document.getElementById('newPassword').value;
+    const role = document.getElementById('newRole').value;
+    if (!username || !password) return showMessage('Username and password are required.', 'danger');
+    if (password.length < 6) return showMessage('Password must be at least 6 characters.', 'danger');
+    button.disabled = true;
+    try {
+      await apiFetch('/api/users/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, role }) });
+      showMessage('User created.');
+      document.getElementById('newUsername').value = '';
+      document.getElementById('newPassword').value = '';
+      await loadUsers();
+    } catch (error) {
+      showMessage(error.message, 'danger');
+    } finally { button.disabled = false; }
+  }
+
+  function openPasswordReset(id, username) {
+    resetUserId = id;
+    document.getElementById('resetUsername').innerText = username;
+    document.getElementById('resetPassword').value = '';
+    document.getElementById('resetPasswordError').hidden = true;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('passwordModal')).show();
+  }
+
+  async function submitPasswordReset() {
+    const password = document.getElementById('resetPassword').value.trim();
+    const errorElement = document.getElementById('resetPasswordError');
+    if (password.length < 6) { errorElement.innerText = 'Password must be at least 6 characters.'; errorElement.hidden = false; return; }
+    const button = document.getElementById('resetPasswordButton');
+    button.disabled = true;
+    try {
+      await apiFetch(`/api/users/${resetUserId}/`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('passwordModal')).hide();
+      showMessage('Password reset successfully.');
+      await loadUsers();
+    } catch (error) { errorElement.innerText = error.message; errorElement.hidden = false; }
+    finally { button.disabled = false; }
+  }
+
+  async function toggleUser(id, isActive) {
+    try { await apiFetch(`/api/users/${id}/`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: isActive !== 'true' }) }); showMessage('User status updated.'); await loadUsers(); }
+    catch (error) { showMessage(error.message, 'danger'); }
+  }
+
+  async function unlock(id) {
+    try { await apiFetch(`/api/users/${id}/unlock/`, { method: 'POST' }); showMessage('Account unlocked.'); await loadUsers(); }
+    catch (error) { showMessage(error.message, 'danger'); }
+  }
+
+  document.getElementById('userBody').addEventListener('click', event => {
+    const button = event.target.closest('[data-user-action]');
+    if (!button) return;
+    const action = button.dataset.userAction;
+    if (action === 'toggle') toggleUser(button.dataset.userId, button.dataset.active);
+    if (action === 'unlock') unlock(button.dataset.userId);
+    if (action === 'reset') openPasswordReset(button.dataset.userId, button.dataset.username);
+  });
+
+  async function initializeUserManagement() {
+    const role = await fetchCurrentUser();
+    const isAdmin = role === 'ADMIN';
+    document.getElementById('adminContent').hidden = !isAdmin;
+    document.getElementById('accessDenied').hidden = isAdmin;
+    if (isAdmin) await loadUsers();
+  }
+
+  initializeUserManagement();
+</script>
+{% endblock %}

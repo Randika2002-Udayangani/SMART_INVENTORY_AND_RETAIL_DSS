@@ -484,6 +484,11 @@ class LifecycleProductHistoryView(APIView):
 
 class LossRecordView(APIView):
 
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAuthenticated()]
+        return [IsManagerOrAdmin()]
+
     def get(self, request):
         queryset  = LossRecord.objects.all().order_by('-loss_date')
         loss_type = request.query_params.get('loss_type')
@@ -504,6 +509,10 @@ class LossRecordView(APIView):
             'id', 'product', 'product__product_name', 'batch', 'loss_type',
             'loss_quantity', 'loss_value', 'loss_date', 'notes'
         )
+        data = [
+            {**row, 'product_name': row.pop('product__product_name')}
+            for row in data
+        ]
         return Response(list(data))
 
     def post(self, request):
@@ -524,20 +533,51 @@ class LossRecordView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if (
+            loss_type not in ['DAMAGE', 'EXPIRY']
+            and not (
+                request.user.is_superuser
+                or request.user.groups.filter(name__in=['ADMIN', 'MANAGER']).exists()
+            )
+        ):
+            return Response(
+                {'error': 'Staff may record damage or verified expiry only'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            quantity = int(loss_quantity)
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'loss_quantity must be a whole number'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if quantity <= 0:
+            return Response(
+                {'error': 'loss_quantity must be greater than zero'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(str(notes)) > 255:
+            return Response(
+                {'error': 'notes must be 255 characters or fewer'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             product = Product.objects.get(pk=product_id)
         except Product.DoesNotExist:
             return Response({'error': 'Product not found'},
                             status=status.HTTP_404_NOT_FOUND)
 
-        loss_value = int(loss_quantity) * (product.avg_cost_price or 0)
+        loss_value = quantity * (product.avg_cost_price or 0)
 
         record = LossRecord.objects.create(
             product       = product,
             loss_type     = loss_type,
-            loss_quantity = int(loss_quantity),
+            loss_quantity = quantity,
             loss_value    = loss_value,
             loss_date     = date.today(),
+            recorded_by   = request.user,
             notes         = notes,
         )
 
@@ -547,7 +587,7 @@ class LossRecordView(APIView):
             new_value={
                 'product': product.product_name,
                 'loss_type': loss_type,
-                'loss_quantity': int(loss_quantity),
+                'loss_quantity': quantity,
                 'loss_value': str(loss_value),
             },
             request=request,
@@ -558,12 +598,14 @@ class LossRecordView(APIView):
             'loss_id'      : record.id,
             'product'      : product.product_name,
             'loss_type'    : loss_type,
-            'loss_quantity': int(loss_quantity),
+            'loss_quantity': quantity,
             'loss_value'   : str(loss_value),
         }, status=status.HTTP_201_CREATED)
 
 
 class LossSummaryView(APIView):
+
+    permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
         from sales.models import DailyBillSummary
@@ -605,6 +647,8 @@ class LossSummaryView(APIView):
 
 
 class LossAutoDetectView(APIView):
+
+    permission_classes = [IsManagerOrAdmin]
 
     def post(self, request):
         today   = date.today()
@@ -658,6 +702,8 @@ class LossAutoDetectView(APIView):
 
 
 class SupplierReturnView(APIView):
+
+    permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
         queryset    = SupplierReturn.objects.all().order_by('-return_date')
@@ -750,6 +796,8 @@ class SupplierReturnView(APIView):
 
 
 class SupplierReturnStatusView(APIView):
+
+    permission_classes = [IsManagerOrAdmin]
 
     def patch(self, request, pk):
         new_status = request.data.get('status')
@@ -1467,6 +1515,7 @@ class ReorderCalculateView(APIView):
     frozen sample data only. Production calls should omit this and
     let it default to today.
     """
+    permission_classes = [IsManagerOrAdmin]
  
     def post(self, request):
         as_of_str = request.data.get('as_of')
@@ -1582,6 +1631,7 @@ class ReorderRecommendationDetailView(APIView):
     Staff/Manager marks recommendation ORDERED or IGNORED.
     Body: {"status": "ORDERED"} or {"status": "IGNORED"}
     """
+    permission_classes = [IsManagerOrAdmin]
  
     def patch(self, request, pk):
         try:
