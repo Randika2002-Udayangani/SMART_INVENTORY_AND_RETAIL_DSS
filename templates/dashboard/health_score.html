@@ -149,6 +149,7 @@
 <script>
 const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
+if (!token) { window.location.href = '/dashboard/login/'; }
 
 function doLogout() {
     sessionStorage.removeItem('access_token');
@@ -442,3 +443,4 @@ loadCategories();
 </script>
 </body>
 </html>
+

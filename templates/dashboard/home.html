@@ -598,6 +598,7 @@
 
   async function apiFetch(url, options = {}) {
     const token = sessionStorage.getItem('access_token');
+if (!token) { window.location.href = '/dashboard/login/'; }
     const headers = new Headers(options.headers || {});
     headers.set('Authorization', 'Bearer ' + token);
     const response = await fetch(url, { ...options, headers });
@@ -808,6 +809,7 @@
   // JWT CHECK
 function checkAuth() {
     const token = sessionStorage.getItem('access_token');
+if (!token) { window.location.href = '/dashboard/login/'; }
     if (!token) { window.location.href = '/dashboard/login/'; }
 }
 checkAuth();
@@ -1099,3 +1101,4 @@ fetchTopProducts();
 </script>
 </body>
 </html>
+

@@ -141,6 +141,7 @@
 <script>
 const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
+if (!token) { window.location.href = '/dashboard/login/'; }
 
 document.addEventListener('DOMContentLoaded', () => {
     const params = new URLSearchParams(window.location.search);

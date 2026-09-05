@@ -67,6 +67,7 @@
 <script>
 const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
+if (!token) { window.location.href = '/dashboard/login/'; }
 
 function doLogout() {
     sessionStorage.removeItem('access_token');
@@ -124,6 +125,7 @@ function setDefaultDates() {
 
 async function downloadReport(endpoint, filenameBase, format, extraParams = {}, button = null) {
     const token = sessionStorage.getItem('access_token');
+if (!token) { window.location.href = '/dashboard/login/'; }
     const params = new URLSearchParams({ format, ...extraParams });
     setDownloadLoading(button, true);
     try {
@@ -170,3 +172,4 @@ setDefaultDates();
 </script>
 </body>
 </html>
+

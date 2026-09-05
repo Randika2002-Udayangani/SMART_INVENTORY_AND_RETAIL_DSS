@@ -412,108 +412,113 @@
 
     // ── Place order ──────────────────────────────────────────────
     async function placeOrder() {
-    if (!token) {
-        showAuthModal();
-        return;
-    }
-
-    if (!validate()) return;
-
-    const cart  = JSON.parse(sessionStorage.getItem('cart') || '[]');
-    const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0);
-
-    const btn       = document.getElementById('checkoutBtn');
-    btn.disabled    = true;
-    btn.textContent = 'Placing order...';
-
-    const items = cart.map(item => ({
-        product_id:  item.product_id || item.id,
-        quantity: item.qty
-    }));
-
-    console.log('Sending items:', items);
-
-    const orderData = {
-        items:       items,
-        pickup_date: document.getElementById('pickupDate').value,
-        time_slot:   selectedSlot,
-        notes:       document.getElementById('notes').value
-    };
-
-    console.log('Full order data:', orderData);
-
-    let refNum = '';
-
-    try {
-        const res = await fetch('/api/orders/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + token
-            },
-            body: JSON.stringify(orderData)
-        });
-
-        console.log('Response status:', res.status);
-
-        if (res.status === 401) {
-            window.location.href = '/customer/login/';
+        if (!token) {
+            showAuthModal();
             return;
         }
 
-        const responseText = await res.text();
-        console.log('Raw response:', responseText);
+        if (!validate()) return;
 
-        if (res.ok) {
-            const data = JSON.parse(responseText);
-            refNum = data.order_reference
-                || data.reference
-                || data.ref
-                || data.id
-                || 'ORD-2026-' + String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
-        } else {
-            let errMsg = responseText;
-            try {
-                const errJson = JSON.parse(responseText);
-                errMsg = JSON.stringify(errJson);
-                console.error('Order error:', errJson);
-            } catch(e) {}
+        const cart  = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0);
 
-            alert('Could not place order:\n' + errMsg);
-            btn.disabled    = false;
-            btn.textContent = `Place Order — Rs ${total.toFixed(2)}`;
-            return;
+        const btn       = document.getElementById('checkoutBtn');
+        btn.disabled    = true;
+        btn.textContent = 'Placing order...';
+
+        const items = cart.map(item => ({
+            product_id:  item.product_id || item.id,
+            quantity: item.qty
+        }));
+
+        console.log('Sending items:', items);
+
+        const orderData = {
+            items:       items,
+            pickup_date: document.getElementById('pickupDate').value,
+            time_slot:   selectedSlot,
+            notes:       document.getElementById('notes').value
+        };
+
+        console.log('Full order data:', orderData);
+
+        let refNum = '';
+
+        try {
+            const res = await fetch('/api/orders/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify(orderData)
+            });
+
+            console.log('Response status:', res.status);
+
+            if (res.status === 401) {
+                window.location.href = '/customer/login/';
+                return;
+            }
+
+            const responseText = await res.text();
+            console.log('Raw response:', responseText);
+
+            if (res.ok) {
+                const data = JSON.parse(responseText);
+                refNum = data.order_reference
+                    || data.reference
+                    || data.ref
+                    || data.id
+                    || 'ORD-2026-' + String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+            } else {
+                let errMsg = responseText;
+                try {
+                    const errJson = JSON.parse(responseText);
+                    errMsg = JSON.stringify(errJson);
+                    console.error('Order error:', errJson);
+                } catch(e) {}
+
+                if (errMsg.includes('stock') || errMsg.includes('Stock')) {
+                    alert('⚠️ Sorry — this item is currently out of stock. Please try a different product.');
+                } else {
+                    alert('Could not place order:\n' + errMsg);
+                }          
+                      
+                btn.disabled    = false;
+                btn.textContent = `Place Order — Rs ${total.toFixed(2)}`;
+                return;
+            }
+
+        } catch (err) {
+            console.error('Order failed:', err);
+            refNum = 'ORD-2026-' +
+                String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
         }
 
-    } catch (err) {
-        console.error('Order failed:', err);
-        refNum = 'ORD-2026-' +
-            String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+        // Save to My Orders
+        const newOrder = {
+            ref:     refNum,
+            product: cart.map(i => i.product_name).join(', '),
+            qty:     cart.reduce((s, i) => s + i.qty, 0),
+            total:   `Rs ${total.toFixed(2)}`,
+            date:    document.getElementById('pickupDate').value,
+            slot:    selectedSlot,
+            status:  'PENDING'
+        };
+
+        const existing = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+        existing.unshift(newOrder);
+        sessionStorage.setItem('myOrders', JSON.stringify(existing));
+
+        // Clear cart
+        sessionStorage.removeItem('cart');
+
+        // Show success
+        document.getElementById('cartContent').style.display   = 'none';
+        document.getElementById('successScreen').style.display = 'block';
+        document.getElementById('referenceNumber').textContent  = refNum;
     }
-
-    // Save to My Orders
-    const newOrder = {
-        ref:     refNum,
-        product: cart.map(i => i.product_name).join(', '),
-        qty:     cart.reduce((s, i) => s + i.qty, 0),
-        total:   `Rs ${total.toFixed(2)}`,
-        date:    document.getElementById('pickupDate').value,
-        slot:    selectedSlot,
-        status:  'PENDING'
-    };
-
-    const existing = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
-    existing.unshift(newOrder);
-    sessionStorage.setItem('myOrders', JSON.stringify(existing));
-
-    // Clear cart
-    sessionStorage.removeItem('cart');
-
-    // Show success
-    document.getElementById('cartContent').style.display   = 'none';
-    document.getElementById('successScreen').style.display = 'block';
-    document.getElementById('referenceNumber').textContent  = refNum;
-}
 
     function logout() {
         const orders = sessionStorage.getItem('myOrders');

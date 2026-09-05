@@ -137,6 +137,49 @@
         .step-label { font-size: 0.7rem; color: #888; text-align: center; }
         .timeline-step.done .step-label,
         .timeline-step.current .step-label { color: #1a73e8; font-weight: 600; }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .modal-box {
+            background: white; border-radius: 16px; padding: 28px;
+            max-width: 400px; width: 90%; text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .modal-box h3 { font-size: 1.1rem; color: #222; margin-bottom: 6px; }
+        .modal-box p { font-size: 0.88rem; color: #666; margin-bottom: 16px; }
+
+        .star-row {
+            display: flex; justify-content: center; gap: 8px;
+            margin-bottom: 16px;
+        }
+        .star {
+            font-size: 2rem; cursor: pointer; color: #ddd;
+            transition: color 0.15s;
+        }
+        .star.active { color: #f4b400; }
+
+        .feedback-input {
+            width: 100%; padding: 10px 14px;
+            border: 1.5px solid #ddd; border-radius: 8px;
+            font-size: 0.9rem; resize: vertical;
+            min-height: 80px; margin-bottom: 16px;
+            font-family: 'Segoe UI', sans-serif;
+            outline: none;
+        }
+        .feedback-input:focus { border-color: #1a73e8; }
+
+        .modal-buttons { display: flex; gap: 10px; }
+        .modal-btn {
+            flex: 1; padding: 11px; border-radius: 8px;
+            font-size: 0.95rem; font-weight: 600; cursor: pointer; border: none;
+        }
+        .modal-btn.primary { background: #1a73e8; color: white; }
+        .modal-btn.primary:hover { background: #1558b0; }
+        .modal-btn.outline {
+            background: white; color: #666; border: 1.5px solid #ddd;
+        }
     </style>
 </head>
 <body>
@@ -234,37 +277,53 @@
         document.getElementById('orderCount').textContent =
             `${orders.length} order${orders.length > 1 ? 's' : ''}`;
 
-        list.innerHTML = orders.map(o => `
-            <div class="order-card">
-                <div class="order-info">
-                    <div class="reference">
-                        📄 ${o.ref || o.reference || o.order_reference || 'N/A'}
+        list.innerHTML = orders.map(o => {
+            const productName = o.product || o.product_name || o.item || 'Product';
+            const orderId     = o.id || null;
+            const orderRef    = o.ref || o.reference || o.order_reference || 'N/A';
+            const status      = o.status || 'PENDING';
+
+            return `
+                <div class="order-card">
+                    <div class="order-info">
+                        <div class="reference">
+                            📄 ${orderRef}
+                        </div>
+                        <div class="product-name">
+                            ${productName}
+                        </div>
+                        <div class="details">
+                            <span>📦 Qty: ${o.qty || o.quantity || 1}</span>
+                            <span>📅 ${o.date || o.pickup_date || 'N/A'}</span>
+                            <span>${slotLabel[o.slot || o.pickup_time_slot] || o.slot || ''}</span>
+                        </div>
                     </div>
-                    <div class="product-name">
-                        ${o.product || o.product_name || o.item || 'Product'}
+                    <div class="order-right">
+                        <div class="total">
+                            ${o.total || o.total_price || ''}
+                        </div>
+                        <span class="status-badge status-${status}">
+                            ${status}
+                        </span>
+
+                        ${status === 'PENDING' ? `
+                            <button onclick="cancelOrder(${orderId}, '${orderRef}')"
+                                style="margin-top:8px; width:100%; padding:6px;
+                                background:white; color:#c5221f; border:1.5px solid #c5221f;
+                                border-radius:6px; cursor:pointer; font-size:0.82rem;">
+                                Cancel Order
+                            </button>` : ''}
+
+                        ${status === 'COMPLETED' ? `
+                            <button onclick="openRatingModal(${orderId}, '${productName.replace(/'/g, '')}')"
+                                style="margin-top:8px; width:100%; padding:6px;
+                                background:#e8f0fe; color:#1a73e8; border:1.5px solid #1a73e8;
+                                border-radius:6px; cursor:pointer; font-size:0.82rem;">
+                                ⭐ Rate this order
+                            </button>` : ''}
                     </div>
-                    <div class="details">
-                        <span>📦 Qty: ${o.qty || o.quantity || 1}</span>
-                        <span>📅 ${o.date || o.pickup_date || 'N/A'}</span>
-                        <span>${slotLabel[o.slot || o.pickup_time_slot] || o.slot || ''}</span>
-                    </div>
-                </div>
-                <div class="order-right">
-                    <div class="total">
-                        ${o.total || o.total_price || ''}
-                    </div>
-                    <span class="status-badge status-${o.status || 'PENDING'}">
-                        ${o.status || 'PENDING'}
-                    </span>
-                    ${(o.status === 'PENDING') ? `
-                    <button onclick="cancelOrder(${o.id || null}, '${o.ref || ''}')"
-                        style="margin-top:8px; width:100%; padding:6px;
-                        background:white; color:#c5221f; border:1.5px solid #c5221f;
-                        border-radius:6px; cursor:pointer; font-size:0.82rem;">
-                        Cancel Order
-                    </button>` : ''}
-                </div>
-            </div>`).join('');
+                </div>`;
+        }).join('');
     }
 
     async function cancelOrder(orderId, ref) {
@@ -352,10 +411,103 @@
                     </div>`).join('')}
             </div>`;
     }
-    
+    // ── Rating ───────────────────────────────────────────────────
+    let currentRating    = 0;
+    let currentProductId = null;
+
+    function openRatingModal(orderId, productName) {
+        currentRating    = 0;
+        currentProductId = orderId;
+        document.getElementById('ratingProductName').textContent =
+            `How was: ${productName}?`;
+        document.getElementById('feedbackText').value = '';
+        updateStars(0);
+        document.getElementById('ratingModal').style.display = 'flex';
+    }
+
+    function closeRatingModal() {
+        document.getElementById('ratingModal').style.display = 'none';
+        currentRating    = 0;
+        currentProductId = null;
+    }
+
+    function setRating(rating) {
+        currentRating = rating;
+        updateStars(rating);
+    }
+
+    function updateStars(rating) {
+        const stars = document.querySelectorAll('.star');
+        stars.forEach((star, i) => {
+            star.classList.toggle('active', i < rating);
+        });
+    }
+
+    async function submitRating() {
+        if (currentRating === 0) {
+            alert('Please select a star rating!');
+            return;
+        }
+
+        const feedbackText = document.getElementById('feedbackText').value.trim();
+
+        try {
+            const res = await fetch('/api/ratings/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    product:       currentProductId,
+                    rating:        currentRating,
+                    feedback_text: feedbackText
+                })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                closeRatingModal();
+                alert(`✅ Thank you for your rating!${data.is_verified ? ' (Verified purchase ✓)' : ''}`);
+            } else {
+                alert(data.error || 'Could not submit rating. Please try again.');
+            }
+        } catch (err) {
+            console.error('Rating error:', err);
+            alert('Connection error. Please try again.');
+        }
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('ratingModal').addEventListener('click', function(e) {
+        if (e.target === this) closeRatingModal();
+    });
     // ── Start ─────────────────────────────────────────────────────
     loadOrders();
 </script>
+<!-- Rating Modal -->
+<div class="modal-overlay" id="ratingModal" style="display:none;">
+    <div class="modal-box">
+        <h3>⭐ Rate Your Order</h3>
+        <p id="ratingProductName">How was your experience?</p>
 
+        <div class="star-row" id="starRow">
+            <span class="star" onclick="setRating(1)">★</span>
+            <span class="star" onclick="setRating(2)">★</span>
+            <span class="star" onclick="setRating(3)">★</span>
+            <span class="star" onclick="setRating(4)">★</span>
+            <span class="star" onclick="setRating(5)">★</span>
+        </div>
+
+        <textarea class="feedback-input" id="feedbackText"
+            placeholder="Share your experience (optional)..."></textarea>
+
+        <div class="modal-buttons">
+            <button class="modal-btn outline" onclick="closeRatingModal()">Cancel</button>
+            <button class="modal-btn primary" onclick="submitRating()">Submit Rating</button>
+        </div>
+    </div>
+</div>
 </body>
 </html>
