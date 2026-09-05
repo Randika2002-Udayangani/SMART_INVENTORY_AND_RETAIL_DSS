@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Login</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #f0f4f8;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .card h2 {
+            text-align: center;
+            color: #1a73e8;
+            margin-bottom: 8px;
+        }
+
+        .card p.subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 28px;
+            font-size: 0.9rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #444;
+        }
+
+        input {
+            width: 100%;
+            padding: 11px 14px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1rem;
+            margin-bottom: 18px;
+            outline: none;
+        }
+        input:focus { border-color: #1a73e8; }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn:hover { background: #1558b0; }
+        .btn:disabled { background: #aaa; cursor: not-allowed; }
+
+        .error-msg {
+            color: #d32f2f;
+            font-size: 0.88rem;
+            margin-bottom: 14px;
+            text-align: center;
+            display: none;
+        }
+
+        .register-link {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .register-link a { color: #1a73e8; text-decoration: none; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>🛒 SmartDeals</h2>
+    <p class="subtitle">Sign in to your account</p>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <label>Email</label>
+    <input type="email" id="email" placeholder="you@email.com">
+
+    <label>Password</label>
+    <input type="password" id="password" placeholder="Your password">
+
+    <button class="btn" id="loginBtn" onclick="doLogin()">Login</button>
+
+    <div class="register-link">
+        Don't have an account? <a href="/customer/register/">Register here</a>
+    </div>
+</div>
+
+<script>
+    if (sessionStorage.getItem('jwt')) {
+        window.location.href = '/customer/products/';
+    }
+
+    async function doLogin() {
+        const email    = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        const btn      = document.getElementById('loginBtn');
+
+        if (!email || !password) {
+            showError('Please enter both email and password.');
+            return;
+        }
+
+        btn.disabled    = true;
+        btn.textContent = 'Logging in...';
+
+        try {
+            const res = await fetch('/api/customer-auth/login/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await res.json();
+            console.log('Login response:', data);
+
+            if (res.ok) {
+                // Token is directly data.access (not nested)
+                sessionStorage.setItem('jwt', data.access);
+                sessionStorage.setItem('customerName', data.name);
+                window.location.href = '/customer/products/';
+            } else {
+                showError(data.error || 'Wrong email or password.');
+            }
+        } catch (err) {
+            console.error('Login error:', err);
+            showError('Connection error. Please check server is running.');
+        }
+
+        btn.disabled    = false;
+        btn.textContent = 'Login';
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('errorMsg');
+        el.textContent   = msg;
+        el.style.display = 'block';
+    }
+
+    document.addEventListener('keypress', e => {
+        if (e.key === 'Enter') doLogin();
+    });
+</script>
+
+</body>
+</html>
