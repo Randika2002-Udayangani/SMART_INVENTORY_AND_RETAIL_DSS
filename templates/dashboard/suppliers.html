@@ -7,7 +7,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
-        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
+        .page-header { position:sticky; top:0; z-index:1020; background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
         .btn-primary { background:#2d6a4f; border:none; }
         .btn-primary:hover { background:#1b4332; }
         .card { border-radius:12px; border:1px solid #e2e8f0; }
@@ -122,9 +122,15 @@ function renderSuppliers() {
             <td>${s.contact_number ?? s.phone ?? '—'}</td>
             <td>${s.lead_time_days ?? '—'} days</td>
             <td>${s.return_policy ?? '—'}</td>
-            <td>
-                <button class="btn btn-sm btn-outline-secondary" onclick='editSupplier(${JSON.stringify(s)})'>Edit</button>
-            </td>
+                    <td>
+                        <div class="d-flex gap-1 flex-wrap">
+                            <button class="btn btn-sm btn-outline-secondary" onclick='editSupplier(${JSON.stringify(s)})'>Edit</button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="showScorecard(${s.id ?? s.supplier_id})">Scorecard</button>
+                            <button class="btn btn-sm btn-outline-info" onclick="showCostTrend(${s.id ?? s.supplier_id})">Cost trend</button>
+                            <button class="btn btn-sm btn-outline-dark" onclick="showPurchaseHistory(${s.id ?? s.supplier_id})">Purchases</button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteSupplier(${s.id ?? s.supplier_id})">Delete</button>
+                        </div>
+                    </td>
         </tr>
     `).join('');
 }
@@ -155,6 +161,96 @@ function editSupplier(s) {
 
 function hideForm() {
     document.getElementById('supForm').style.display = 'none';
+}
+
+function showSupplierModal(title, body) {
+    document.getElementById('supplierModalTitle').textContent = title;
+    document.getElementById('supplierModalBody').innerHTML = body;
+    const modal = document.getElementById('supplierModal');
+    if (window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modal).show();
+    } else {
+        modal.style.display = 'block';
+        modal.classList.add('show');
+    }
+}
+
+function hideSupplierModal() {
+    const modal = document.getElementById('supplierModal');
+    if (window.bootstrap?.Modal) {
+        bootstrap.Modal.getInstance(modal)?.hide();
+    } else {
+        modal.style.display = 'none';
+        modal.classList.remove('show');
+    }
+}
+
+async function deleteSupplier(id) {
+    if (!id || !confirm('Delete this supplier?')) return;
+    try {
+        const res = await fetch(`/api/suppliers/${id}/`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) throw new Error('Delete failed');
+        loadSuppliers();
+    } catch (e) {
+        alert('Could not delete supplier.');
+    }
+}
+
+async function showScorecard(id) {
+    showSupplierModal('Supplier Scorecard', '<div class="text-muted">Loading...</div>');
+    try {
+        const res = await fetch(`/api/suppliers/${id}/scorecard/`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) throw new Error('Request failed');
+        const score = await res.json();
+        const components = score.components ?? {};
+        showSupplierModal('Supplier Scorecard', `
+            <h6>${score.supplier_name ?? 'Supplier'}</h6>
+            <p class="fs-4 fw-bold mb-3">Overall score: ${score.overall_score ?? '—'}</p>
+            <table class="table table-sm">
+                <tbody>${Object.entries(components).map(([name, value]) => `<tr><td>${name.replaceAll('_', ' ')}</td><td>${value}</td></tr>`).join('') || '<tr><td class="text-muted">Insufficient data</td></tr>'}</tbody>
+            </table>`);
+    } catch (e) {
+        showSupplierModal('Supplier Scorecard', '<div class="text-danger">Could not load scorecard.</div>');
+    }
+}
+
+async function showCostTrend(id) {
+    showSupplierModal('Supplier Cost Trend', '<div class="text-muted">Loading...</div>');
+    try {
+        const res = await fetch(`/api/suppliers/${id}/cost-trend/`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) throw new Error('Request failed');
+        const rows = await res.json();
+        const groups = Array.isArray(rows) ? rows : (rows.data ?? []);
+        showSupplierModal('Supplier Cost Trend', groups.map(group => `
+            <h6>${group.product_name ?? 'Product'}</h6>
+            <table class="table table-sm"><thead><tr><th>Purchase date</th><th>Cost</th><th>Change</th></tr></thead><tbody>
+                ${(group.history ?? []).map(item => `<tr><td>${item.purchase_date ?? '—'}</td><td>${item.cost_price ?? '—'}</td><td>${item.increase_pct ?? 0}%</td></tr>`).join('')}
+            </tbody></table>`).join('') || '<div class="text-muted">No cost history found.</div>');
+    } catch (e) {
+        showSupplierModal('Supplier Cost Trend', '<div class="text-danger">Could not load cost trend.</div>');
+    }
+}
+
+async function showPurchaseHistory(id) {
+    showSupplierModal('Supplier Purchase History', '<div class="text-muted">Loading...</div>');
+    try {
+        const res = await fetch('/api/purchases/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) throw new Error('Request failed');
+        const data = await res.json();
+        const purchases = extractArray(data).filter(p => String(p.supplier ?? p.supplier_id) === String(id));
+        showSupplierModal('Supplier Purchase History', purchases.length ? `<table class="table table-sm"><thead><tr><th>Invoice</th><th>Date</th><th>Total</th></tr></thead><tbody>${purchases.map(p => `<tr><td>${p.invoice_number ?? '—'}</td><td>${p.purchase_date ?? '—'}</td><td>${p.total_amount ?? '—'}</td></tr>`).join('')}</tbody></table>` : '<div class="text-muted">No purchases found.</div>');
+    } catch (e) {
+        showSupplierModal('Supplier Purchase History', '<div class="text-danger">Could not load purchase history.</div>');
+    }
 }
 
 async function saveSupplier() {
@@ -196,5 +292,17 @@ async function saveSupplier() {
 
 loadSuppliers();
 </script>
+
+<div class="modal fade" id="supplierModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="supplierModalTitle">Supplier details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="hideSupplierModal()" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="supplierModalBody"></div>
+        </div>
+    </div>
+</div>
 </body>
 </html>

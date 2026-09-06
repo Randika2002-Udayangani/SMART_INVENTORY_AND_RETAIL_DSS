@@ -1,5 +1,7 @@
 {% extends "dashboard/base.html" %}
 
+
+
 {% block title %}Manager Analytics — Smart Inventory DSS{% endblock %}
 
 {% block extra_css %}
@@ -67,6 +69,7 @@
         <option value="three_months">Last 3 months</option>
         <option value="custom">Custom range</option>
       </select>
+
     </div>
     <div class="col-6 col-md-2"><label class="form-label small fw-semibold">From</label><input id="anFrom" type="date" class="form-control form-control-sm"></div>
     <div class="col-6 col-md-2"><label class="form-label small fw-semibold">To</label><input id="anTo" type="date" class="form-control form-control-sm"></div>
@@ -81,6 +84,7 @@
     <div class="col-6 col-md-2"><button id="anApply" class="btn btn-sm w-100" style="background:var(--green2);color:#fff;">Apply</button></div>
   </div>
 </div>
+
 
 <!-- KPIs -->
 <div id="anKpis" class="row g-3 mb-4"></div>
@@ -185,6 +189,7 @@
 
   function iso(d) { return d.toISOString().slice(0, 10); }
 
+
   function setPresetDates() {
     const p = $('anPreset').value;
     const now = new Date();
@@ -207,9 +212,11 @@
     $('anGranularity').value = days <= 14 ? 'daily' : days <= 90 ? 'weekly' : 'monthly';
   }
 
+
   function dateQS() {
     return `date_from=${$('anFrom').value}&date_to=${$('anTo').value}`;
   }
+
 
   function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
 
@@ -250,6 +257,7 @@
     } else {
       $('anQualityBanner').style.display = 'none';
     }
+
 
     const s = o.summary, c = o.changes;
     const cards = [
@@ -351,6 +359,7 @@
       $('anGlobalError').style.display = 'block';
       $('anGlobalError').innerText = msg;
       ['productsChart', 'categoryChart', 'brandChart', 'portfolioChart'].forEach(id => showState(id, id + 'State', 'error', msg));
+
     }
   }
 

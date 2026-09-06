@@ -1,32 +1,27 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Products — Smart Inventory DSS</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+{% extends "dashboard/base.html" %}
+
+{% block title %}Products — Smart Inventory DSS{% endblock %}
+{% block nav_products %}active{% endblock %}
+{% block extra_css %}
     <style>
-        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
-        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
-        .btn-primary { background:#2d6a4f; border:none; }
-        .btn-primary:hover { background:#1b4332; }
-        .card { border-radius:12px; border:1px solid #e2e8f0; }
-        .nav-tabs .nav-link.active { background:#2d6a4f; color:white; border-color:#2d6a4f; }
-        .nav-tabs .nav-link { color:#374151; }
+        .btn-primary { background:var(--sidebar); border:none; }
+        .btn-primary:hover { background:#0a2b2c; }
+        .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
+        .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
+        .nav-tabs .nav-link { color:var(--txt); }
+        .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
         .crud-form { max-width: 520px; }
     </style>
-</head>
-<body>
-<div class="page-header d-flex justify-content-between align-items-center">
+{% endblock %}
+{% block content %}
+<div class="topbar">
     <div>
-        <h4 class="mb-0 fw-bold">Product Management</h4>
-        <small class="text-muted">Samanala Super Mart — product catalogue, import, zone recommendations</small>
-    </div>
-    <div>
-        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
-        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+        <h1>Product Management</h1>
+        <div class="sub">Samanala Super Mart — product catalogue, import, zone recommendations</div>
     </div>
 </div>
+
+<div id="prodPageMsg" class="alert d-none" role="status" aria-live="polite"></div>
 
 <div class="container-fluid px-4">
 
@@ -66,6 +61,12 @@
                 <label class="form-label">Category</label>
                 <select id="prodCategoryId" class="form-select">
                     <option value="">Select category</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Brand</label>
+                <select id="prodBrandId" class="form-select">
+                    <option value="">Select brand</option>
                 </select>
             </div>
         </div>
@@ -298,32 +299,19 @@
     </div>
 </div>
 
+{% endblock %}
+{% block page_scripts %}
 <script>
-const token = sessionStorage.getItem('access_token');
-if (!token) { window.location.href = '/dashboard/login/'; }
-if (!token) { window.location.href = '/dashboard/login/'; }
-
-// Load user role from auth/me endpoint
-async function loadUserRole() {
+async function request(url, options = {}) {
     try {
-        const res = await fetch('/api/auth/me/', { headers: { 'Authorization': 'Bearer ' + token } });
-        if (res.ok) {
-            const data = await res.json();
-            if (data.role) {
-                sessionStorage.setItem('role', data.role);
-            }
-        }
-    } catch(e) {
-        console.log('Could not load user role');
+        const data = await apiFetch(url, options);
+        return { ok: true, status: 200, json: async () => data };
+    } catch (error) {
+        return { ok: false, status: error.status ?? 500, json: async () => error.data ?? { error: error.message } };
     }
 }
 
-function doLogout() {
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('refresh_token');
-    sessionStorage.removeItem('role');
-    window.location.href = '/dashboard/login/';
-}
+
 
 function switchTab(name, btn) {
     ['list','import','zones','brands','categories','zones-crud'].forEach(t => {
@@ -343,6 +331,44 @@ function extractArray(data) {
     return data.results ?? data.products ?? data.data ?? [];
 }
 
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[character]));
+}
+
+function showProductMessage(message, type = 'danger') {
+    const box = document.getElementById('prodPageMsg');
+    box.className = `alert alert-${type}`;
+    box.textContent = message;
+}
+
+function clearProductMessage() {
+    const box = document.getElementById('prodPageMsg');
+    box.className = 'alert d-none';
+    box.textContent = '';
+}
+
+function encodePayload(value) {
+    return encodeURIComponent(JSON.stringify(value));
+}
+
+function openEditFormPayload(payload) {
+    openEditForm(JSON.parse(decodeURIComponent(payload)));
+}
+
+function editBrandPayload(payload) {
+    editBrand(JSON.parse(decodeURIComponent(payload)));
+}
+
+function editCategoryPayload(payload) {
+    editCategory(JSON.parse(decodeURIComponent(payload)));
+}
+
+function editZonePayload(payload) {
+    editZone(JSON.parse(decodeURIComponent(payload)));
+}
+
 function populateCategorySelect(selectEl, selectedValue = '') {
     if (!selectEl) return;
     const cats = JSON.parse(sessionStorage.getItem('product_categories') || '[]');
@@ -356,9 +382,22 @@ function populateCategorySelect(selectEl, selectedValue = '') {
     });
 }
 
+function populateBrandSelect(selectEl, selectedValue = '') {
+    if (!selectEl) return;
+    const brands = JSON.parse(sessionStorage.getItem('product_brands') || '[]');
+    selectEl.innerHTML = '<option value="">Select brand</option>';
+    brands.forEach(brand => {
+        const option = document.createElement('option');
+        option.value = brand.id ?? brand.brand_id;
+        option.textContent = brand.brand_name ?? brand.name;
+        if (String(selectedValue) === String(option.value)) option.selected = true;
+        selectEl.appendChild(option);
+    });
+}
+
 async function loadCategories() {
     try {
-        const res = await fetch('/api/categories/', { headers: { 'Authorization': 'Bearer ' + token } });
+        const res = await request('/api/categories/');
         const data = await res.json();
         const cats = extractArray(data);
         sessionStorage.setItem('product_categories', JSON.stringify(cats));
@@ -376,7 +415,20 @@ async function loadCategories() {
 
         const formSelect = document.getElementById('prodCategoryId');
         if (formSelect) populateCategorySelect(formSelect, formSelect.value || '');
-    } catch(e) {}
+    } catch (e) {
+        showProductMessage('Could not load categories: ' + e.message);
+    }
+}
+
+async function loadBrandsForProductForm() {
+    try {
+        const data = await apiFetch('/api/brands/');
+        const brands = extractArray(data);
+        sessionStorage.setItem('product_brands', JSON.stringify(brands));
+        populateBrandSelect(document.getElementById('prodBrandId'), document.getElementById('prodBrandId').value || '');
+    } catch (e) {
+        showProductMessage('Could not load brands: ' + e.message);
+    }
 }
 
 async function loadProducts() {
@@ -387,7 +439,7 @@ async function loadProducts() {
     if (category) url += `category=${category}`;
 
     try {
-        const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+        const res = await request(url);
         const data = await res.json();
         const rows = extractArray(data);
         const tbody = document.getElementById('prodBody');
@@ -397,14 +449,14 @@ async function loadProducts() {
         }
         tbody.innerHTML = rows.map(p => `
             <tr>
-                <td style="font-weight:600">${p.product_name ?? '—'}</td>
-                <td>${p.category_name ?? '—'}</td>
-                <td>${p.brand_name ?? '—'}</td>
-                <td>${p.sku_code ?? '—'}</td>
+                <td style="font-weight:600">${escapeHtml(p.product_name ?? '—')}</td>
+                <td>${escapeHtml(p.category_name ?? '—')}</td>
+                <td>${escapeHtml(p.brand_name ?? '—')}</td>
+                <td>${escapeHtml(p.sku_code ?? '—')}</td>
                 <td>Rs ${Number(p.unit_price ?? 0).toLocaleString()}</td>
                 <td>
                     <div class="d-flex gap-2 flex-wrap">
-                        <button class="btn btn-sm btn-outline-secondary" onclick='openEditForm(${JSON.stringify(p)})'>Edit</button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="openEditFormPayload('${encodePayload(p)}')">Edit</button>
                         <button class="btn btn-sm btn-outline-primary" onclick='viewProductAvailability(${p.id})'>View</button>
                         <button class="btn btn-sm btn-outline-warning" onclick='recalculateWAC(${p.id})'>WAC</button>
                     </div>
@@ -419,18 +471,18 @@ async function loadProducts() {
 async function reclassify() {
     if (!confirm('Run product reclassification now?')) return;
     try {
-        const res = await fetch('/api/products/reclassify/', {
+        const res = await request('/api/products/reclassify/', {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token }
         });
         if (res.ok) {
-            alert('Reclassification complete.');
+            showProductMessage('Reclassification complete.', 'success');
             loadProducts();
         } else {
-            alert('Reclassification failed.');
+            const error = await res.json();
+            showProductMessage('Reclassification failed: ' + (error.error || error.message || 'Unknown error'));
         }
     } catch(e) {
-        alert('Network error.');
+        showProductMessage('Reclassification failed: ' + e.message);
     }
 }
 
@@ -445,14 +497,13 @@ async function submitImport() {
     formData.append('file', fileInput.files[0]);
 
     try {
-        const res = await fetch('/api/products/import/', {
+        const res = await request('/api/products/import/', {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token },
             body: formData
         });
         if (res.ok) {
             const data = await res.json();
-            msgBox.innerHTML = `<div class="alert alert-success py-2">Import complete: ${JSON.stringify(data)}</div>`;
+            msgBox.innerHTML = `<div class="alert alert-success py-2">Import complete: ${escapeHtml(JSON.stringify(data))}</div>`;
         } else {
             msgBox.innerHTML = '<div class="alert alert-danger py-2">Import failed. Check file format.</div>';
         }
@@ -463,7 +514,7 @@ async function submitImport() {
 
 async function loadZones() {
     try {
-        const res = await fetch('/api/zones/recommendations/', { headers: { 'Authorization': 'Bearer ' + token } });
+        const res = await request('/api/zones/recommendations/');
         const data = await res.json();
         const rows = extractArray(data);
         const tbody = document.getElementById('zonesBody');
@@ -473,9 +524,9 @@ async function loadZones() {
         }
         tbody.innerHTML = rows.map(z => `
             <tr>
-                <td>${z.product_name ?? '—'}</td>
-                <td>${z.suggested_zone_name ?? '—'}</td>
-                <td>${z.reason ?? '—'}</td>
+                <td>${escapeHtml(z.product_name ?? '—')}</td>
+                <td>${escapeHtml(z.suggested_zone_name ?? '—')}</td>
+                <td>${escapeHtml(z.reason ?? '—')}</td>
             </tr>
         `).join('');
     } catch(e) {
@@ -486,25 +537,26 @@ async function loadZones() {
 async function calculateZoneRecommendations() {
     if (!confirm('Recalculate zone recommendations now?')) return;
     try {
-        const res = await fetch('/api/zones/recommendations/calculate/', {
+        const res = await request('/api/zones/recommendations/calculate/', {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token }
         });
         if (res.ok) {
-            alert('Zone recommendations recalculated successfully.');
+            showProductMessage('Zone recommendations recalculated successfully.', 'success');
             loadZones();
         } else {
-            const err = await res.json().catch(() => ({}));
-            alert('Calculation failed: ' + (err.message || err.error || 'Unknown error'));
+            const err = await res.json();
+            showProductMessage('Calculation failed: ' + (err.message || err.error || 'Unknown error'));
         }
     } catch(e) {
-        alert('Network error during calculation.');
+        showProductMessage('Network error during calculation: ' + e.message);
     }
 }
 
-loadUserRole();
-loadCategories();
-loadProducts();
+fetchCurrentUser().then(() => {
+    loadCategories();
+    loadBrandsForProductForm();
+    loadProducts();
+});
 
 function openAddForm() {
     document.getElementById('prodFormTitle').innerText = 'Add Product';
@@ -514,13 +566,14 @@ function openAddForm() {
     document.getElementById('prodPrice').value = '';
     document.getElementById('prodCostPrice').value = '';
     populateCategorySelect(document.getElementById('prodCategoryId'), '');
+    populateBrandSelect(document.getElementById('prodBrandId'), '');
     document.getElementById('prodMsg').innerHTML = '';
     document.getElementById('prodDeleteBtn').style.display = 'none';
     document.getElementById('prodForm').style.display = 'block';
 }
 
 function isUserManagerOrAdmin() {
-    const role = sessionStorage.getItem('role');
+    const role = window.currentUserRole;
     return role === 'ADMIN' || role === 'MANAGER';
 }
 
@@ -532,7 +585,9 @@ function openEditForm(p) {
     document.getElementById('prodPrice').value = p.unit_price ?? '';
     document.getElementById('prodCostPrice').value = p.cost_price ?? p.avg_cost_price ?? '';
     const categoryValue = (typeof p.category === 'object' ? p.category?.id : p.category) ?? '';
+    const brandValue = (typeof p.brand === 'object' ? p.brand?.id : p.brand) ?? '';
     populateCategorySelect(document.getElementById('prodCategoryId'), categoryValue);
+    populateBrandSelect(document.getElementById('prodBrandId'), brandValue);
     document.getElementById('prodMsg').innerHTML = '';
     // Show delete button only for ADMIN or MANAGER roles
     document.getElementById('prodDeleteBtn').style.display = isUserManagerOrAdmin() ? 'inline-block' : 'none';
@@ -614,12 +669,10 @@ function hideProductDetailModal() {
 }
 
 async function viewProductAvailability(id) {
-    const headers = { 'Authorization': 'Bearer ' + token };
-
     try {
         const [productRes, availabilityRes] = await Promise.all([
-            fetch(`/api/products/${id}/`, { headers }),
-            fetch(`/api/products/${id}/availability/`, { headers })
+            request(`/api/products/${id}/`),
+            request(`/api/products/${id}/availability/`)
         ]);
 
         if (!productRes.ok) throw new Error('Product details request failed');
@@ -665,20 +718,19 @@ async function viewProductAvailability(id) {
 async function recalculateWAC(id) {
     if (!confirm('Recalculate WAC for this product?')) return;
     try {
-        const res = await fetch(`/api/products/${id}/recalculate-wac/`, {
+        const res = await request(`/api/products/${id}/recalculate-wac/`, {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token }
         });
         const data = await res.json().catch(() => ({}));
 
         if (res.ok) {
-            alert(data.message || 'WAC recalculated successfully.');
+            showProductMessage(data.message || 'WAC recalculated successfully.', 'success');
             loadProducts();
         } else {
-            alert(data.detail || data.error || 'WAC recalculation failed.');
+            showProductMessage(data.detail || data.error || 'WAC recalculation failed.');
         }
     } catch (e) {
-        alert('Network error while recalculating WAC.');
+        showProductMessage('Network error while recalculating WAC: ' + e.message);
     }
 }
 
@@ -689,7 +741,8 @@ async function saveProduct() {
         sku_code: document.getElementById('prodSku').value,
         unit_price: Number(document.getElementById('prodPrice').value),
         cost_price: Number(document.getElementById('prodCostPrice').value),
-        category: Number(document.getElementById('prodCategoryId').value) || null
+        category: Number(document.getElementById('prodCategoryId').value) || null,
+        brand: Number(document.getElementById('prodBrandId').value) || null
     };
     const msgBox = document.getElementById('prodMsg');
 
@@ -701,9 +754,9 @@ async function saveProduct() {
     try {
         const url = id ? `/api/products/${id}/` : '/api/products/';
         const method = id ? 'PUT' : 'POST';
-        const res = await fetch(url, {
+        const res = await request(url, {
             method,
-            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
         if (res.ok) {
@@ -712,7 +765,7 @@ async function saveProduct() {
             setTimeout(hideEditForm, 1000);
         } else {
             const err = await res.json().catch(() => ({}));
-            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${JSON.stringify(err)}</div>`;
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${escapeHtml(JSON.stringify(err))}</div>`;
         }
     } catch(e) {
         msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
@@ -725,19 +778,19 @@ async function deleteProduct() {
     if (!confirm('Deactivate this product? This cannot be undone easily.')) return;
 
     try {
-        const res = await fetch(`/api/products/${id}/`, {
+        const res = await request(`/api/products/${id}/`, {
             method: 'DELETE',
-            headers: { 'Authorization': 'Bearer ' + token }
         });
         if (res.ok) {
-            alert('Product deactivated.');
+            showProductMessage('Product deactivated.', 'success');
             hideEditForm();
             loadProducts();
         } else {
-            alert('Could not delete product.');
+            const error = await res.json();
+            showProductMessage('Could not delete product: ' + (error.error || error.message || 'Unknown error'));
         }
     } catch(e) {
-        alert('Network error.');
+        showProductMessage('Network error while deleting product: ' + e.message);
     }
 }
 
@@ -746,7 +799,7 @@ async function deleteProduct() {
    ═══════════════════════════════════════════════════════════════ */
 async function loadBrands() {
     try {
-        const res = await fetch('/api/brands/', { headers: { 'Authorization': 'Bearer ' + token } });
+        const res = await request('/api/brands/');
         const data = await res.json();
         const rows = extractArray(data);
         const tbody = document.getElementById('brandsBody');
@@ -759,9 +812,9 @@ async function loadBrands() {
         tbody.innerHTML = rows.map(b => `
             <tr>
                 <td>${b.id ?? '—'}</td>
-                <td>${b.brand_name ?? '—'}</td>
+                <td>${escapeHtml(b.brand_name ?? '—')}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-primary" onclick='editBrand(${JSON.stringify(b)})'>Edit</button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="editBrandPayload('${encodePayload(b)}')">Edit</button>
                     <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteBrand(${b.id})'>Delete</button>
                 </td>
             </tr>
@@ -798,9 +851,9 @@ async function saveBrand() {
     try {
         const url = id ? `/api/brands/${id}/` : '/api/brands/';
         const method = id ? 'PUT' : 'POST';
-        const res = await fetch(url, {
+        const res = await request(url, {
             method,
-            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ brand_name: name })
         });
 
@@ -810,7 +863,7 @@ async function saveBrand() {
             setTimeout(resetBrandForm, 1000);
         } else {
             const err = await res.json().catch(() => ({}));
-            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${JSON.stringify(err)}</div>`;
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${escapeHtml(JSON.stringify(err))}</div>`;
         }
     } catch(e) {
         msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
@@ -820,18 +873,18 @@ async function saveBrand() {
 async function confirmDeleteBrand(id) {
     if (!confirm('Delete this brand?')) return;
     try {
-        const res = await fetch(`/api/brands/${id}/`, {
+        const res = await request(`/api/brands/${id}/`, {
             method: 'DELETE',
-            headers: { 'Authorization': 'Bearer ' + token }
         });
         if (res.ok) {
-            alert('Brand deleted.');
+            showProductMessage('Brand deleted.', 'success');
             loadBrands();
         } else {
-            alert('Could not delete brand.');
+            const error = await res.json();
+            showProductMessage('Could not delete brand: ' + (error.error || error.message || 'Unknown error'));
         }
     } catch(e) {
-        alert('Network error.');
+        showProductMessage('Network error while deleting brand: ' + e.message);
     }
 }
 
@@ -840,7 +893,7 @@ async function confirmDeleteBrand(id) {
    ═══════════════════════════════════════════════════════════════ */
 async function loadCategoriesCrud() {
     try {
-        const res = await fetch('/api/categories/', { headers: { 'Authorization': 'Bearer ' + token } });
+        const res = await request('/api/categories/');
         const data = await res.json();
         const rows = extractArray(data);
         const tbody = document.getElementById('categoriesBody');
@@ -853,9 +906,9 @@ async function loadCategoriesCrud() {
         tbody.innerHTML = rows.map(c => `
             <tr>
                 <td>${c.id ?? '—'}</td>
-                <td>${c.category_name ?? '—'}</td>
+                <td>${escapeHtml(c.category_name ?? '—')}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-primary" onclick='editCategory(${JSON.stringify(c)})'>Edit</button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="editCategoryPayload('${encodePayload(c)}')">Edit</button>
                     <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteCategory(${c.id})'>Delete</button>
                 </td>
             </tr>
@@ -892,9 +945,9 @@ async function saveCategory() {
     try {
         const url = id ? `/api/categories/${id}/` : '/api/categories/';
         const method = id ? 'PUT' : 'POST';
-        const res = await fetch(url, {
+        const res = await request(url, {
             method,
-            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ category_name: name })
         });
 
@@ -905,7 +958,7 @@ async function saveCategory() {
             setTimeout(resetCategoryForm, 1000);
         } else {
             const err = await res.json().catch(() => ({}));
-            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${JSON.stringify(err)}</div>`;
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${escapeHtml(JSON.stringify(err))}</div>`;
         }
     } catch(e) {
         msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
@@ -915,19 +968,19 @@ async function saveCategory() {
 async function confirmDeleteCategory(id) {
     if (!confirm('Delete this category?')) return;
     try {
-        const res = await fetch(`/api/categories/${id}/`, {
+        const res = await request(`/api/categories/${id}/`, {
             method: 'DELETE',
-            headers: { 'Authorization': 'Bearer ' + token }
         });
         if (res.ok) {
-            alert('Category deleted.');
+            showProductMessage('Category deleted.', 'success');
             loadCategoriesCrud();
             loadCategories(); // Refresh product form category dropdown
         } else {
-            alert('Could not delete category.');
+            const error = await res.json();
+            showProductMessage('Could not delete category: ' + (error.error || error.message || 'Unknown error'));
         }
     } catch(e) {
-        alert('Network error.');
+        showProductMessage('Network error while deleting category: ' + e.message);
     }
 }
 
@@ -936,7 +989,7 @@ async function confirmDeleteCategory(id) {
    ═══════════════════════════════════════════════════════════════ */
 async function loadStoreZones() {
     try {
-        const res = await fetch('/api/zones/', { headers: { 'Authorization': 'Bearer ' + token } });
+        const res = await request('/api/zones/');
         const data = await res.json();
         const rows = extractArray(data);
         const tbody = document.getElementById('zonesCrudBody');
@@ -949,11 +1002,11 @@ async function loadStoreZones() {
         tbody.innerHTML = rows.map(z => `
             <tr>
                 <td>${z.id ?? '—'}</td>
-                <td>${z.zone_name ?? '—'}</td>
-                <td>${z.traffic_level ?? '—'}</td>
-                <td>${z.description ?? '—'}</td>
+                <td>${escapeHtml(z.zone_name ?? '—')}</td>
+                <td>${escapeHtml(z.traffic_level ?? '—')}</td>
+                <td>${escapeHtml(z.description ?? '—')}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-primary" onclick='editZone(${JSON.stringify(z)})'>Edit</button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="editZonePayload('${encodePayload(z)}')">Edit</button>
                     <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteZone(${z.id})'>Delete</button>
                 </td>
             </tr>
@@ -1007,9 +1060,9 @@ async function saveZone() {
             description: desc || ''
         };
 
-        const res = await fetch(url, {
+        const res = await request(url, {
             method,
-            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
 
@@ -1019,7 +1072,7 @@ async function saveZone() {
             setTimeout(resetZoneForm, 1000);
         } else {
             const err = await res.json().catch(() => ({}));
-            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${JSON.stringify(err)}</div>`;
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${escapeHtml(JSON.stringify(err))}</div>`;
         }
     } catch(e) {
         msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
@@ -1029,20 +1082,21 @@ async function saveZone() {
 async function confirmDeleteZone(id) {
     if (!confirm('Delete this zone?')) return;
     try {
-        const res = await fetch(`/api/zones/${id}/`, {
+        const res = await request(`/api/zones/${id}/`, {
             method: 'DELETE',
-            headers: { 'Authorization': 'Bearer ' + token }
         });
         if (res.ok) {
-            alert('Zone deleted.');
+            showProductMessage('Zone deleted.', 'success');
             loadStoreZones();
         } else {
-            alert('Could not delete zone.');
+            const error = await res.json();
+            showProductMessage('Could not delete zone: ' + (error.error || error.message || 'Unknown error'));
         }
     } catch(e) {
-        alert('Network error.');
+        showProductMessage('Network error while deleting zone: ' + e.message);
     }
 }
 </script>
-</body>
-</html>
+
+{% endblock %}
+
