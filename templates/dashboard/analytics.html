@@ -1,192 +1,427 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analytics — Smart Inventory DSS</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <style>
-        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
-        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
-        .btn-primary { background:#2d6a4f; border:none; }
-        .card { border-radius:12px; border:1px solid #e2e8f0; }
-        .kpi-card { background:white; border-radius:12px; padding:20px; border:1px solid #e2e8f0; text-align:center; }
-        .kpi-val { font-size:24px; font-weight:700; color:#1a2e1e; }
-        .kpi-lbl { font-size:11px; color:#64748b; text-transform:uppercase; }
-    </style>
-</head>
-<body>
-<div class="page-header d-flex justify-content-between align-items-center">
-    <div>
-        <h4 class="mb-0 fw-bold">Sales & Profit Analytics</h4>
-        <small class="text-muted">Samanala Super Mart — Decision Support System</small>
-    </div>
-    <div>
-        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
-        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
-    </div>
+{% extends "dashboard/base.html" %}
+
+{% block title %}Manager Analytics — Smart Inventory DSS{% endblock %}
+
+{% block extra_css %}
+<style>
+  .kpi-card { background: var(--card); border-radius: 12px; padding: 18px; border: 1px solid var(--border); min-height: 118px; }
+  .kpi-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .kpi-val { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .kpi-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .kpi-change { font-size: 12px; font-weight: 600; margin-top: 4px; }
+  .kpi-change.up { color: var(--green2); } .kpi-change.down { color: var(--red); } .kpi-change.flat { color: var(--muted); font-weight: 500; }
+  .an-card { background: var(--card); border-radius: 12px; padding: 18px; border: 1px solid var(--border); }
+  .an-chart { height: 300px; position: relative; }
+  .an-chart-wide { height: 340px; }
+  .an-empty, .an-loading, .an-error { height: 100%; min-height: 160px; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--muted); font-size: 13px; padding: 10px; }
+  .an-error { color: #b91c1c; flex-direction: column; gap: 8px; }
+  .comparison-item { border-bottom: 1px solid var(--border); padding: 8px 0; }
+  .comparison-item:last-child { border: 0; }
+  .insight { border-left: 3px solid var(--green2); background: var(--card2); padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 13px; }
+  .insight strong { display: block; font-size: 12.5px; }
+  .flag-btn { border: 1px solid var(--border); background: var(--card2); border-radius: 8px; padding: 12px; text-align: left; width: 100%; cursor: pointer; }
+  .flag-btn:hover { border-color: var(--green2); }
+  .quality-banner { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
+  .an-table thead th { position: sticky; top: calc(var(--topbar-height, 58px) + 1px); background: var(--card2) !important; z-index: 10; cursor: pointer; user-select: none; }
+  .an-table thead th.sortable:hover { color: var(--green2); }
+  .an-table thead th .sort-arrow { font-size: 10px; opacity: .6; }
+  .perf-flag { font-size: 10.5px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
+  .perf-flag.LOSS_PRODUCT { background: #fee2e2; color: #b91c1c; }
+  .perf-flag.HIGH_MARGIN_LOW_VOLUME { background: #dbeafe; color: #1d4ed8; }
+  .perf-flag.LOW_MARGIN_HIGH_VOLUME { background: #fef3c7; color: #92400e; }
+  .perf-flag.NORMAL { background: var(--card2); color: var(--muted); }
+  @media (max-width: 960px) { .an-chart { height: 240px; } .an-chart-wide { height: 260px; } }
+</style>
+{% endblock %}
+
+{% block nav_analytics %}active{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Manager Analytics</h1>
+    <div class="sub" id="anPeriodLabel">Loading analytics period…</div>
+    <div class="sub" id="anSyncLabel"></div>
+  </div>
+  <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+    <i class="bi bi-box-arrow-right"></i> Logout
+  </button>
 </div>
 
-<div class="container-fluid px-4">
+<div id="anGlobalError" class="quality-banner" style="display:none;background:#fee2e2;border-color:#fca5a5;color:#b91c1c;"></div>
+<div id="anQualityBanner" class="quality-banner" style="display:none;"></div>
 
-    <!-- Date Filter -->
-    <div class="card p-3 mb-4">
-        <div class="row g-3 align-items-end">
-            <div class="col-md-4">
-                <label class="form-label">From Date</label>
-                <input type="date" id="dateFrom" class="form-control" value="2026-01-01">
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">To Date</label>
-                <input type="date" id="dateTo" class="form-control" value="2026-06-30">
-            </div>
-            <div class="col-md-4">
-                <button class="btn btn-primary w-100" onclick="loadAll()">Apply Filter</button>
-            </div>
-        </div>
+<!-- Filters -->
+<div class="an-card mb-4">
+  <div class="row g-3 align-items-end">
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold">Date range</label>
+      <select id="anPreset" class="form-select form-select-sm">
+        <option value="today">Today</option>
+        <option value="yesterday">Yesterday</option>
+        <option value="week">This week</option>
+        <option value="last_week">Last week</option>
+        <option value="month" selected>This month</option>
+        <option value="last_month">Last month</option>
+        <option value="three_months">Last 3 months</option>
+        <option value="custom">Custom range</option>
+      </select>
     </div>
-
-    <!-- KPI Summary -->
-    <div class="row g-3 mb-4">
-        <div class="col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-lbl">Total Revenue</div>
-                <div class="kpi-val text-success" id="totalRevenue">—</div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-lbl">Total Cost</div>
-                <div class="kpi-val text-danger" id="totalCost">—</div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-lbl">Total Profit</div>
-                <div class="kpi-val text-primary" id="totalProfit">—</div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-lbl">Profit Margin</div>
-                <div class="kpi-val" id="margin">—</div>
-            </div>
-        </div>
+    <div class="col-6 col-md-2"><label class="form-label small fw-semibold">From</label><input id="anFrom" type="date" class="form-control form-control-sm"></div>
+    <div class="col-6 col-md-2"><label class="form-label small fw-semibold">To</label><input id="anTo" type="date" class="form-control form-control-sm"></div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold">Trend granularity</label>
+      <select id="anGranularity" class="form-select form-select-sm">
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select>
     </div>
-
-    <!-- Charts -->
-    <div class="row g-4 mb-4">
-        <div class="col-md-6">
-            <div class="card p-4">
-                <h6 class="fw-bold mb-3">Top 5 Products by Profit</h6>
-                <canvas id="profitChart" height="200"></canvas>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="card p-4">
-                <h6 class="fw-bold mb-3">Sales Trend</h6>
-                <canvas id="trendChart" height="200"></canvas>
-            </div>
-        </div>
-    </div>
-
-    <!-- Top Products Table -->
-    <div class="card p-4">
-        <h6 class="fw-bold mb-3">Product Performance</h6>
-        <table class="table table-hover">
-            <thead class="table-light">
-                <tr><th>Product</th><th>Units Sold</th><th>Revenue</th><th>Profit</th><th>Margin %</th></tr>
-            </thead>
-            <tbody id="analyticsBody">
-                <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
+    <div class="col-6 col-md-2"><button id="anApply" class="btn btn-sm w-100" style="background:var(--green2);color:#fff;">Apply</button></div>
+  </div>
 </div>
 
+<!-- KPIs -->
+<div id="anKpis" class="row g-3 mb-4"></div>
+
+<!-- Trend + Comparison -->
+<div class="row g-4 mb-4">
+  <div class="col-lg-8">
+    <div class="an-card h-100">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <div><h6 class="fw-bold mb-0">Sales Trend — Revenue vs Profit</h6><small class="text-muted">Do rising sales translate into rising profit?</small></div>
+        <select id="anTrendMetric" class="form-select form-select-sm w-auto">
+          <option value="amount">Revenue / Profit</option>
+          <option value="units">Units sold</option>
+        </select>
+      </div>
+      <div class="an-chart an-chart-wide"><canvas id="trendChart"></canvas><div id="trendState" class="an-loading">Loading trend…</div></div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="an-card h-100">
+      <h6 class="fw-bold mb-3">Period Comparison</h6>
+      <div id="anComparison"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Product / Category / Brand charts -->
+<div class="row g-4 mb-4">
+  <div class="col-lg-4"><div class="an-card h-100"><h6 class="fw-bold mb-2">Top Products by Profit</h6><div class="an-chart"><canvas id="productsChart"></canvas><div id="productsChartState" class="an-loading">Loading…</div></div></div></div>
+  <div class="col-lg-4"><div class="an-card h-100"><h6 class="fw-bold mb-2">Revenue by Category</h6><div class="an-chart"><canvas id="categoryChart"></canvas><div id="categoryChartState" class="an-loading">Loading…</div></div></div></div>
+  <div class="col-lg-4"><div class="an-card h-100"><h6 class="fw-bold mb-2">Profit by Brand</h6><div class="an-chart"><canvas id="brandChart"></canvas><div id="brandChartState" class="an-loading">Loading…</div></div></div></div>
+</div>
+
+<!-- Volume vs Margin -->
+<div class="an-card mb-4">
+  <h6 class="fw-bold mb-1">Volume vs Margin Analysis</h6>
+  <small class="text-muted">Each point is a product — find high-margin/low-volume opportunities and low-margin/high-volume risks.</small>
+  <div class="an-chart an-chart-wide mt-2"><canvas id="portfolioChart"></canvas><div id="portfolioChartState" class="an-loading">Loading…</div></div>
+</div>
+
+<!-- Flags + Insights -->
+<div class="row g-4 mb-4">
+  <div class="col-lg-7">
+    <div class="an-card h-100">
+      <h6 class="fw-bold mb-3">Business Opportunities &amp; Risks</h6>
+      <div id="anFlags" class="row g-2"></div>
+      <div id="anFlagProducts" class="mt-3"></div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="an-card h-100">
+      <h6 class="fw-bold mb-3">Manager Insights</h6>
+      <div id="anInsights"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Product table -->
+<div class="an-card">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h6 class="fw-bold mb-0">Product Performance Details</h6>
+    <div class="d-flex gap-2">
+      <input id="anSearch" class="form-control form-control-sm" placeholder="Search product / brand / category" style="width:260px;">
+    </div>
+  </div>
+  <div class="table-responsive an-table-wrap">
+    <table class="table table-hover an-table">
+      <thead>
+        <tr>
+          <th>Rank</th><th>Product</th><th>Brand</th><th>Category</th>
+          <th class="sortable" data-sort="qty">Units <span class="sort-arrow">↕</span></th>
+          <th class="sortable" data-sort="revenue">Revenue <span class="sort-arrow">↕</span></th>
+          <th>WAC</th><th>Cost</th>
+          <th class="sortable" data-sort="profit">Profit <span class="sort-arrow">↕</span></th>
+          <th class="sortable" data-sort="margin">Margin % <span class="sort-arrow">↕</span></th>
+          <th>Flag</th>
+        </tr>
+      </thead>
+      <tbody id="anProductsBody"><tr><td colspan="11" class="text-center text-muted py-4">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="d-flex justify-content-between align-items-center">
+    <small id="anCount" class="text-muted"></small>
+    <div><button id="anPrev" class="btn btn-sm btn-outline-secondary">Previous</button> <button id="anNext" class="btn btn-sm btn-outline-secondary">Next</button></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
 <script>
-const token = sessionStorage.getItem('access_token');
-if (!token) { window.location.href = '/dashboard/login/'; }
-if (!token) { window.location.href = '/dashboard/login/'; }
+(function () {
+  const $ = id => document.getElementById(id);
+  const money = v => 'Rs ' + Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pct = v => (v === null || v === undefined) ? '—' : Number(v).toFixed(1) + '%';
+  const COLORS = { revenue: '#22c55e', profit: '#0f3d3e', units: '#f59e0b', cat: '#34d17a', brand: '#8b5cf6' };
+  let charts = {};
+  let productPage = 1;
+  const PAGE_SIZE = 25;
+  let currentSort = 'profit';
+  let searchDebounce = null;
+  let lastOverview = null;
 
-function doLogout() {
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('refresh_token');
-    window.location.href = '/dashboard/login/';
-}
+  function iso(d) { return d.toISOString().slice(0, 10); }
 
-let profitChart, trendChart;
+  function setPresetDates() {
+    const p = $('anPreset').value;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (p === 'custom') return;
+    let from = new Date(today), to = new Date(today);
+    if (p === 'yesterday') { from.setDate(from.getDate() - 1); to = new Date(from); }
+    else if (p === 'week') { from.setDate(from.getDate() - ((from.getDay() + 6) % 7)); }
+    else if (p === 'last_week') { from.setDate(from.getDate() - ((from.getDay() + 6) % 7) - 7); to = new Date(from); to.setDate(to.getDate() + 6); }
+    else if (p === 'month') { from = new Date(today.getFullYear(), today.getMonth(), 1); }
+    else if (p === 'last_month') { from = new Date(today.getFullYear(), today.getMonth() - 1, 1); to = new Date(today.getFullYear(), today.getMonth(), 0); }
+    else if (p === 'three_months') { from = new Date(today.getFullYear(), today.getMonth() - 2, 1); }
+    $('anFrom').value = iso(from);
+    $('anTo').value = iso(to);
+  }
 
-async function loadAll() {
-    const dateFrom = document.getElementById('dateFrom').value;
-    const dateTo = document.getElementById('dateTo').value;
+  function chooseGranularity() {
+    if (!$('anFrom').value || !$('anTo').value) return;
+    const days = (new Date($('anTo').value) - new Date($('anFrom').value)) / 86400000 + 1;
+    $('anGranularity').value = days <= 14 ? 'daily' : days <= 90 ? 'weekly' : 'monthly';
+  }
 
-    // Load profit summary (KPI cards only — this endpoint has no product breakdown yet)
-    try {
-        const res = await fetch(`/api/analytics/profit-summary/?date_from=${dateFrom}&date_to=${dateTo}`, {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const data = await res.json();
-        document.getElementById('totalRevenue').innerText = 'Rs ' + Number(data.total_revenue ?? 0).toLocaleString();
-        document.getElementById('totalCost').innerText = 'Rs ' + Number(data.total_cost ?? 0).toLocaleString();
-        document.getElementById('totalProfit').innerText = 'Rs ' + Number(data.total_profit ?? 0).toLocaleString();
-        document.getElementById('margin').innerText = (data.overall_margin_percent ?? data.profit_margin_pct ?? 0).toFixed(1) + '%';
+  function dateQS() {
+    return `date_from=${$('anFrom').value}&date_to=${$('anTo').value}`;
+  }
 
-        // Product-level breakdown endpoint not available yet on the backend — show placeholder
-        document.getElementById('analyticsBody').innerHTML =
-            '<tr><td colspan="5" class="text-center text-muted">Product-level breakdown not available yet — backend endpoint pending.</td></tr>';
+  function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
 
-        if (profitChart) profitChart.destroy();
-    } catch(e) {
-        document.getElementById('analyticsBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted">Could not load data.</td></tr>';
+  function makeChart(id, type, data, options = {}) {
+    destroyChart(id);
+    charts[id] = new Chart($(id), { type, data, options: { responsive: true, maintainAspectRatio: false, ...options } });
+  }
+
+  function showState(id, el, mode, text) {
+    // mode: 'loading' | 'empty' | 'error' | null (hide)
+    const stateEl = $(el);
+    const canvas = document.getElementById(id);
+    if (!mode) { stateEl.style.display = 'none'; if (canvas) canvas.style.display = ''; return; }
+    stateEl.className = 'an-' + mode;
+    stateEl.style.display = 'flex';
+    stateEl.innerText = text || (mode === 'loading' ? 'Loading…' : mode === 'empty' ? 'No data available for the selected period.' : 'Failed to load.');
+    if (canvas) canvas.style.display = 'none';
+  }
+
+  function errorMessage(e) {
+    if (e && e.status === 403) return 'You do not have permission to access analytics.';
+    if (e && e.status === 404) return 'Analytics endpoint or data was not found.';
+    if (e && e.status >= 500) return 'Analytics service temporarily unavailable.';
+    return (e && e.message) || 'Unable to load analytics data.';
+  }
+
+  // ── KPIs + comparison + charts + flags + insights (from /analytics/overview/) ──
+  function renderOverview(o) {
+    lastOverview = o;
+    $('anPeriodLabel').innerText = `Analytics period: ${o.period.date_from} – ${o.period.date_to}`;
+    $('anSyncLabel').innerText = o.data_quality.latest_sales_date
+      ? `Sales data through ${o.data_quality.latest_sales_date} · Last synchronized: ${o.data_quality.last_synchronized}`
+      : `Last synchronized: ${o.data_quality.last_synchronized}`;
+
+    if (o.data_quality.products_missing_wac > 0) {
+      $('anQualityBanner').style.display = 'block';
+      $('anQualityBanner').innerHTML = `⚠ ${o.data_quality.products_missing_wac} products sold in this period have insufficient cost (WAC) data — their profit figures may be incomplete.`;
+    } else {
+      $('anQualityBanner').style.display = 'none';
     }
-    // Load sales trend (endpoint not built yet on backend — show empty chart, don't break the page)
-    try {
-        const tRes = await fetch(`/api/analytics/sales-trend/?period=monthly&months=6`, {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        if (!tRes.ok) throw new Error('sales-trend endpoint not available');
-        const tData = await tRes.json();
-        const labels = tData.map ? tData.map(d => d.period ?? d.label) : [];
-        const values = tData.map ? tData.map(d => d.revenue ?? d.total_sales_revenue ?? 0) : [];
 
-        if (trendChart) trendChart.destroy();
-        trendChart = new Chart(document.getElementById('trendChart'), {
-            type: 'line',
-            data: {
-                labels: labels.length > 0 ? labels : ['Jan','Feb','Mar','Apr','May','Jun'],
-                datasets: [{ label: 'Revenue (Rs)', data: values.length > 0 ? values : [0,0,0,0,0,0], borderColor: '#2d6a4f', tension: 0.4, fill: false }]
-            },
-            options: { responsive: true }
-        });
-    } catch(e) {
-        // Sales trend endpoint not available yet — silently skip chart, KPI cards above still work fine
-    }// Load sales trend (endpoint not built yet on backend — show empty chart, don't break the page)
-    try {
-        const tRes = await fetch(`/api/analytics/sales-trend/?period=monthly&months=6`, {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        if (!tRes.ok) throw new Error('sales-trend endpoint not available');
-        const tData = await tRes.json();
-        const labels = tData.map ? tData.map(d => d.period ?? d.label) : [];
-        const values = tData.map ? tData.map(d => d.revenue ?? d.total_sales_revenue ?? 0) : [];
+    const s = o.summary, c = o.changes;
+    const cards = [
+      ['Total Revenue', money(s.revenue), c.revenue_pct, 'vs previous period'],
+      ['Cost (WAC-based)', money(s.cost), null, 'Weighted Average Cost'],
+      ['Gross Profit', money(s.profit), c.profit_pct, 'Revenue − WAC cost'],
+      ['Margin', pct(s.margin_pct), c.margin_pct, 'Profit / Revenue'],
+      ['Units Sold', Number(s.units_sold).toLocaleString(), c.units_pct, 'across all products'],
+      ['Total Discount', money(s.discount), null, 'selected period'],
+    ];
+    $('anKpis').innerHTML = cards.map(([label, val, chg, sub]) => {
+      let chgHtml = '<div class="kpi-change flat">No comparable data</div>';
+      if (chg !== null && chg !== undefined) {
+        const cls = chg >= 0 ? 'up' : 'down';
+        const arrow = chg >= 0 ? '↑' : '↓';
+        chgHtml = `<div class="kpi-change ${cls}">${arrow} ${Math.abs(chg).toFixed(1)}% vs previous</div>`;
+      }
+      return `<div class="col-6 col-md-4 col-xl-2"><div class="kpi-card"><div class="kpi-lbl">${label}</div><div class="kpi-val">${val}</div><div class="kpi-sub">${sub}</div>${chgHtml}</div></div>`;
+    }).join('');
 
-        if (trendChart) trendChart.destroy();
-        trendChart = new Chart(document.getElementById('trendChart'), {
-            type: 'line',
-            data: {
-                labels: labels.length > 0 ? labels : ['Jan','Feb','Mar','Apr','May','Jun'],
-                datasets: [{ label: 'Revenue (Rs)', data: values.length > 0 ? values : [0,0,0,0,0,0], borderColor: '#2d6a4f', tension: 0.4, fill: false }]
-            },
-            options: { responsive: true }
-        });
-    } catch(e) {
-        // Sales trend endpoint not available yet — silently skip chart, KPI cards above still work fine
+    $('anComparison').innerHTML = [
+      ['Revenue', c.revenue_pct], ['Profit', c.profit_pct], ['Units sold', c.units_pct], ['Margin', c.margin_pct],
+    ].map(([label, chg]) => {
+      const body = (chg === null || chg === undefined)
+        ? '<span class="text-muted">No comparable data</span>'
+        : `<span class="${chg >= 0 ? 'kpi-change up' : 'kpi-change down'}">${chg >= 0 ? '↑' : '↓'} ${Math.abs(chg).toFixed(1)}% vs previous period</span>`;
+      return `<div class="comparison-item"><strong>${label}</strong><div class="small mt-1">${body}</div></div>`;
+    }).join(`<div class="mb-2"><small class="text-muted">${o.previous_period.date_from} – ${o.previous_period.date_to}</small></div>`);
+
+    // Top products by profit
+    const top = o.top_products.profit || [];
+    showState('productsChart', 'productsChartState', top.length ? null : 'empty', top.length ? null : 'No sales data available for the selected period.');
+    if (top.length) makeChart('productsChart', 'bar', {
+      labels: top.map(p => p.product_name),
+      datasets: [{ label: 'Profit', data: top.map(p => p.profit), backgroundColor: COLORS.profit }],
+    }, { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Profit (Rs)' } } } });
+
+    // Category chart
+    const cats = (o.categories_by_revenue || []).slice(0, 10);
+    showState('categoryChart', 'categoryChartState', cats.length ? null : 'empty', cats.length ? null : 'No category sales data available.');
+    if (cats.length) makeChart('categoryChart', 'bar', {
+      labels: cats.map(c => c.category_name),
+      datasets: [{ label: 'Revenue', data: cats.map(c => c.total_revenue), backgroundColor: COLORS.cat }],
+    }, { indexAxis: 'y', plugins: { legend: { display: false } } });
+
+    // Brand chart
+    const brands = (o.brands || []).slice(0, 12);
+    showState('brandChart', 'brandChartState', brands.length ? null : 'empty', brands.length ? null : 'No brand sales data available.');
+    if (brands.length) makeChart('brandChart', 'bar', {
+      labels: brands.map(b => b.brand_name),
+      datasets: [{ label: 'Profit', data: brands.map(b => b.total_profit), backgroundColor: COLORS.brand }],
+    }, { indexAxis: 'y', plugins: { legend: { display: false } } });
+
+    // Volume vs margin scatter
+    const points = o.portfolio || [];
+    showState('portfolioChart', 'portfolioChartState', points.length ? null : 'empty', points.length ? null : 'No product sales data available for the selected period.');
+    if (points.length) makeChart('portfolioChart', 'scatter', {
+      datasets: [{
+        label: 'Products',
+        data: points.map(p => ({ x: p.units_sold, y: p.margin_pct, name: p.product_name, revenue: p.revenue, profit: p.profit })),
+        backgroundColor: COLORS.revenue,
+      }],
+    }, {
+      scales: { x: { title: { display: true, text: 'Units sold' }, beginAtZero: true }, y: { title: { display: true, text: 'Margin %' } } },
+      plugins: { tooltip: { callbacks: { label: c => c.raw.name, afterLabel: c => `Units: ${c.raw.x}\nRevenue: ${money(c.raw.revenue)}\nProfit: ${money(c.raw.profit)}\nMargin: ${pct(c.raw.y)}` } } },
+    });
+
+    // Business flags
+    $('anFlags').innerHTML = (o.rule_flags || []).map(f => `
+      <div class="col-12 col-md-6">
+        <button class="flag-btn" data-flag="${f.flag}">
+          <strong>${f.flag.replaceAll('_', ' ')}</strong><br><span class="text-muted small">${f.count} products</span>
+        </button>
+      </div>`).join('');
+    $('anFlagProducts').innerHTML = '';
+    document.querySelectorAll('.flag-btn').forEach(btn => btn.onclick = () => {
+      const item = (o.rule_flags || []).find(f => f.flag === btn.dataset.flag);
+      $('anFlagProducts').innerHTML = (item && item.products.length)
+        ? `<div class="small fw-semibold mb-1">Affected products</div>` + item.products.map(p =>
+            `<div class="d-flex justify-content-between border-bottom py-1"><span>${p.product_name}</span><span class="text-muted small">${pct(p.margin_pct)} · ${p.total_qty} units</span></div>`
+          ).join('')
+        : '<span class="text-muted small">No affected products.</span>';
+    });
+
+    // Insights
+    $('anInsights').innerHTML = (o.insights || []).length
+      ? o.insights.map(i => `<div class="insight"><strong>${i.title}</strong>${i.text}</div>`).join('')
+      : '<div class="text-muted small">No insights for this period.</div>';
+  }
+
+  async function loadOverview() {
+    ['productsChart', 'categoryChart', 'brandChart', 'portfolioChart'].forEach(id => showState(id, id + 'State', 'loading'));
+    try {
+      const o = await apiFetch(`/api/analytics/overview/?${dateQS()}`);
+      $('anGlobalError').style.display = 'none';
+      renderOverview(o);
+    } catch (e) {
+      const msg = errorMessage(e);
+      $('anGlobalError').style.display = 'block';
+      $('anGlobalError').innerText = msg;
+      ['productsChart', 'categoryChart', 'brandChart', 'portfolioChart'].forEach(id => showState(id, id + 'State', 'error', msg));
     }
-}
+  }
 
-loadAll();
+  async function loadTrend() {
+    showState('trendChart', 'trendState', 'loading');
+    try {
+      const t = await apiFetch(`/api/analytics/sales-trend/?${dateQS()}&granularity=${$('anGranularity').value}`);
+      const trend = t.trend || [];
+      showState('trendChart', 'trendState', trend.length ? null : 'empty', trend.length ? null : 'No sales data available for the selected period.');
+      if (!trend.length) return;
+      const units = $('anTrendMetric').value === 'units';
+      makeChart('trendChart', 'line', {
+        labels: trend.map(p => p.period_label),
+        datasets: units
+          ? [{ label: 'Units sold', data: trend.map(p => p.total_qty), borderColor: COLORS.units, tension: .25 }]
+          : [{ label: 'Revenue', data: trend.map(p => p.total_revenue), borderColor: COLORS.revenue, tension: .25 }],
+      }, { scales: { y: { beginAtZero: true } } });
+    } catch (e) {
+      showState('trendChart', 'trendState', 'error', errorMessage(e));
+    }
+  }
+
+  async function loadProducts() {
+    const search = encodeURIComponent($('anSearch').value.trim());
+    $('anProductsBody').innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">Loading…</td></tr>';
+    try {
+      const p = await apiFetch(`/api/analytics/products/?${dateQS()}&sort=${currentSort}&page=${productPage}&page_size=${PAGE_SIZE}&search=${search}`);
+      $('anCount').innerText = `${p.count} products`;
+      $('anProductsBody').innerHTML = p.results.length
+        ? p.results.map(r => `
+          <tr>
+            <td>${r.rank}</td><td>${r.product_name}</td><td>${r.brand_name}</td><td>${r.category_name}</td>
+            <td>${r.units_sold}</td><td>${money(r.revenue)}</td><td>${money(r.wac)}</td><td>${money(r.cost)}</td>
+            <td>${money(r.profit)}</td><td>${pct(r.margin_pct)}</td>
+            <td><span class="perf-flag ${r.performance_flag}">${r.performance_flag.replaceAll('_', ' ')}</span></td>
+          </tr>`).join('')
+        : '<tr><td colspan="11" class="text-center text-muted py-4">No sales data available for the selected period.</td></tr>';
+      $('anPrev').disabled = productPage === 1;
+      $('anNext').disabled = productPage * PAGE_SIZE >= p.count;
+    } catch (e) {
+      $('anProductsBody').innerHTML = `<tr><td colspan="11" class="text-center py-4" style="color:#b91c1c;">${errorMessage(e)}</td></tr>`;
+    }
+  }
+
+  async function loadAll() {
+    if ($('anPreset').value !== 'custom' && (!$('anFrom').value || !$('anTo').value)) setPresetDates();
+    if ($('anFrom').value && $('anTo').value && $('anFrom').value > $('anTo').value) {
+      $('anGlobalError').style.display = 'block';
+      $('anGlobalError').innerText = 'From date cannot be after To date.';
+      return;
+    }
+    productPage = 1;
+    await Promise.all([loadOverview(), loadTrend(), loadProducts()]);
+  }
+
+  // ── wiring ──
+  $('anPreset').onchange = () => { if ($('anPreset').value !== 'custom') { setPresetDates(); chooseGranularity(); } };
+  $('anApply').onclick = loadAll;
+  $('anTrendMetric').onchange = () => { if (lastOverview) loadTrend(); };
+  $('anSearch').oninput = () => { clearTimeout(searchDebounce); searchDebounce = setTimeout(() => { productPage = 1; loadProducts(); }, 350); };
+  $('anPrev').onclick = () => { if (productPage > 1) { productPage--; loadProducts(); } };
+  $('anNext').onclick = () => { productPage++; loadProducts(); };
+  document.querySelectorAll('.an-table thead th.sortable').forEach(th => th.onclick = () => {
+    currentSort = th.dataset.sort === 'qty' ? 'qty' : th.dataset.sort;
+    productPage = 1;
+    loadProducts();
+  });
+
+  setPresetDates();
+  chooseGranularity();
+  fetchCurrentUser();
+  loadAll();
+})();
 </script>
-</body>
-</html>
+{% endblock %}
