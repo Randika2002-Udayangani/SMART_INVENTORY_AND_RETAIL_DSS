@@ -71,6 +71,10 @@
             <option value="EXPIRED">EXPIRED</option>
             <option value="DISPOSED">DISPOSED</option>
         </select>
+        <button class="btn btn-sm btn-outline-primary" onclick="updateSelectedBatchStatuses('ACTIVE')">Mark Active</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="updateSelectedBatchStatuses('EXPIRED')">Mark Expired</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="updateSelectedBatchStatuses('DISPOSED')">Mark Disposed</button>
+        <button class="btn btn-sm btn-primary" onclick="bulkConfirmExpiry()">Confirm Selected Expiry</button>
     </div>
     <div class="card p-4">
         <table class="table table-hover">
@@ -106,6 +110,12 @@
 <!-- New Purchase Tab — Cost Price input stays visible to all roles: this is
      data-entry (staff recording a GRN), not viewing aggregate financials. -->
 <div id="tab-new" style="display:none;">
+    <div class="card p-4 mb-3" style="max-width:700px;">
+        <h6 class="fw-bold mb-3">Upload Invoice PDF</h6>
+        <input type="file" id="invoicePdfFile" class="form-control mb-2" accept="application/pdf,.pdf">
+        <button class="btn btn-outline-primary" onclick="uploadInvoicePdf()">Upload Invoice</button>
+        <div id="invoiceUploadMsg" class="mt-2" aria-live="polite"></div>
+    </div>
     <div class="card p-4" style="max-width:700px;">
         <h6 class="fw-bold mb-3">Record New Purchase (GRN)</h6>
         <div class="row g-3 mb-3">
@@ -342,7 +352,7 @@ async function loadBatches() {
                 ? `<input type="date" id="expiryInput_${b.id}" class="form-control form-control-sm" style="min-width:150px;">`
                 : (b.expiry_date ?? '—');
             const actionCell = isPending
-                ? `<button class="btn btn-sm btn-success" onclick="confirmExpiry(${b.id})">Confirm</button>`
+                ? `<input type="checkbox" class="batch-select me-2" data-batch-id="${b.id}" aria-label="Select batch ${b.id}"><button class="btn btn-sm btn-success" onclick="confirmExpiry(${b.id})">Confirm</button>`
                 : '';
             const costCell = canSeeFinancials
                 ? 'Rs ' + Number(b.cost_price ?? 0).toLocaleString()
@@ -385,6 +395,42 @@ async function confirmExpiry(batchId) {
         await loadBatches();
     } catch(e) {
         alert('Could not confirm expiry. Please try again.');
+    }
+}
+
+async function updateSelectedBatchStatuses(status) {
+    const ids = [...document.querySelectorAll('.batch-select:checked')].map(input => input.dataset.batchId);
+    if (!ids.length) { alert('Select at least one batch first.'); return; }
+    if (!confirm(`Update ${ids.length} selected batch(es) to ${status}?`)) return;
+    try {
+        await Promise.all(ids.map(id => apiFetch(`/api/batches/${id}/status/`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+        })));
+        await loadBatches();
+    } catch (e) {
+        alert('Could not update one or more batch statuses.');
+    }
+}
+
+async function bulkConfirmExpiry() {
+    const selected = [...document.querySelectorAll('.batch-select:checked')];
+    const batches = selected.map(input => ({
+        batch_id: Number(input.dataset.batchId),
+        expiry_date: document.getElementById(`expiryInput_${input.dataset.batchId}`)?.value
+    }));
+    if (!batches.length) { alert('Select at least one pending batch first.'); return; }
+    if (batches.some(batch => !batch.expiry_date)) { alert('Enter an expiry date for every selected batch.'); return; }
+    try {
+        await apiFetch('/api/batches/confirm-expiry/bulk/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ batches })
+        });
+        await loadBatches();
+    } catch (e) {
+        alert('Could not confirm the selected expiry dates.');
     }
 }
 
@@ -528,6 +574,30 @@ function escapeHtmlPurchase(v) {
     return String(v ?? '').replace(/[&<>"']/g, c => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[c]));
+}
+
+async function uploadInvoicePdf() {
+    const file = document.getElementById('invoicePdfFile').files[0];
+    const msgBox = document.getElementById('invoiceUploadMsg');
+    if (!file) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Select a PDF first.</div>';
+        return;
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const res = await fetch('/api/purchases/upload/invoice/', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('access_token') },
+            body: formData
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || data.detail || 'Upload failed');
+        msgBox.innerHTML = `<div class="alert alert-success py-2">Invoice uploaded. ${escapeHtmlPurchase(data.message || '')}</div>`;
+        loadPurchases();
+    } catch (e) {
+        msgBox.innerHTML = `<div class="alert alert-danger py-2">${escapeHtmlPurchase(e.message)}</div>`;
+    }
 }
 
 // fetchCurrentUser() lives in base.html — resolve the role, gate financial

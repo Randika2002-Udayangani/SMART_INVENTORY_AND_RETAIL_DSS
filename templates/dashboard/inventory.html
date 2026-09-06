@@ -1,39 +1,32 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventory — Smart Inventory DSS</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+{% extends "dashboard/base.html" %}
+
+{% block title %}Inventory — Smart Inventory DSS{% endblock %}
+{% block nav_inventory %}active{% endblock %}
+
+{% block extra_css %}
     <style>
-        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
-        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
-        .btn-primary { background:#2d6a4f; border:none; }
-        .btn-primary:hover { background:#1b4332; }
-        .card { border-radius:12px; border:1px solid #e2e8f0; }
-        .kpi-card { background:white; border-radius:12px; padding:18px; border:1px solid #e2e8f0; text-align:center; }
+        .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
+        .kpi-card { background:var(--card); border-radius:12px; padding:18px; border:1px solid var(--border); text-align:center; }
         .kpi-val { font-size:24px; font-weight:700; }
         .kpi-lbl { font-size:11px; color:#64748b; text-transform:uppercase; }
         .badge-available { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
         .badge-low { background:#fed7aa; color:#c2410c; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
         .badge-out { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .nav-tabs .nav-link.active { background:#2d6a4f; color:white; border-color:#2d6a4f; }
-        .nav-tabs .nav-link { color:#374151; }
+        .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
+        .nav-tabs .nav-link { color:var(--txt); }
+        .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
+        .detail-modal { display:none; position:fixed; inset:0; z-index:1060; background:rgba(15,23,42,.45); padding:5vh 1rem; overflow:auto; }
+        .detail-modal.show { display:block; }
     </style>
-</head>
-<body>
-<div class="page-header d-flex justify-content-between align-items-center">
+{% endblock %}
+
+{% block content %}
+<div class="topbar">
     <div>
-        <h4 class="mb-0 fw-bold">Inventory / Stock Management</h4>
-        <small class="text-muted">Samanala Super Mart — snapshot-based stock, updated on each sync</small>
-    </div>
-    <div>
-        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
-        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+        <h1>Inventory / Stock Management</h1>
+        <div class="sub">Samanala Super Mart — snapshot-based stock, updated on each sync</div>
     </div>
 </div>
-
-<div class="container-fluid px-4">
 
     <!-- KPI Summary -->
     <div class="row g-3 mb-4">
@@ -63,9 +56,19 @@
         </div>
     </div>
 
+    <div class="card p-3 mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="fw-bold mb-0">Latest Uploads</h6>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadUploadSummary()">Refresh</button>
+        </div>
+        <div id="uploadSummary" class="small text-muted">Loading upload status...</div>
+    </div>
+
     <!-- Tabs -->
     <ul class="nav nav-tabs mb-3" id="invTabs">
         <li class="nav-item"><button class="nav-link active" onclick="switchTab('stock', this)">Stock Levels</button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchTab('low', this)">Low Stock</button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchTab('out', this)">Out of Stock</button></li>
         <li class="nav-item"><button class="nav-link" onclick="switchTab('ledger', this)">Stock Ledger</button></li>
         <li class="nav-item"><button class="nav-link" onclick="switchTab('adjust', this)">Manual Adjustment</button></li>
     </ul>
@@ -90,13 +93,22 @@
                     <tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+            <div id="stockPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         </div>
+    </div>
+
+    <div id="tab-low" style="display:none;">
+        <div class="card p-4"><table class="table table-hover"><thead class="table-light"><tr><th>Product</th><th>SKU</th><th>Current Stock</th><th>Threshold</th><th>Shortage</th><th>Urgency</th></tr></thead><tbody id="lowBody"><tr><td colspan="6" class="text-center text-muted">Loading...</td></tr></tbody></table></div>
+    </div>
+
+    <div id="tab-out" style="display:none;">
+        <div class="card p-4"><table class="table table-hover"><thead class="table-light"><tr><th>Product</th><th>SKU</th><th>Current Stock</th></tr></thead><tbody id="outBody"><tr><td colspan="3" class="text-center text-muted">Loading...</td></tr></tbody></table></div>
     </div>
 
     <!-- Ledger Tab -->
     <div id="tab-ledger" style="display:none;">
         <div class="mb-3 d-flex gap-2">
-            <input type="text" id="ledgerProductId" class="form-control form-control-sm" style="width:160px;" placeholder="Product ID (optional)">
+            <input type="text" id="ledgerProductId" class="form-control form-control-sm" list="inventoryProductOptions" style="width:160px;" placeholder="Product ID (optional)">
             <select id="ledgerType" class="form-select form-select-sm" style="width:200px;">
                 <option value="">All Transaction Types</option>
                 <option value="PURCHASE">PURCHASE</option>
@@ -123,7 +135,7 @@
             <h6 class="fw-bold mb-3">Manual Stock Adjustment</h6>
             <div class="mb-3">
                 <label class="form-label">Product ID</label>
-                <input type="number" id="adjProductId" class="form-control" placeholder="e.g. 15">
+                <input type="number" id="adjProductId" class="form-control" list="inventoryProductOptions" placeholder="e.g. 15">
             </div>
             <div class="mb-3">
                 <label class="form-label">Quantity Change</label>
@@ -140,27 +152,44 @@
 
 </div>
 
-<script>
-const token = sessionStorage.getItem('access_token');
-if (!token) { window.location.href = '/dashboard/login/'; }
+<datalist id="inventoryProductOptions"></datalist>
 
-function doLogout() {
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('refresh_token');
-    window.location.href = '/dashboard/login/';
+<div id="inventoryDetailModal" class="detail-modal" role="dialog" aria-modal="true" aria-labelledby="inventoryDetailTitle">
+    <div class="modal-dialog modal-lg mx-auto"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="inventoryDetailTitle">Product Details</h5><button type="button" class="btn-close" onclick="hideInventoryDetail()" aria-label="Close"></button></div>
+        <div class="modal-body" id="inventoryDetailBody">Loading...</div>
+    </div></div>
+</div>
+
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+
+async function request(url, options = {}) {
+    try {
+        const data = await apiFetch(url, options);
+        return { ok: true, status: 200, json: async () => data };
+    } catch (error) {
+        return { ok: false, status: error.status ?? 500, json: async () => error.data ?? { error: error.message } };
+    }
 }
 
 function switchTab(name, btn) {
-    ['stock','ledger','adjust'].forEach(t => {
+    ['stock','low','out','ledger','adjust'].forEach(t => {
         document.getElementById('tab-' + t).style.display = (t === name) ? 'block' : 'none';
     });
     document.querySelectorAll('#invTabs .nav-link').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
+    if (name === 'low') loadLowStock();
+    if (name === 'out') loadOutOfStock();
     if (name === 'ledger' && ledgerData.length === 0) loadLedger();
 }
 
 let allStock = [];
 let ledgerData = [];
+let stockPage = 1;
+const stockPageSize = 25;
 
 function stockBadge(current, threshold) {
     if (current <= 0) return '<span class="badge-out">OUT OF STOCK</span>';
@@ -170,9 +199,7 @@ function stockBadge(current, threshold) {
 
 async function loadStock() {
     try {
-        const res = await fetch('/api/inventory/stock/', {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
+        const res = await request('/api/inventory/stock/');
         const data = await res.json();
        allStock = data.stock ?? (Array.isArray(data) ? data : (data.results ?? []));
 
@@ -181,7 +208,7 @@ async function loadStock() {
         document.getElementById('kpiOut').innerText = allStock.filter(p => (p.current_stock ?? p.quantity ?? 0) <= 0).length;
 
         // Try to get sync date from first record or a dedicated endpoint
-        const syncRes = await fetch('/api/inventory/sync-date/', { headers: { 'Authorization': 'Bearer ' + token } }).catch(() => null);
+        const syncRes = await request('/api/inventory/sync-date/').catch(() => null);
         if (syncRes && syncRes.ok) {
             const syncData = await syncRes.json();
             document.getElementById('kpiSync').innerText = syncData.last_sync_date ?? syncData.sync_date ?? '—';
@@ -189,9 +216,28 @@ async function loadStock() {
             document.getElementById('kpiSync').innerText = '—';
         }
 
+        populateInventoryProductOptions();
         renderStock();
     } catch(e) {
         document.getElementById('stockBody').innerHTML = '<tr><td colspan="8" class="text-center text-muted">Could not load stock data.</td></tr>';
+    }
+}
+
+function populateInventoryProductOptions() {
+    const datalist = document.getElementById('inventoryProductOptions');
+    datalist.innerHTML = allStock.map(p => `<option value="${p.product_id ?? p.id}">${p.product_name ?? p.name ?? ''}</option>`).join('');
+}
+
+async function loadUploadSummary() {
+    const target = document.getElementById('uploadSummary');
+    try {
+        const res = await fetch('/api/inventory/last-uploads-by-type/', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!res.ok) throw new Error('Request failed');
+        const data = await res.json();
+        const uploads = data.uploads ?? [];
+        target.innerHTML = uploads.length ? uploads.map(u => `<span class="badge ${u.status === 'SUCCESS' ? 'bg-success' : 'bg-secondary'} me-2 mb-1">${u.upload_type}: ${u.status}${u.upload_date ? ` (${u.upload_date})` : ''}</span>`).join('') : 'No upload history found.';
+    } catch (e) {
+        target.textContent = 'Could not load upload status.';
     }
 }
 
@@ -215,7 +261,10 @@ function renderStock() {
         tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No products match.</td></tr>';
         return;
     }
-    tbody.innerHTML = rows.map(p => {
+    const totalPages = Math.max(1, Math.ceil(rows.length / stockPageSize));
+    stockPage = Math.min(stockPage, totalPages);
+    const pageRows = rows.slice((stockPage - 1) * stockPageSize, stockPage * stockPageSize);
+    tbody.innerHTML = pageRows.map(p => {
         const current = p.current_stock ?? p.quantity ?? 0;
         const threshold = p.reorder_threshold ?? '—';
         return `
@@ -230,27 +279,53 @@ function renderStock() {
             <td><button class="btn btn-sm btn-outline-secondary" onclick="viewDetail(${p.product_id ?? p.id})">View</button></td>
         </tr>`;
     }).join('');
+    document.getElementById('stockPagination').innerHTML = rows.length > stockPageSize ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeStockPage(-1)" ${stockPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${stockPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeStockPage(1)" ${stockPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+}
+
+function changeStockPage(delta) {
+    stockPage += delta;
+    renderStock();
+}
+
+async function loadLowStock() {
+    await loadAlertStock('/api/inventory/low-stock/', 'lowBody', 'low_stock_products', rows => rows.map(p => `<tr><td>${p.product_name ?? '—'}</td><td>${p.sku_code ?? '—'}</td><td>${p.current_stock ?? 0}</td><td>${p.reorder_threshold ?? '—'}</td><td>${p.shortage ?? '—'}</td><td>${p.urgency ?? '—'}</td></tr>`).join(''), 6);
+}
+
+async function loadOutOfStock() {
+    await loadAlertStock('/api/inventory/out-of-stock/', 'outBody', 'out_of_stock', rows => rows.map(p => `<tr><td>${p.product_name ?? '—'}</td><td>${p.sku_code ?? '—'}</td><td>${p.current_stock ?? 0}</td></tr>`).join(''), 3);
+}
+
+async function loadAlertStock(url, bodyId, key, renderRows, columns) {
+    try {
+        const res = await request(url);
+        const data = await res.json();
+        const rows = data[key] ?? [];
+        document.getElementById(bodyId).innerHTML = rows.length ? renderRows(rows) : `<tr><td colspan="${columns}" class="text-center text-muted">No matching products.</td></tr>`;
+    } catch (e) {
+        document.getElementById(bodyId).innerHTML = `<tr><td colspan="${columns}" class="text-center text-danger">Could not load data.</td></tr>`;
+    }
 }
 
 async function viewDetail(productId) {
+    const modal = document.getElementById('inventoryDetailModal');
+    const body = document.getElementById('inventoryDetailBody');
+    modal.classList.add('show');
+    body.innerHTML = '<div class="text-center text-muted">Loading...</div>';
     try {
-        const res = await fetch(`/api/inventory/stock/${productId}/`, {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
+        const res = await request(`/api/inventory/stock/${productId}/`);
         const data = await res.json();
-        let detail = `Product: ${data.product_name ?? '—'}\nTotal Stock: ${data.current_stock ?? data.total_remaining ?? '—'}\n\nBatch breakdown:\n`;
         const batches = data.batches ?? data.batch_breakdown ?? [];
-        if (batches.length === 0) {
-            detail += 'No active batches found.';
-        } else {
-            batches.forEach(b => {
-                detail += `- Batch ${b.batch_id ?? b.id ?? '—'}: ${b.remaining_quantity ?? '—'} units, expires ${b.expiry_date ?? '—'}\n`;
-            });
-        }
-        alert(detail);
+        body.innerHTML = `<h5>${data.product_name ?? '—'}</h5><p>Total stock: <strong>${data.current_stock ?? data.total_remaining ?? '—'}</strong></p><table class="table table-sm"><thead><tr><th>Batch</th><th>Remaining</th><th>Expiry</th><th>Status</th></tr></thead><tbody>${batches.map(b => `<tr><td>${b.batch_id ?? b.id ?? '—'}</td><td>${b.remaining_quantity ?? '—'}</td><td>${b.expiry_date ?? '—'}</td><td>${b.status ?? '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="text-muted">No active batches found.</td></tr>'}</tbody></table>`;
     } catch(e) {
-        alert('Could not load product detail.');
+        body.innerHTML = '<div class="text-danger">Could not load product detail.</div>';
     }
+}
+
+function hideInventoryDetail() {
+    document.getElementById('inventoryDetailModal').classList.remove('show');
 }
 
 async function loadLedger() {
@@ -260,9 +335,7 @@ async function loadLedger() {
     if (productId) url += `product=${productId}&`;
     if (type) url += `type=${type}`;
     try {
-        const res = await fetch(url, {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
+        const res = await request(url);
         const data = await res.json();
         ledgerData = Array.isArray(data) ? data : (data.results ?? []);
         const tbody = document.getElementById('ledgerBody');
@@ -296,10 +369,10 @@ async function submitAdjustment() {
     }
 
     try {
-        const res = await fetch('/api/inventory/adjust/', {
+        const res = await request('/api/inventory/adjust/', {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ product_id: Number(product_id), quantity: Number(quantity), reason })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ product_id: Number(product_id), quantity_change: Number(quantity), reason })
         });
         if (res.ok) {
             msgBox.innerHTML = '<div class="alert alert-success py-2">Adjustment recorded successfully.</div>';
@@ -317,6 +390,6 @@ async function submitAdjustment() {
 }
 
 loadStock();
+loadUploadSummary();
 </script>
-</body>
-</html>
+{% endblock %}
