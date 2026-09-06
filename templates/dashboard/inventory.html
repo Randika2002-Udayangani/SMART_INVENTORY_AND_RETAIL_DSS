@@ -154,6 +154,12 @@
 
 <datalist id="inventoryProductOptions"></datalist>
 
+<script>
+const token = sessionStorage.getItem('access_token');
+if (!token) { window.location.href = '/dashboard/login/'; }
+if (!token) { window.location.href = '/dashboard/login/'; }
+
+
 <div id="inventoryDetailModal" class="detail-modal" role="dialog" aria-modal="true" aria-labelledby="inventoryDetailTitle">
     <div class="modal-dialog modal-lg mx-auto"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title" id="inventoryDetailTitle">Product Details</h5><button type="button" class="btn-close" onclick="hideInventoryDetail()" aria-label="Close"></button></div>

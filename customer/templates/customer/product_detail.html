@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Detail | SmartDeals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; }
+
+        nav {
+            background: #1a73e8; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        nav .nav-links a { color: white; text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+        nav .logout-btn {
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            padding: 7px 16px; border-radius: 20px; margin-left: 20px; cursor: pointer;
+        }
+
+        .page { padding: 24px; max-width: 600px; margin: 0 auto; }
+
+        .back-link {
+            display: inline-flex; align-items: center; gap: 6px;
+            color: #1a73e8; text-decoration: none; font-size: 0.9rem;
+            margin-bottom: 16px;
+        }
+
+        .detail-box {
+            background: white; border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1); padding: 24px;
+        }
+
+        .badge-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .badge {
+            font-size: 0.75rem; padding: 4px 10px;
+            border-radius: 12px; font-weight: 600;
+        }
+        .badge-expiry  { background: #fce8e6; color: #c5221f; }
+        .badge-discount { background: #e6f4ea; color: #1e7e34; }
+
+        .product-name { font-size: 1.4rem; font-weight: 700; color: #222; margin-bottom: 8px; }
+        .product-sku  { font-size: 0.85rem; color: #999; margin-bottom: 16px; }
+
+        .info-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;
+        }
+        .info-item { background: #f8f9fa; border-radius: 8px; padding: 12px; }
+        .info-item .label { font-size: 0.78rem; color: #888; margin-bottom: 4px; }
+        .info-item .value { font-size: 1rem; font-weight: 600; color: #222; }
+
+        .price-section { margin-bottom: 24px; }
+        .original-price { text-decoration: line-through; color: #aaa; font-size: 1rem; }
+        .discount-price { color: #1a73e8; font-weight: 700; font-size: 1.6rem; }
+
+        .order-btn {
+            width: 100%; padding: 14px; background: #1a73e8; color: white;
+            border: none; border-radius: 8px; font-size: 1rem;
+            font-weight: 700; cursor: pointer;
+        }
+        .order-btn:hover { background: #1558b0; }
+
+        .loading { text-align: center; padding: 40px; color: #888; }
+
+        @media (max-width: 480px) {
+            .info-grid { grid-template-columns: 1fr; }
+            nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <div class="nav-links"  id="navLinks">
+        <a href="/customer/products/">Products</a>
+        <a href="/customer/chatbot/">Chat with Us</a>
+        <a href="/customer/my-orders/">My Orders</a>
+        <a href="/customer/profile/">My Profile</a> 
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+</nav>
+
+<div class="page">
+    <a class="back-link" href="/customer/products/">← Back to Products</a>
+    <div id="detailContent">
+        <div class="loading">⏳ Loading product details...</div>
+    </div>
+</div>
+
+<script>
+    const token = sessionStorage.getItem('jwt');
+    if (!token) window.location.href = '/customer/login/';
+
+    const params    = new URLSearchParams(window.location.search);
+    const productId = params.get('id');
+
+    // Demo products as fallback
+    const demoProducts = [
+        { id:1, product_name:"Anchor Full Cream Milk 1L",  unit_price:350, discounted_price:280, expiry_date:"2026-07-25", sku_code:"MLK001", category:"Dairy", brand:"Anchor" },
+        { id:2, product_name:"Milo Chocolate Drink 400g",  unit_price:480, discounted_price:384, expiry_date:"2026-07-22", sku_code:"MLO002", category:"Beverages", brand:"Milo" },
+        { id:3, product_name:"Yogurt Strawberry 200g",     unit_price:120, discounted_price:84,  expiry_date:"2026-07-20", sku_code:"YGT003", category:"Dairy", brand:"General" },
+        { id:4, product_name:"Bread Loaf 400g",            unit_price:85,  discounted_price:60,  expiry_date:"2026-07-19", sku_code:"BRD004", category:"Bakery", brand:"General" },
+        { id:5, product_name:"Cheddar Cheese Block 250g",  unit_price:620, discounted_price:496, expiry_date:"2026-07-23", sku_code:"CHS005", category:"Dairy", brand:"General" },
+        { id:6, product_name:"Orange Juice 1L",            unit_price:290, discounted_price:203, expiry_date:"2026-07-21", sku_code:"JUS006", category:"Beverages", brand:"General" },
+        { id:7, product_name:"Butter Unsalted 200g",       unit_price:420, discounted_price:336, expiry_date:"2026-07-24", sku_code:"BTR007", category:"Dairy", brand:"General" },
+        { id:8, product_name:"Cream Cheese 150g",          unit_price:380, discounted_price:266, expiry_date:"2026-07-20", sku_code:"CRM008", category:"Dairy", brand:"General" },
+    ];
+
+    // ── Dynamic nav bar ──────────────────────────────────────────
+    function buildNav() {
+        const token = sessionStorage.getItem('jwt');
+        const nav   = document.getElementById('navLinks');
+
+        if (token) {
+            // Logged in nav
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
+                <a href="/customer/my-orders/">My Orders</a>
+                <a href="/customer/profile/">My Profile</a>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            `;
+        } else {
+            // Guest nav
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
+                <a href="/customer/register/" style="background:white;color:#1a73e8;padding:7px 16px;border-radius:20px;margin-left:20px;font-weight:600;">Register</a>
+                <a href="/customer/login/" style="background:rgba(255,255,255,0.2);color:white;padding:7px 16px;border-radius:20px;margin-left:8px;">Login</a>
+            `;
+        }
+        updateCartBadge();
+    }
+
+    async function loadProduct() {
+        if (!productId) {
+            window.location.href = '/customer/products/';
+            return;
+        }
+
+        let p = null;
+
+        try {
+            const res = await fetch(`/api/products/${productId}/`);
+            if (res.ok) {
+                p = await res.json();
+            } else {
+                // API returned 401/403 — use demo product
+                p = demoProducts.find(d => d.id === parseInt(productId)) || demoProducts[0];
+            }
+        } catch (err) {
+            // Network error — use demo product
+            p = demoProducts.find(d => d.id === parseInt(productId)) || demoProducts[0];
+        }
+
+        const hasDiscount = p.discounted_price &&
+            parseFloat(p.discounted_price) < parseFloat(p.unit_price);
+
+        const discountPct = hasDiscount
+            ? Math.round((1 - p.discounted_price / p.unit_price) * 100)
+            : 0;
+
+        document.getElementById('detailContent').innerHTML = `
+            <div class="detail-box">
+                <div class="badge-row">
+                    <span class="badge badge-expiry">Near Expiry</span>
+                    ${hasDiscount ? `<span class="badge badge-discount">${discountPct}% OFF</span>` : ''}
+                </div>
+                <div class="product-name">${p.product_name}</div>
+                ${p.sku_code ? `<div class="product-sku">SKU: ${p.sku_code}</div>` : ''}
+
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="label">Expiry Date</div>
+                        <div class="value">⏰ ${p.expiry_date || 'Soon'}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Category</div>
+                        <div class="value">${p.category || 'General'}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Brand</div>
+                        <div class="value">${p.brand || 'N/A'}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Availability</div>
+                        <div class="value" style="color:#1e7e34">✅ In Stock</div>
+                    </div>
+                </div>
+
+                <div class="price-section">
+                    ${hasDiscount
+                        ? `<div class="original-price">Rs ${parseFloat(p.unit_price).toFixed(2)}</div>
+                           <div class="discount-price">Rs ${parseFloat(p.discounted_price).toFixed(2)}</div>`
+                        : `<div class="discount-price">Rs ${parseFloat(p.unit_price).toFixed(2)}</div>`
+                    }
+                </div>
+
+                <button class="order-btn" id="orderBtn">
+                    Order Now
+                </button>
+            </div>`;
+
+        // Add order button click after rendering
+        document.getElementById('orderBtn').addEventListener('click', () => {
+            window.location.href = `/customer/order/?product=${p.id}`;
+        });
+        loadProductRatings(productId);
+
+    
+    }
+
+    async function loadProductRatings(productId) {
+        try {
+            const res = await fetch(`/api/ratings/product/${productId}/`);
+            if (!res.ok) return;
+
+            const data    = await res.json();
+            const ratings = Array.isArray(data) ? data : (data.results || []);
+
+            if (ratings.length === 0) return;
+
+            const avg = ratings.reduce((s, r) => s + r.rating, 0) / ratings.length;
+            const stars = '★'.repeat(Math.round(avg)) + '☆'.repeat(5 - Math.round(avg));
+
+            const ratingsHTML = `
+                <div style="margin-top:20px; padding-top:16px; border-top:1px solid #eee;">
+                    <div style="font-weight:700; margin-bottom:8px; font-size:0.95rem;">
+                        Customer Ratings
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+                        <span style="font-size:1.5rem; color:#f4b400;">${stars}</span>
+                        <span style="font-weight:700; font-size:1.1rem;">${avg.toFixed(1)}</span>
+                        <span style="color:#888; font-size:0.85rem;">(${ratings.length} review${ratings.length > 1 ? 's' : ''})</span>
+                    </div>
+                    ${ratings.slice(0, 3).map(r => `
+                        <div style="background:#f8f9fa; border-radius:8px; padding:10px 14px; margin-bottom:8px;">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                                <span style="font-size:0.85rem; font-weight:600; color:#333;">
+                                    ${r.customer_name || 'Customer'}
+                                    ${r.is_verified ? '<span style="color:#1e7e34; font-size:0.75rem;"> ✓ Verified</span>' : ''}
+                                </span>
+                                <span style="color:#f4b400; font-size:0.9rem;">${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</span>
+                            </div>
+                            ${r.feedback_text ? `<div style="font-size:0.83rem; color:#555;">${r.feedback_text}</div>` : ''}
+                        </div>`).join('')}
+                </div>`;
+
+            // Append ratings to detail box
+            document.querySelector('.detail-box').insertAdjacentHTML('beforeend', ratingsHTML);
+
+        } catch (err) {
+            console.log('Ratings not available:', err);
+        }
+    }
+
+    function logout() {
+        const orders = sessionStorage.getItem('myOrders');
+        sessionStorage.clear();
+        if (orders) sessionStorage.setItem('myOrders', orders);
+        window.location.href = '/customer/login/';
+    }
+
+    loadProduct();
+</script>
+</body>
+</html>
