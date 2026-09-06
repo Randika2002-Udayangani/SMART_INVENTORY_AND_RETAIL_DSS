@@ -1,10 +1,11 @@
-# products/views.py
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from django.shortcuts import render
 from django.utils import timezone
-from core.permissions import ReadPublicWriteAuthenticated
+from django.db.models import Sum
+from purchases.models import PurchaseBatch
 from core.authentication import LenientJWTAuthentication
 from users.audit import log_action
 import pandas as pd
@@ -13,43 +14,41 @@ from users.permissions import IsManagerOrAdmin
 from .models import Brand, Category, StoreZone, Product, ZoneRecommendation
 from .serializers import (
     BrandSerializer, CategorySerializer,
-    StoreZoneSerializer, ProductSerializer, ProductPublicSerializer, ZoneRecommendationSerializer
+    StoreZoneSerializer, ProductSerializer, ProductPublicSerializer,
+    ZoneRecommendationSerializer
 )
 from sales.models import UploadLog
-from sales.services.excel_parser import parse_item_master
-from inventory.services.auto_categorise import classify_product
 
-from purchases.models import PurchaseBatch
-from django.db.models import Sum
+
+def product_list(request):
+    return render(request, "customer/products.html")
+
 
 # ─────────────────────────────────────────────
 # Brand
 # ─────────────────────────────────────────────
-class BrandListCreateView(ReadPublicWriteAuthenticated, generics.ListCreateAPIView):
+class BrandListCreateView(generics.ListCreateAPIView):
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
-    authentication_classes = [LenientJWTAuthentication]
 
 
-class BrandDetailView(ReadPublicWriteAuthenticated, generics.RetrieveUpdateDestroyAPIView):
+class BrandDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
-    authentication_classes = [LenientJWTAuthentication]
 
 
 # ─────────────────────────────────────────────
 # Category
 # ─────────────────────────────────────────────
-class CategoryListCreateView(ReadPublicWriteAuthenticated, generics.ListCreateAPIView):
+class CategoryListCreateView(generics.ListCreateAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    authentication_classes = [LenientJWTAuthentication]
 
 
-class CategoryDetailView(ReadPublicWriteAuthenticated, generics.RetrieveUpdateDestroyAPIView):
+class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    authentication_classes = [LenientJWTAuthentication]
+
 
 # ─────────────────────────────────────────────
 # StoreZone — staff-only, no customer traffic, default auth is fine
@@ -84,20 +83,12 @@ class ProductListCreateView(generics.ListCreateAPIView):
         return queryset
 
     def get_serializer_class(self):
-        # POST (create) — staff only, always full serializer
         if self.request.method == 'POST':
             return ProductSerializer
-        # GET — public but cost fields hidden for unauthenticated
         if self.request.user and self.request.user.is_authenticated:
             return ProductSerializer
         return ProductPublicSerializer
 
-    # Point 1 fix: method-level permissions
-    # Before: permission_classes = [permissions.AllowAny]
-    #         AllowAny applied to ALL methods including POST
-    #         Any unauthenticated user could create products
-    # After:  GET → public (customers browse product list)
-    #         POST → authenticated staff only
     def get_permissions(self):
         if self.request.method == 'POST':
             return [permissions.IsAuthenticated()]
@@ -166,11 +157,6 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
             return ProductSerializer
         return ProductPublicSerializer
 
-    # Point 2 fix: method-level permissions
-    # Before: permission_classes = [permissions.AllowAny]
-    #         Anyone could PUT/PATCH/DELETE any product
-    # After:  GET → public (customers view product detail)
-    #         PUT/PATCH/DELETE → authenticated staff only
     def get_permissions(self):
         if self.request.method == 'DELETE':
             return [permissions.IsAuthenticated(), IsManagerOrAdmin()]
@@ -227,43 +213,16 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 # ─────────────────────────────────────────────
-# Item Master Excel Upload  (Pipeline 1)
+# Item Master Excel Upload (Pipeline 1)
 # POST /api/products/import/
 # ─────────────────────────────────────────────
 class ItemMasterUploadView(APIView):
-    """
-    Uploads the easyAcc Item Master Excel file (Book1.xlsx).
-
-    File structure — NO header row, 495 rows in real file:
-      Col A (index 0) — seq_number   : row reference only, never stored
-      Col B (index 1) — product_name : MANDATORY, primary match key
-      Col C (index 2) — sinhala_name : optional, ignored
-      Col D (index 3) — sku_code     : sparse — only ~10/495 rows have a value
-      Col E (index 4) — qty_on_hand  : informational only, ignored (R6)
-      Col F (index 5) — unit_price   : MANDATORY, must be > 0
-
-    Rules (Data_Ingestion_Rules_v3.pdf — all 8 verified):
-      R1 ✅ Skip 'DEFAULT ITEM' placeholder silently
-      R2 ✅ Skip blank product name — log error
-      R3 ✅ Skip price <= 0 — log error
-      R4 ✅ Skip 2nd duplicate SKU in file — log warning
-      R5 ✅ Skip 2nd duplicate name in file when sku_code is NULL
-             Case-insensitive check: "MILK" and "Milk" treated as same product
-      R6 ✅ Negative qty_on_hand allowed — field is ignored entirely
-      R7 ✅ Inactive product: update_fields=['unit_price'] — is_active never touched
-      R8 ✅ New product no category: insert with category=None, flagged for staff
-
-    Performance:
-      Products preloaded into memory before loop — 2 DB queries total
-      instead of ~1000 queries for 495 rows
-    """
-    parser_classes   = [MultiPartParser, FormParser]
+    parser_classes     = [MultiPartParser, FormParser]
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         file = request.FILES.get('file')
 
-        # ── Basic file validation ─────────────────────────────────────────
         if not file:
             return Response(
                 {'error': 'No file uploaded. Send file as form-data with key "file"'},
@@ -275,27 +234,25 @@ class ItemMasterUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ── Create upload log ─────────────────────────────────────────────
         upload_log = UploadLog.objects.create(
             file_name=file.name,
             upload_type='ITEM_MASTER',
             status='PARTIAL',
-            error_message=''
+            error_message='',
+            uploaded_by=request.user.id
         )
 
-        # ── Parse Excel via extracted service function ────────────────────
-        parsed = parse_item_master(file)
-
-        if parsed['read_error']:
+        try:
+            df = pd.read_excel(file, header=None)
+        except Exception as e:
             upload_log.status = 'FAILED'
-            upload_log.error_message = parsed['read_error']
+            upload_log.error_message = f'Could not read Excel file: {str(e)}'
             upload_log.save()
             return Response(
-                {'error': parsed['read_error']},
+                {'error': f'Could not read file: {str(e)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ── Preload all products into memory ──────────────────────────────
         products_by_sku  = {
             p.sku_code: p
             for p in Product.objects.exclude(sku_code__isnull=True)
@@ -306,19 +263,74 @@ class ItemMasterUploadView(APIView):
             for p in Product.objects.all()
         }
 
-        # ── Processing counters ───────────────────────────────────────────
         inserted = 0
         updated  = 0
-        skipped  = parsed['skipped']
+        skipped  = 0
         flagged  = 0
-        errors   = parsed['errors'][:]
+        errors   = []
+        seen_skus  = {}
+        seen_names = {}
 
-        # ── Process parsed rows ───────────────────────────────────────────
-        for item in parsed['rows']:
-            product_name = item['product_name']
-            sku_code     = item['sku_code']
-            unit_price   = item['unit_price']
-            row_num      = item['row_num']
+        for index, row in df.iterrows():
+            row_num = index + 1
+
+            if len(row) < 6:
+                skipped += 1
+                errors.append(
+                    f'Row {row_num}: Only {len(row)} columns found — '
+                    f'expected at least 6. Row skipped.'
+                )
+                continue
+
+            raw_name     = row.iloc[1] if not pd.isna(row.iloc[1]) else ''
+            product_name = str(raw_name).strip()
+
+            if product_name == 'DEFAULT ITEM':
+                skipped += 1
+                continue
+
+            if not product_name:
+                skipped += 1
+                errors.append(f'Row {row_num}: Empty product name — skipped')
+                continue
+
+            raw_sku  = row.iloc[3] if not pd.isna(row.iloc[3]) else None
+            sku_code = str(raw_sku).strip() if raw_sku is not None else None
+            if not sku_code or sku_code.lower() in ('nan', 'none', ''):
+                sku_code = None
+
+            try:
+                unit_price = float(row.iloc[5]) if not pd.isna(row.iloc[5]) else 0.0
+            except (ValueError, TypeError):
+                unit_price = 0.0
+
+            if unit_price <= 0:
+                skipped += 1
+                errors.append(
+                    f'Row {row_num}: "{product_name}" price={unit_price} — skipped'
+                )
+                continue
+
+            if sku_code:
+                if sku_code in seen_skus:
+                    skipped += 1
+                    errors.append(
+                        f'Row {row_num}: Duplicate SKU "{sku_code}" '
+                        f'(first seen row {seen_skus[sku_code]}) — skipped'
+                    )
+                    continue
+                seen_skus[sku_code] = row_num
+
+            if not sku_code:
+                normalized_name = product_name.lower()
+                if normalized_name in seen_names:
+                    skipped += 1
+                    errors.append(
+                        f'Row {row_num}: Duplicate name "{product_name}" '
+                        f'(first seen row {seen_names[normalized_name]}) — skipped'
+                    )
+                    continue
+                seen_names[normalized_name] = row_num
 
             existing = None
             if sku_code:
@@ -337,20 +349,6 @@ class ItemMasterUploadView(APIView):
                 updated += 1
 
             else:
-                detected_category_name, detected_brand_name = classify_product(product_name)
-
-                category_obj, _ = Category.objects.get_or_create(
-                    category_name=detected_category_name,
-                    defaults={'default_zone': None}
-                )
-
-                brand_obj = None
-                if detected_brand_name != 'Unbranded':
-                    brand_obj, _ = Brand.objects.get_or_create(
-                        brand_name=detected_brand_name,
-                        defaults={'manufacturer': ''}
-                    )
-
                 new_product = Product.objects.create(
                     product_name      = product_name,
                     sku_code          = sku_code,
@@ -358,29 +356,21 @@ class ItemMasterUploadView(APIView):
                     cost_price        = 0,
                     avg_cost_price    = 0,
                     is_active         = True,
-                    category          = category_obj,
-                    brand             = brand_obj,
+                    category          = None,
+                    brand             = None,
                     reorder_threshold = 0,
                     introduced_date   = timezone.now().date(),
                 )
                 inserted += 1
+                flagged  += 1
                 products_by_name[product_name.lower()] = new_product
                 if sku_code:
                     products_by_sku[sku_code] = new_product
+                errors.append(
+                    f'Row {row_num}: NEW product "{product_name}" inserted — '
+                    f'needs category assignment'
+                )
 
-                if detected_category_name == 'General':
-                    flagged += 1
-                    errors.append(
-                        f'Row {row_num}: NEW product "{product_name}" inserted — '
-                        f'category could not be auto-detected, manual assignment needed'
-                    )
-                else:
-                    errors.append(
-                        f'Row {row_num}: NEW product "{product_name}" inserted — '
-                        f'auto-assigned to {detected_category_name} / {detected_brand_name}'
-                    )
-
-        # ── Finalise upload log ───────────────────────────────────────────
         if inserted == 0 and updated == 0:
             upload_log.status = 'FAILED'
         elif skipped == 0 and flagged == 0:
@@ -388,16 +378,13 @@ class ItemMasterUploadView(APIView):
         else:
             upload_log.status = 'PARTIAL'
 
-        # Point 7 fix: truncate by line count not character count
-        # Before: '\n'.join(errors)[:2000] — cuts mid-line, corrupts last message
-        # After:  '\n'.join(errors[:100])  — keeps complete lines, max 100 entries
         upload_log.error_message = '\n'.join(errors[:100])
         upload_log.save()
 
         return Response({
             'message'       : 'Item Master upload complete',
             'file'          : file.name,
-            'total_rows'    : len(parsed['rows']) + parsed['skipped'],
+            'total_rows'    : len(df),
             'inserted'      : inserted,
             'updated'       : updated,
             'skipped'       : skipped,
@@ -407,56 +394,35 @@ class ItemMasterUploadView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
+# ─────────────────────────────────────────────
+# Zone Recommendation
+# ─────────────────────────────────────────────
 class ZoneRecommendationListView(generics.ListAPIView):
-    """
-    GET /api/zones/recommendations/
-
-    Zone placement recommendations per product.
-
-    IMPORTANT — read-only for now: this serves whatever rows already
-    exist in ZoneRecommendation. It does NOT calculate new
-    recommendations on the fly. Per the API doc, the actual scoring
-    logic (velocity_score + margin_score -> high-traffic zone;
-    expiry_risk_score high -> end-of-aisle promo zone) depends on
-    Nipuni's health-score/lifecycle engines for velocity and margin
-    data. Until something populates this table (either a future
-    'calculate' endpoint or a management command), this will just
-    return an empty list — that's expected, not a bug.
-    """
     queryset = ZoneRecommendation.objects.select_related(
         'product', 'current_zone', 'suggested_zone'
     ).order_by('-recommendation_date')
-    serializer_class = ZoneRecommendationSerializer
+    serializer_class   = ZoneRecommendationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
 
+# ─────────────────────────────────────────────
+# Recalculate WAC
+# ─────────────────────────────────────────────
 class RecalculateWACView(APIView):
-    """
-    POST /api/products/{id}/recalculate-wac/
-
-    Recalculates avg_cost_price using the WAC formula:
-        avg_cost_price = total_purchase_cost / total_units_received
-
-    Computed across ALL purchase batches ever received for this product
-    (not just ACTIVE ones) — WAC is a historical weighted average of
-    cost, not a current-stock snapshot. This is the same formula
-    purchases/views.py already runs automatically when a new batch is
-    created (per API doc: "M1 — called automatically on batch creation").
-    This endpoint is just the manual re-trigger version.
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        # Local import to avoid any risk of circular import between
-        # products and purchases apps.
         from purchases.models import PurchaseBatch
 
         try:
             product = Product.objects.get(pk=pk)
         except Product.DoesNotExist:
-            return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': 'Product not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        batches = PurchaseBatch.objects.filter(product=product)
+        batches     = PurchaseBatch.objects.filter(product=product)
         total_units = sum(b.quantity_received for b in batches)
 
         if total_units == 0:
@@ -466,8 +432,8 @@ class RecalculateWACView(APIView):
             )
 
         total_cost = sum(b.quantity_received * b.cost_price for b in batches)
-        old_wac = product.avg_cost_price
-        new_wac = total_cost / total_units
+        old_wac    = product.avg_cost_price
+        new_wac    = total_cost / total_units
 
         product.avg_cost_price = new_wac
         product.save(update_fields=['avg_cost_price'])
@@ -483,13 +449,16 @@ class RecalculateWACView(APIView):
         )
 
         return Response({
-            'product_id': product.id,
-            'product_name': product.product_name,
-            'old_avg_cost_price': old_wac,
-            'new_avg_cost_price': round(new_wac, 2),
+            'product_id'          : product.id,
+            'product_name'        : product.product_name,
+            'old_avg_cost_price'  : old_wac,
+            'new_avg_cost_price'  : round(new_wac, 2),
             'total_units_received': total_units,
-            'batches_used': batches.count(),
+
+            'batches_used'        : batches.count(),
         })
+
+        
 
 
 class ReclassifyProductsView(APIView):
@@ -531,8 +500,6 @@ class ReclassifyProductsView(APIView):
 
 
 
-
-
 class ZoneRecommendationCalculateView(APIView):
     """
     POST /api/zones/recommendations/calculate/
@@ -558,3 +525,4 @@ class ZoneRecommendationCalculateView(APIView):
             "message": "Zone recommendations recalculated",
             **result,
         })
+

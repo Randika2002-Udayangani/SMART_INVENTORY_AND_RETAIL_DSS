@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Orders | SmartDeals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #333; }
+
+        /* ── Nav ── */
+        nav {
+            background: #1a73e8; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        nav .nav-links a { color: white; text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+        nav .nav-links a:hover { text-decoration: underline; }
+        nav .logout-btn {
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            padding: 7px 16px; border-radius: 20px; margin-left: 20px;
+            cursor: pointer; font-size: 0.9rem;
+        }
+
+        /* ── Page ── */
+        .page { padding: 24px; max-width: 800px; margin: 0 auto; }
+
+        .page-header {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-bottom: 20px;
+        }
+        .page-title { font-size: 1.3rem; font-weight: 700; color: #222; }
+        .order-count {
+            font-size: 0.85rem; background: #e8f0fe;
+            color: #1a73e8; padding: 4px 12px;
+            border-radius: 12px; font-weight: 500;
+        }
+
+        /* ── Order Card ── */
+        .order-card {
+            background: white; border-radius: 12px;
+            padding: 18px 20px; margin-bottom: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            display: flex; justify-content: space-between;
+            align-items: flex-start; gap: 16px;
+            transition: transform 0.2s;
+        }
+        .order-card:hover { transform: translateY(-2px); }
+
+        .order-info .reference {
+            font-size: 0.82rem; color: #888; margin-bottom: 4px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .order-info .product-name {
+            font-size: 1rem; font-weight: 700;
+            color: #222; margin-bottom: 8px;
+        }
+        .order-info .details {
+            font-size: 0.85rem; color: #666;
+            display: flex; gap: 14px; flex-wrap: wrap;
+        }
+        .order-info .details span {
+            display: flex; align-items: center; gap: 4px;
+        }
+
+        .order-right { text-align: right; flex-shrink: 0; }
+        .order-right .total {
+            font-size: 1.1rem; font-weight: 700;
+            color: #1a73e8; margin-bottom: 8px;
+        }
+
+        /* ── Status badges — all 5 ── */
+        .status-badge {
+            display: inline-block; padding: 5px 14px;
+            border-radius: 12px; font-size: 0.78rem; font-weight: 600;
+        }
+        .status-PENDING   { background: #f0f0f0; color: #666; }
+        .status-CONFIRMED { background: #e8f0fe; color: #1a73e8; }
+        .status-READY     { background: #e6f4ea; color: #1e7e34; }
+        .status-COMPLETED { background: #e8eaed; color: #444; }
+        .status-CANCELLED { background: #fce8e6; color: #c5221f; }
+
+        /* ── Loading state ── */
+        .loading-state {
+            text-align: center; padding: 60px 20px; color: #888;
+        }
+        .loading-state .spinner {
+            width: 40px; height: 40px; border: 4px solid #e8f0fe;
+            border-top: 4px solid #1a73e8; border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Empty state ── */
+        .empty-state {
+            text-align: center; padding: 60px 20px; color: #888;
+        }
+        .empty-state .icon { font-size: 3.5rem; margin-bottom: 16px; }
+        .empty-state h3 { font-size: 1.1rem; color: #444; margin-bottom: 8px; }
+        .empty-state p { font-size: 0.9rem; margin-bottom: 20px; }
+        .empty-state a {
+            background: #1a73e8; color: white; text-decoration: none;
+            padding: 10px 24px; border-radius: 8px; font-size: 0.95rem;
+        }
+
+        /* ── Mobile ── */
+        @media (max-width: 480px) {
+            .order-card { flex-direction: column; }
+            .order-right { text-align: left; }
+            nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
+            .page { padding: 16px; }
+        }
+
+        .timeline {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-top: 12px; padding: 12px 0;
+        }
+        .timeline-step {
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+            flex: 1; position: relative;
+        }
+        .timeline-step:not(:last-child)::after {
+            content: ''; position: absolute;
+            top: 14px; left: 50%; width: 100%;
+            height: 2px; background: #ddd; z-index: 0;
+        }
+        .timeline-step.done::after { background: #1a73e8; }
+        .step-dot {
+            width: 28px; height: 28px; border-radius: 50%;
+            background: #ddd; display: flex; align-items: center;
+            justify-content: center; font-size: 0.7rem; z-index: 1;
+            font-weight: 700; color: white;
+        }
+        .timeline-step.done .step-dot { background: #1a73e8; }
+        .timeline-step.current .step-dot { background: #1a73e8; box-shadow: 0 0 0 4px #e8f0fe; }
+        .step-label { font-size: 0.7rem; color: #888; text-align: center; }
+        .timeline-step.done .step-label,
+        .timeline-step.current .step-label { color: #1a73e8; font-weight: 600; }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .modal-box {
+            background: white; border-radius: 16px; padding: 28px;
+            max-width: 400px; width: 90%; text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .modal-box h3 { font-size: 1.1rem; color: #222; margin-bottom: 6px; }
+        .modal-box p { font-size: 0.88rem; color: #666; margin-bottom: 16px; }
+
+        .star-row {
+            display: flex; justify-content: center; gap: 8px;
+            margin-bottom: 16px;
+        }
+        .star {
+            font-size: 2rem; cursor: pointer; color: #ddd;
+            transition: color 0.15s;
+        }
+        .star.active { color: #f4b400; }
+
+        .feedback-input {
+            width: 100%; padding: 10px 14px;
+            border: 1.5px solid #ddd; border-radius: 8px;
+            font-size: 0.9rem; resize: vertical;
+            min-height: 80px; margin-bottom: 16px;
+            font-family: 'Segoe UI', sans-serif;
+            outline: none;
+        }
+        .feedback-input:focus { border-color: #1a73e8; }
+
+        .modal-buttons { display: flex; gap: 10px; }
+        .modal-btn {
+            flex: 1; padding: 11px; border-radius: 8px;
+            font-size: 0.95rem; font-weight: 600; cursor: pointer; border: none;
+        }
+        .modal-btn.primary { background: #1a73e8; color: white; }
+        .modal-btn.primary:hover { background: #1558b0; }
+        .modal-btn.outline {
+            background: white; color: #666; border: 1.5px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <div class="nav-links"  id="navLinks">
+        <a href="/customer/products/">Products</a>
+        <a href="/customer/chatbot/">Chat with Us</a>
+        <a href="/customer/my-orders/">My Orders</a>
+        <a href="/customer/profile/">My Profile</a>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+</nav>
+
+<!-- Page -->
+<div class="page">
+    <div class="page-header">
+        <div class="page-title">📋 My Orders</div>
+        <span class="order-count" id="orderCount"></span>
+    </div>
+    <div id="ordersList"></div>
+</div>
+
+<script>
+    const token = sessionStorage.getItem('jwt');
+    if (!token) window.location.href = '/customer/login/';    
+    const slotLabel = {
+        MORNING:   '🌅 Morning',
+        AFTERNOON: '☀️ Afternoon',
+        EVENING:   '🌙 Evening'
+    };
+
+    // ── Dynamic nav bar ──────────────────────────────────────────
+    function buildNav() {
+        const token = sessionStorage.getItem('jwt');
+        const nav   = document.getElementById('navLinks');
+
+        if (token) {
+            // Logged in nav
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
+                <a href="/customer/my-orders/">My Orders</a>
+                <a href="/customer/profile/">My Profile</a>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            `;
+        } else {
+            // Guest nav
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
+                <a href="/customer/register/" style="background:white;color:#1a73e8;padding:7px 16px;border-radius:20px;margin-left:20px;font-weight:600;">Register</a>
+                <a href="/customer/login/" style="background:rgba(255,255,255,0.2);color:white;padding:7px 16px;border-radius:20px;margin-left:8px;">Login</a>
+            `;
+        }
+        updateCartBadge();
+    }
+    
+    // ── Show loading state ────────────────────────────────────────
+    function showLoading() {
+        document.getElementById('ordersList').innerHTML = `
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading your orders...</p>
+            </div>`;
+        document.getElementById('orderCount').textContent = '';
+    }
+
+    // ── Show empty state ─────────────────────────────────────────
+    function showEmpty() {
+        document.getElementById('ordersList').innerHTML = `
+            <div class="empty-state">
+                <div class="icon">📋</div>
+                <h3>No orders yet</h3>
+                <p>You haven't placed any orders yet.<br>
+                   Browse our near-expiry deals and grab a bargain!</p>
+                <a href="/customer/products/">Browse Products</a>
+            </div>`;
+        document.getElementById('orderCount').textContent = '0 orders';
+    }
+
+    // ── Render order cards ────────────────────────────────────────
+    function renderOrders(orders) {
+        const list = document.getElementById('ordersList');
+
+        if (orders.length === 0) {
+            showEmpty();
+            return;
+        }
+
+        document.getElementById('orderCount').textContent =
+            `${orders.length} order${orders.length > 1 ? 's' : ''}`;
+
+        list.innerHTML = orders.map(o => {
+            const productName = o.product || o.product_name || o.item || 'Product';
+            const orderId     = o.id || null;
+            const orderRef    = o.ref || o.reference || o.order_reference || 'N/A';
+            const status      = o.status || 'PENDING';
+
+            return `
+                <div class="order-card">
+                    <div class="order-info">
+                        <div class="reference">
+                            📄 ${orderRef}
+                        </div>
+                        <div class="product-name">
+                            ${productName}
+                        </div>
+                        <div class="details">
+                            <span>📦 Qty: ${o.qty || o.quantity || 1}</span>
+                            <span>📅 ${o.date || o.pickup_date || 'N/A'}</span>
+                            <span>${slotLabel[o.slot || o.pickup_time_slot] || o.slot || ''}</span>
+                        </div>
+                    </div>
+                    <div class="order-right">
+                        <div class="total">
+                            ${o.total || o.total_price || ''}
+                        </div>
+                        <span class="status-badge status-${status}">
+                            ${status}
+                        </span>
+
+                        ${status === 'PENDING' ? `
+                            <button onclick="cancelOrder(${orderId}, '${orderRef}')"
+                                style="margin-top:8px; width:100%; padding:6px;
+                                background:white; color:#c5221f; border:1.5px solid #c5221f;
+                                border-radius:6px; cursor:pointer; font-size:0.82rem;">
+                                Cancel Order
+                            </button>` : ''}
+
+                        ${status === 'COMPLETED' ? `
+                            <button onclick="openRatingModal(${orderId}, '${productName.replace(/'/g, '')}')"
+                                style="margin-top:8px; width:100%; padding:6px;
+                                background:#e8f0fe; color:#1a73e8; border:1.5px solid #1a73e8;
+                                border-radius:6px; cursor:pointer; font-size:0.82rem;">
+                                ⭐ Rate this order
+                            </button>` : ''}
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    async function cancelOrder(orderId, ref) {
+        if (!confirm('Are you sure you want to cancel this order?')) return;
+
+        // If no real ID — cancel from sessionStorage only
+        if (!orderId) {
+            const saved = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+            const updated = saved.map(o =>
+                o.ref === ref ? { ...o, status: 'CANCELLED' } : o
+            );
+            sessionStorage.setItem('myOrders', JSON.stringify(updated));
+            loadOrders();
+            return;
+        }
+
+        // Try real API
+        try {
+            const res = await fetch(`/api/orders/${orderId}/status/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ status: 'CANCELLED' })
+            });
+
+            if (res.ok) {
+                loadOrders();
+            } else {
+                alert('Could not cancel order. Please try again.');
+            }
+        } catch (err) {
+            alert('Connection error. Please try again.');
+        }
+    }
+
+    // ── Load orders ───────────────────────────────────────────────
+    async function loadOrders() {
+        showLoading();
+
+        const token = sessionStorage.getItem('jwt');
+
+        try {
+            const res = await fetch('/api/orders/list/', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            if (res.ok) {
+                const data   = await res.json();
+                const orders = Array.isArray(data) ? data : (data.results || []);
+
+                if (orders.length > 0) {
+                    renderOrders(orders);
+                    return;
+                }
+            }
+        } catch (err) {
+            console.log('API not ready, using sessionStorage');
+        }
+
+        // ── Always fallback to sessionStorage ──
+        const saved = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+        renderOrders(saved);
+    }
+
+    function logout() {
+        const orders = sessionStorage.getItem('myOrders');
+        sessionStorage.clear();
+        if (orders) sessionStorage.setItem('myOrders', orders);
+        window.location.href = '/customer/login/';
+    }
+
+    function getTimeline(status) {
+        const steps = ['PENDING', 'CONFIRMED', 'READY', 'COMPLETED'];
+        const currentIndex = steps.indexOf(status);
+        if (status === 'CANCELLED') return '';
+
+        return `
+            <div class="timeline">
+                ${steps.map((step, i) => `
+                    <div class="timeline-step ${i < currentIndex ? 'done' : ''} ${i === currentIndex ? 'current' : ''}">
+                        <div class="step-dot">${i < currentIndex ? '✓' : i + 1}</div>
+                        <div class="step-label">${step}</div>
+                    </div>`).join('')}
+            </div>`;
+    }
+    // ── Rating ───────────────────────────────────────────────────
+    let currentRating    = 0;
+    let currentProductId = null;
+
+    function openRatingModal(orderId, productName) {
+        currentRating    = 0;
+        currentProductId = orderId;
+        document.getElementById('ratingProductName').textContent =
+            `How was: ${productName}?`;
+        document.getElementById('feedbackText').value = '';
+        updateStars(0);
+        document.getElementById('ratingModal').style.display = 'flex';
+    }
+
+    function closeRatingModal() {
+        document.getElementById('ratingModal').style.display = 'none';
+        currentRating    = 0;
+        currentProductId = null;
+    }
+
+    function setRating(rating) {
+        currentRating = rating;
+        updateStars(rating);
+    }
+
+    function updateStars(rating) {
+        const stars = document.querySelectorAll('.star');
+        stars.forEach((star, i) => {
+            star.classList.toggle('active', i < rating);
+        });
+    }
+
+    async function submitRating() {
+        if (currentRating === 0) {
+            alert('Please select a star rating!');
+            return;
+        }
+
+        const feedbackText = document.getElementById('feedbackText').value.trim();
+
+        try {
+            const res = await fetch('/api/ratings/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    product:       currentProductId,
+                    rating:        currentRating,
+                    feedback_text: feedbackText
+                })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                closeRatingModal();
+                alert(`✅ Thank you for your rating!${data.is_verified ? ' (Verified purchase ✓)' : ''}`);
+            } else {
+                alert(data.error || 'Could not submit rating. Please try again.');
+            }
+        } catch (err) {
+            console.error('Rating error:', err);
+            alert('Connection error. Please try again.');
+        }
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('ratingModal').addEventListener('click', function(e) {
+        if (e.target === this) closeRatingModal();
+    });
+    // ── Start ─────────────────────────────────────────────────────
+    loadOrders();
+</script>
+<!-- Rating Modal -->
+<div class="modal-overlay" id="ratingModal" style="display:none;">
+    <div class="modal-box">
+        <h3>⭐ Rate Your Order</h3>
+        <p id="ratingProductName">How was your experience?</p>
+
+        <div class="star-row" id="starRow">
+            <span class="star" onclick="setRating(1)">★</span>
+            <span class="star" onclick="setRating(2)">★</span>
+            <span class="star" onclick="setRating(3)">★</span>
+            <span class="star" onclick="setRating(4)">★</span>
+            <span class="star" onclick="setRating(5)">★</span>
+        </div>
+
+        <textarea class="feedback-input" id="feedbackText"
+            placeholder="Share your experience (optional)..."></textarea>
+
+        <div class="modal-buttons">
+            <button class="modal-btn outline" onclick="closeRatingModal()">Cancel</button>
+            <button class="modal-btn primary" onclick="submitRating()">Submit Rating</button>
+        </div>
+    </div>
+</div>
+</body>
+</html>

@@ -1,22 +1,24 @@
 """
 Django settings for smart_inventory project.
 """
-
 from pathlib import Path
 import os
 from datetime import timedelta
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load .env file
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-key')
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+SECRET_KEY = os.getenv('SECRET_KEY')
+
+
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
+
+
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
 # DATABASE (Using SQLite for simplicity)
 # DATABASES = {
@@ -37,7 +39,7 @@ DATABASES = {
     }
 }
 
-# APPLICATIONS
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -45,27 +47,27 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
     'rest_framework',
     'rest_framework_simplejwt',
-    'rest_framework_simplejwt.token_blacklist',
+    'rest_framework_simplejwt.token_blacklist',   # add this
     'corsheaders',
-
-
     # Project apps
+    'core',
     'products',
     'suppliers',
     'inventory',
     'purchases',
     'sales',
     'users',
+
+    'customer',
+
     'orders',
     'analytics',
     'dashboard',
-    'core',
+
 ]
 
-# MIDDLEWARE
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -79,7 +81,6 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'smart_inventory.urls'
 
-# TEMPLATES
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -98,7 +99,42 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'smart_inventory.wsgi.application'
 
-# PASSWORD VALIDATION
+ 
+
+# Database
+# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
+
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('DB_USER'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': os.getenv('DB_PORT'),
+    }
+}
+
+# Password validation
+# https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
+
+# ─────────────────────────────────────────────────────────────────
+# Database — PostgreSQL
+# All values loaded from .env file — never hardcode credentials
+# ─────────────────────────────────────────────────────────────────
+DATABASES = {
+    'default': {
+        'ENGINE'  : 'django.db.backends.postgresql',
+        'NAME'    : os.getenv('DATABASE_NAME'),
+        'USER'    : os.getenv('DATABASE_USER'),
+        'PASSWORD': os.getenv('DATABASE_PASSWORD'),
+        'HOST'    : os.getenv('DATABASE_HOST'),
+        'PORT'    : os.getenv('DATABASE_PORT'),
+    }
+}
+
+
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -106,20 +142,23 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# INTERNATIONALIZATION
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
-USE_I18N = True
-USE_TZ = True
+TIME_ZONE     = 'UTC'
+USE_I18N      = True
+USE_TZ        = True
 
-# STATIC & MEDIA FILES
 STATIC_URL = 'static/'
-MEDIA_URL = 'media/'
+MEDIA_URL  = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# DJANGO REST FRAMEWORK (GLOBAL SETTINGS)
+# ─────────────────────────────────────────────────────────────────
+# Django REST Framework
+# Default: all endpoints require a valid JWT token
+# Override per-view using permission_classes = [AllowAny]
+# Required on: LoginView, RegisterView, CustomerLoginView
+# ─────────────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -127,20 +166,21 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
-    # Disabled — DRF reserves ?format= for its own content-negotiation
-    # (picks a renderer, e.g. ?format=json). The Report Export API
-    # (API Design Doc v3.1 §21.1) uses ?format=excel|pdf as a business
-    # parameter, which collides with that and got silently intercepted
-    # before reaching the view (returned 404/400 instead of the file).
-    'URL_FORMAT_OVERRIDE': None,
 }
 
-# JWT SETTINGS
+# ─────────────────────────────────────────────────────────────────
+# SimpleJWT token lifetimes
+# Access token:  8 hours  — staff work shift duration
+# Refresh token: 1 day    — allows silent token refresh
+# ─────────────────────────────────────────────────────────────────
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=8),
+    'ACCESS_TOKEN_LIFETIME' : timedelta(hours=8),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# CORS SETTINGS (Allow all for development)
+# ─────────────────────────────────────────────────────────────────
+# CORS
+# Allow all origins during development
+# Restrict to specific frontend URLs in production
+# ─────────────────────────────────────────────────────────────────
 CORS_ALLOW_ALL_ORIGINS = True

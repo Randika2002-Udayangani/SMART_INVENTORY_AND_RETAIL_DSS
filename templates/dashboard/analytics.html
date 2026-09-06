@@ -22,9 +22,10 @@
   .flag-btn { border: 1px solid var(--border); background: var(--card2); border-radius: 8px; padding: 12px; text-align: left; width: 100%; cursor: pointer; }
   .flag-btn:hover { border-color: var(--green2); }
   .quality-banner { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
-  .an-table thead th { position: sticky; top: calc(var(--topbar-height, 58px) + 1px); background: var(--card2) !important; z-index: 10; cursor: pointer; user-select: none; }
+  .an-table-wrap { max-height: 65vh; overflow: auto; }
+  .an-table thead th { position: sticky; top: 0; background: var(--card2) !important; z-index: 10; cursor: pointer; user-select: none; white-space: nowrap; }
   .an-table thead th.sortable:hover { color: var(--green2); }
-  .an-table thead th .sort-arrow { font-size: 10px; opacity: .6; }
+  .an-table thead th .sort-arrow { font-size: 10px; opacity: .6; margin-left: 2px; }
   .perf-flag { font-size: 10.5px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
   .perf-flag.LOSS_PRODUCT { background: #fee2e2; color: #b91c1c; }
   .perf-flag.HIGH_MARGIN_LOW_VOLUME { background: #dbeafe; color: #1d4ed8; }
@@ -139,7 +140,7 @@
 
 <!-- Product table -->
 <div class="an-card">
-  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
     <h6 class="fw-bold mb-0">Product Performance Details</h6>
     <div class="d-flex gap-2">
       <input id="anSearch" class="form-control form-control-sm" placeholder="Search product / brand / category" style="width:260px;">

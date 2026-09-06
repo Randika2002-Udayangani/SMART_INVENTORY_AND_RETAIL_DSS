@@ -301,6 +301,7 @@
 <script>
 const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
+if (!token) { window.location.href = '/dashboard/login/'; }
 
 // Load user role from auth/me endpoint
 async function loadUserRole() {
