@@ -1,0 +1,218 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Order Management — Smart Inventory DSS{% endblock %}
+
+{% block extra_css %}
+<style>
+  .order-page-header { margin-bottom: 24px; }
+  .order-actions { display: flex; align-items: center; gap: 8px; }
+  .order-table-wrap { overflow: visible; }
+  .order-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+  .order-table thead th {
+    position: sticky;
+    top: calc(var(--topbar-height, 58px) + 1px);
+    z-index: 10;
+    background: var(--card2) !important;
+    box-shadow: 0 1px 0 var(--border);
+  }
+  .order-error { color: #b91c1c; }
+  .order-row { cursor: pointer; }
+  .order-detail-modal { position: fixed; inset: 0; z-index: 300; background: rgba(15, 61, 62, .35); padding: 7vh 20px 20px; }
+  .order-detail-panel { max-width: 720px; max-height: 86vh; overflow-y: auto; margin: auto; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 24px; box-shadow: 0 12px 40px rgba(0,0,0,.2); }
+  .order-detail-head { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+  .order-detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .order-detail-label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  .order-detail-value { font-size: 13px; font-weight: 600; }
+  @media (max-width: 960px) {
+    .order-table-wrap { overflow-x: auto; }
+    .order-table { min-width: 1050px; }
+    .order-actions { flex-wrap: wrap; }
+    .order-detail-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block nav_order_management %}active{% endblock %}
+
+{% block content %}
+  <div class="topbar order-page-header">
+    <div>
+      <h1>Order Management</h1>
+      <div class="sub">Samanala Super Mart — Decision Support System</div>
+    </div>
+    <div class="order-actions">
+      <button class="btn btn-sm btn-outline-secondary" id="overdueBtn" onclick="toggleOverdue()">Overdue</button>
+      <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+        <i class="bi bi-box-arrow-right"></i> Logout
+      </button>
+    </div>
+  </div>
+
+  <div id="errorState" class="alert alert-danger order-error" role="alert" hidden></div>
+
+  <div class="mb-3 d-flex gap-2 flex-wrap" id="filterRow">
+    <select id="statusFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadOrders()">
+      <option value="">All Status</option>
+      <option value="PENDING">PENDING</option>
+      <option value="CONFIRMED">CONFIRMED</option>
+      <option value="READY">READY</option>
+      <option value="COMPLETED">COMPLETED</option>
+      <option value="CANCELLED">CANCELLED</option>
+      <option value="EXPIRED">EXPIRED</option>
+    </select>
+    <input id="dateFromFilter" class="form-control form-control-sm" style="width:160px;" type="date" onchange="loadOrders()">
+    <input id="dateToFilter" class="form-control form-control-sm" style="width:160px;" type="date" onchange="loadOrders()">
+    <input id="searchFilter" class="form-control form-control-sm" style="width:220px;" type="search" placeholder="Search reference or customer" oninput="loadOrdersDebounced()">
+  </div>
+
+  <div class="card p-4">
+    <div class="order-table-wrap">
+      <table class="table table-hover order-table">
+        <thead class="table-light">
+          <tr><th>Reference</th><th>Customer</th><th>Pickup</th><th>Items</th><th>Total</th><th>Status</th><th>Deadline</th><th id="actionHeader">Action</th></tr>
+        </thead>
+        <tbody id="orderBody"><tr><td colspan="8" class="text-center text-muted">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="detailModal" class="order-detail-modal" hidden onclick="closeDetail(event)">
+    <section class="order-detail-panel" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+      <div class="order-detail-head">
+        <div><h2 id="detailTitle" class="h5 mb-1">Order details</h2><div id="detailStatus"></div></div>
+        <button class="btn btn-sm btn-outline-secondary" onclick="closeDetail()" aria-label="Close details">Close</button>
+      </div>
+      <div id="detailContent"></div>
+    </section>
+  </div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const ALLOWED_TRANSITIONS = {
+    PENDING: ['CONFIRMED', 'CANCELLED'],
+    CONFIRMED: ['READY', 'CANCELLED'],
+    READY: ['COMPLETED', 'CANCELLED'],
+    COMPLETED: [],
+    CANCELLED: []
+  };
+  let canManageOrders = false;
+  let showingOverdue = false;
+  let searchTimer;
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+  }
+
+  function showError(message) { const el = document.getElementById('errorState'); el.innerText = message; el.hidden = false; }
+  function clearError() { document.getElementById('errorState').hidden = true; }
+  function displayDate(value) { return value ? escapeHtml(String(value).slice(0, 10)) : '—'; }
+  function money(value) { return value == null ? '—' : Number(value).toFixed(2); }
+  function statusBadge(value) { return `<span class="badge bg-secondary">${escapeHtml(value || '—')}</span>`; }
+  function loadOrdersDebounced() { clearTimeout(searchTimer); searchTimer = setTimeout(loadOrders, 250); }
+
+  function renderActions(order) {
+    if (!canManageOrders) return '';
+    return (ALLOWED_TRANSITIONS[order.status] || []).map(nextStatus => {
+      const buttonClass = nextStatus === 'CANCELLED' ? 'btn-outline-secondary' : 'btn-success';
+      const label = nextStatus === 'CONFIRMED' ? 'Confirm' : nextStatus[0] + nextStatus.slice(1).toLowerCase();
+      return `<button class="btn btn-sm ${buttonClass} me-1" onclick="updateStatus(event, ${order.id}, '${nextStatus}')">${label}</button>`;
+    }).join('');
+  }
+
+  function renderRows(rows) {
+    const body = document.getElementById('orderBody');
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No orders found.</td></tr>'; return; }
+    body.innerHTML = rows.map(order => `
+      <tr class="order-row" onclick="openDetail(${order.id})">
+        <td>${escapeHtml(order.order_reference)}</td>
+        <td>${escapeHtml(order.customer_name)}</td>
+        <td>${displayDate(order.pickup_date)}<br><small class="text-muted">${escapeHtml(order.pickup_time_slot)}</small></td>
+        <td>${escapeHtml(order.item_count)}</td>
+        <td>${money(order.total_amount)}</td>
+        <td>${statusBadge(order.status)}</td>
+        <td>${displayDate(order.collection_deadline)}</td>
+        <td>${renderActions(order)}</td>
+      </tr>`).join('');
+  }
+
+  async function loadOrders() {
+    if (showingOverdue) return loadOverdue();
+    clearError();
+    const params = new URLSearchParams();
+    const statusValue = document.getElementById('statusFilter').value;
+    const dateFrom = document.getElementById('dateFromFilter').value;
+    const dateTo = document.getElementById('dateToFilter').value;
+    const search = document.getElementById('searchFilter').value.trim();
+    if (statusValue) params.set('status', statusValue);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    if (search) params.set('search', search);
+    try {
+      const data = await apiFetch(`/api/orders/${params.toString() ? '?' + params : ''}`);
+      renderRows(Array.isArray(data) ? data : (data.results || []));
+    } catch (error) { document.getElementById('orderBody').innerHTML = '<tr><td colspan="8" class="text-center text-muted">Could not load orders.</td></tr>'; showError('Orders could not be loaded. Please try again.'); }
+  }
+
+  async function loadOverdue() {
+    clearError();
+    try {
+      const overdue = await apiFetch('/api/orders/overdue/');
+      const rows = await Promise.all((Array.isArray(overdue) ? overdue : []).map(async row => {
+        const detail = await apiFetch(`/api/orders/${row.id}/detail/`);
+        return { ...row, customer_name: detail.customer.name, pickup_date: detail.pickup_date, pickup_time_slot: detail.pickup_time_slot, item_count: detail.items.length, total_amount: detail.total_amount, status: detail.status };
+      }));
+      renderRows(rows);
+    } catch (error) { showError('Overdue orders could not be loaded. Please try again.'); }
+  }
+
+  function toggleOverdue() {
+    showingOverdue = !showingOverdue;
+    const button = document.getElementById('overdueBtn');
+    button.classList.toggle('btn-primary', showingOverdue);
+    button.classList.toggle('btn-outline-secondary', !showingOverdue);
+    document.getElementById('filterRow').hidden = showingOverdue;
+    loadOrders();
+  }
+
+  async function updateStatus(event, id, nextStatus) {
+    event.stopPropagation();
+    try {
+      const token = sessionStorage.getItem('access_token');
+      await apiFetch(`/api/orders/${id}/status/`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ status: nextStatus }) });
+      await loadOrders();
+    } catch (error) { showError('Order status could not be updated.'); }
+  }
+
+  async function openDetail(id) {
+    clearError();
+    try {
+      const order = await apiFetch(`/api/orders/${id}/detail/`);
+      document.getElementById('detailTitle').innerText = order.order_reference;
+      document.getElementById('detailStatus').innerHTML = statusBadge(order.status);
+      document.getElementById('detailContent').innerHTML = `
+        <div class="order-detail-grid">
+          <div><div class="order-detail-label">Customer</div><div class="order-detail-value">${escapeHtml(order.customer.name)}</div></div>
+          <div><div class="order-detail-label">Email</div><div class="order-detail-value">${escapeHtml(order.customer.email)}</div></div>
+          <div><div class="order-detail-label">Phone</div><div class="order-detail-value">${escapeHtml(order.customer.phone)}</div></div>
+          <div><div class="order-detail-label">Pickup</div><div class="order-detail-value">${displayDate(order.pickup_date)} / ${escapeHtml(order.pickup_time_slot)}</div></div>
+          <div><div class="order-detail-label">Deadline</div><div class="order-detail-value">${displayDate(order.collection_deadline)}</div></div>
+          <div><div class="order-detail-label">Total</div><div class="order-detail-value">${money(order.total_amount)}</div></div>
+        </div>
+        <p class="small text-muted">${escapeHtml(order.notes || 'No notes')}</p>
+        <table class="table table-sm"><thead><tr><th>Product</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead><tbody>${order.items.map(item => `<tr><td>${escapeHtml(item.product_name)}</td><td>${escapeHtml(item.quantity)}</td><td>${money(item.unit_price)}</td><td>${money(item.line_total)}</td></tr>`).join('')}</tbody></table>`;
+      document.getElementById('detailModal').hidden = false;
+    } catch (error) { showError('Order details could not be loaded.'); }
+  }
+
+  function closeDetail(event) { if (!event || event.target.id === 'detailModal') document.getElementById('detailModal').hidden = true; }
+
+  async function initializeOrderPage() {
+    const role = await fetchCurrentUser();
+    canManageOrders = role === 'ADMIN' || role === 'MANAGER';
+    document.getElementById('actionHeader').hidden = !canManageOrders;
+    await loadOrders();
+  }
+  initializeOrderPage();
+</script>
+{% endblock %}

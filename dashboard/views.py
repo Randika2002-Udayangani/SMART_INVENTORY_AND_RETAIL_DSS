@@ -56,3 +56,6 @@ def audit_log(request):
 
 def user_management(request):
     return render(request, 'dashboard/user_management.html')
+
+def order_management(request):
+    return render(request, 'dashboard/order_management.html')

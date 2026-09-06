@@ -21,4 +21,5 @@ urlpatterns = [
     path('system-config/', views.system_config, name='system_config'),
     path('audit-log/', views.audit_log, name='audit_log'),
     path('users/', views.user_management, name='user_management'),
+    path('order-management/', views.order_management, name='order_management'),
 ]
