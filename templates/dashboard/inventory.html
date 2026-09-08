@@ -87,8 +87,7 @@
         <div class="card p-4">
             <table class="table table-hover">
                 <thead class="table-light">
-                    <tr><th>Product</th><th>Category</th><th>Brand</th><th>SKU</th><th>Current Stock</th><th>Reorder Threshold</th><th>Status</th><th>Detail</th></tr>
-                </thead>
+                  <tr><th>Product</th><th>Category</th><th>Brand</th><th>Current Stock</th><th>Reorder Threshold</th><th>Status</th><th>Detail</th></tr>
                 <tbody id="stockBody">
                     <tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
@@ -98,11 +97,11 @@
     </div>
 
     <div id="tab-low" style="display:none;">
-        <div class="card p-4"><table class="table table-hover"><thead class="table-light"><tr><th>Product</th><th>SKU</th><th>Current Stock</th><th>Threshold</th><th>Shortage</th><th>Urgency</th></tr></thead><tbody id="lowBody"><tr><td colspan="6" class="text-center text-muted">Loading...</td></tr></tbody></table></div>
+       <div class="card p-4"><table class="table table-hover"><thead class="table-light"><tr><th>Product</th><th>Current Stock</th><th>Threshold</th><th>Shortage</th><th>Urgency</th></tr></thead><tbody id="lowBody"><tr><td colspan="6" class="text-center text-muted">Loading...</td></tr></tbody></table></div>
     </div>
 
     <div id="tab-out" style="display:none;">
-        <div class="card p-4"><table class="table table-hover"><thead class="table-light"><tr><th>Product</th><th>SKU</th><th>Current Stock</th></tr></thead><tbody id="outBody"><tr><td colspan="3" class="text-center text-muted">Loading...</td></tr></tbody></table></div>
+       <div class="card p-4"><table class="table table-hover"><thead class="table-light"><tr><th>Product</th><th>Current Stock</th></tr></thead><tbody id="outBody"><tr><td colspan="3" class="text-center text-muted">Loading...</td></tr></tbody></table></div>
     </div>
 
     <!-- Ledger Tab -->
@@ -218,11 +217,28 @@ async function loadStock() {
         // Try to get sync date from first record or a dedicated endpoint
         const syncRes = await request('/api/inventory/sync-date/').catch(() => null);
         if (syncRes && syncRes.ok) {
-            const syncData = await syncRes.json();
-            document.getElementById('kpiSync').innerText = syncData.last_sync_date ?? syncData.sync_date ?? '—';
-        } else {
-            document.getElementById('kpiSync').innerText = '—';
-        }
+    const syncData = await syncRes.json();
+    const syncDate = syncData.last_sync_date ?? syncData.sync_date;
+
+    if (syncDate) {
+        const date = new Date(syncDate);
+
+        document.getElementById('kpiSync').innerText =
+            date.toLocaleString('en-LK', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            });
+    } else {
+        document.getElementById('kpiSync').innerText = '—';
+    }
+} else {
+    document.getElementById('kpiSync').innerText = '—';
+}
 
         populateInventoryProductOptions();
         renderStock();
@@ -280,7 +296,7 @@ function renderStock() {
             <td style="font-weight:600">${p.product_name ?? p.name ?? '—'}</td>
             <td>${p.category_name ?? '—'}</td>
             <td>${p.brand_name ?? '—'}</td>
-            <td>${p.sku_code ?? '—'}</td>
+            
             <td>${current}</td>
             <td>${threshold}</td>
             <td>${stockBadge(current, p.reorder_threshold)}</td>
@@ -299,7 +315,7 @@ function changeStockPage(delta) {
 }
 
 async function loadLowStock() {
-    await loadAlertStock('/api/inventory/low-stock/', 'lowBody', 'low_stock_products', rows => rows.map(p => `<tr><td>${p.product_name ?? '—'}</td><td>${p.sku_code ?? '—'}</td><td>${p.current_stock ?? 0}</td><td>${p.reorder_threshold ?? '—'}</td><td>${p.shortage ?? '—'}</td><td>${p.urgency ?? '—'}</td></tr>`).join(''), 6);
+   await loadAlertStock('/api/inventory/low-stock/', 'lowBody', 'low_stock_products', rows => rows.map(p => `<tr><td>${p.product_name ?? '—'}</td><td>${p.current_stock ?? 0}</td><td>${p.reorder_threshold ?? '—'}</td><td>${p.shortage ?? '—'}</td><td>${p.urgency ?? '—'}</td></tr>`).join(''), 5);
 }
 
 async function loadOutOfStock() {
