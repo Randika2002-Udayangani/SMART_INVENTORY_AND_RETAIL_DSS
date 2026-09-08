@@ -252,6 +252,30 @@
       return null;
     }
   }
+
+  // ── SIDEBAR ALERT BADGES — shared across every dashboard page ──
+  // #dashboardNavBadge and #sidebarAlertCount live in THIS shared sidebar
+  // markup (hardcoded to "0" above), but they used to only get filled in by
+  // home.html's page-specific fetchNotifications(). So the badge showed the
+  // real unread count on the dashboard, then reset to the sidebar's baked-in
+  // "0" the moment you opened any other page — nothing on those other pages
+  // was refreshing it. Running the refresh here means it happens on every
+  // page load, regardless of which page-specific script is also loaded.
+  // GET /api/notifications/ returns only unread notifications (API Design
+  // Doc §21.2), so its length is exactly what both badges should show.
+  async function refreshSidebarAlertBadge() {
+    try {
+      const data = await apiFetch('/api/notifications/');
+      const count = Array.isArray(data) ? data.length : (data.count ?? (data.results ?? []).length);
+      const sidebarBadge = document.getElementById('sidebarAlertCount');
+      const dashBadge = document.getElementById('dashboardNavBadge');
+      if (sidebarBadge) sidebarBadge.innerText = count;
+      if (dashBadge) dashBadge.innerText = count;
+    } catch(e) {
+      console.error('refreshSidebarAlertBadge failed:', e);
+    }
+  }
+  refreshSidebarAlertBadge();
 </script>
 {% block extra_js %}{% endblock %}
 {% block page_scripts %}{% endblock %}
