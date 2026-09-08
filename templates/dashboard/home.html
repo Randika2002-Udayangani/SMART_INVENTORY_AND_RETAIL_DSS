@@ -233,7 +233,7 @@
       </div>
       <div class="kpi-bar-track"><div class="kpi-bar-fill" id="ordersBar" style="width:0%;background:var(--amber);"></div></div>
       <div class="kpi-footer">
-        <span class="chg" id="ordersNote">Staff API unavailable</span>
+        <span class="chg" id="ordersNote">Loading...</span>
         <span>—</span>
       </div>
     </div>
@@ -442,6 +442,7 @@
   const dashboardMetrics = {
     sales: 0, profit: 0, lowStock: 0, trackedProducts: 0,
     expiringSoon: 0, expiringThirty: 0,
+    pendingOrders: 0, openOrders: 0,
     alerts: { CRITICAL: 0, HIGH: 0, MEDIUM: 0 }
   };
 
@@ -464,7 +465,7 @@
     setBar('lowStockBar', tracked ? dashboardMetrics.lowStock / tracked * 100 : 0);
     setBar('expiringBar', dashboardMetrics.expiringThirty ? dashboardMetrics.expiringSoon / dashboardMetrics.expiringThirty * 100 : 0);
     setBar('alertsBar', alertTotal ? alertWeight / (alertTotal * 3) * 100 : 0);
-    setBar('ordersBar', 0);
+    setBar('ordersBar', dashboardMetrics.openOrders ? dashboardMetrics.pendingOrders / dashboardMetrics.openOrders * 100 : 0);
   }
 
   const tCtx = document.getElementById('trendChart').getContext('2d');
@@ -614,8 +615,9 @@
         </li>
       `).join('') : '<li style="padding:24px 0;color:var(--muted);text-align:center">No unread notifications.</li>';
       document.getElementById('notificationBadge').innerText = data.length + ' Unread';
-      document.getElementById('sidebarAlertCount').innerText = data.length;
-      document.getElementById('dashboardNavBadge').innerText = data.length;
+      // #sidebarAlertCount and #dashboardNavBadge are now refreshed once,
+      // shared, on every page — see refreshSidebarAlertBadge() in base.html.
+      // Setting them here too was harmless but redundant (double fetch).
       document.getElementById('activeAlertsCount').innerText = data.length;
 
       const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0 };
@@ -630,8 +632,6 @@
     } catch(e) {
       console.error('fetchNotifications failed:', e);
       document.getElementById('notificationBadge').innerText = 'Unavailable';
-      document.getElementById('dashboardNavBadge').innerText = '—';
-      document.getElementById('sidebarAlertCount').innerText = '—';
       showInlineError('notifList', 'Notifications could not be loaded.');
     }
   }
@@ -663,9 +663,24 @@
   }
 
   async function fetchPendingOrders() {
-    document.getElementById('pendingOrders').innerText = '—';
-    document.getElementById('ordersNote').innerText = 'Staff API unavailable';
-    setBar('ordersBar', 0);
+    try {
+      const data = await apiFetch('/api/orders/');
+      const rows = Array.isArray(data) ? data : (data.results || []);
+      const pendingCount = rows.filter(o => o.status === 'PENDING').length;
+      const openCount = rows.filter(o => ['PENDING', 'CONFIRMED', 'READY'].includes(o.status)).length;
+      dashboardMetrics.pendingOrders = pendingCount;
+      dashboardMetrics.openOrders = openCount;
+      document.getElementById('pendingOrders').innerText = pendingCount;
+      document.getElementById('ordersNote').innerText = openCount
+        ? `${openCount} open order${openCount === 1 ? '' : 's'} (not yet collected)`
+        : 'No open orders';
+      updateDashboardBars();
+    } catch(e) {
+      console.error('fetchPendingOrders failed:', e);
+      document.getElementById('pendingOrders').innerText = '—';
+      showInlineError('ordersNote', 'Orders data unavailable');
+      setBar('ordersBar', 0);
+    }
   }
 
   async function fetchLowStockCount() {

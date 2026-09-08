@@ -189,7 +189,7 @@
       <button class="f-pill fp-medium" data-pri="MEDIUM" onclick="setPriorityFilter('MEDIUM', this)">Medium</button>
     </div>
     <div class="filter-right">
-      <select class="type-select" id="typeSelect" onchange="renderList()">
+      <select class="type-select" id="typeSelect" onchange="notifPage = 1; renderList();">
         <option value="all">All types</option>
       </select>
     </div>
@@ -205,6 +205,7 @@
       <span class="card-badge" id="listCount" style="background:var(--card2);border:1px solid var(--border);border-radius:5px;padding:3px 9px;font-size:10.5px;color:var(--muted);">—</span>
     </div>
     <div id="listBody"></div>
+    <div id="notifPagination"></div>
   </div>
 
 <!-- ── DETAIL MODAL ──────────────────────────────────────── -->
@@ -244,6 +245,8 @@
   let statusTab = 'unread';
   let priorityFilter = 'all';
   let activeDetailId = null;
+  let notifPage = 1;
+  const notifPageSize = 25;
 
   const priClass = { CRITICAL: 'critical', HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
   const tabLabels = { unread: 'Unread', read: 'Read', all: 'Total' };
@@ -260,6 +263,7 @@
     priorityFilter = pri;
     document.querySelectorAll('.f-pill[data-pri]').forEach(b => b.classList.remove('on'));
     btn.classList.add('on');
+    notifPage = 1; // filter changed — back to page 1
     renderList();
   }
 
@@ -277,7 +281,11 @@
     document.getElementById('sumCritical').innerText = counts.CRITICAL;
     document.getElementById('sumHigh').innerText = counts.HIGH;
     document.getElementById('sumMedium').innerText = counts.MEDIUM;
-    document.getElementById('sidebarAlertCount').innerText = allNotifications.length;
+    // #sidebarAlertCount is NOT set from allNotifications here on purpose —
+    // allNotifications is filtered by statusTab (unread/read/all), so on the
+    // Read or Total tab this would overwrite the badge with the wrong count.
+    // refreshSidebarAlertBadge() (base.html) always fetches the true unread
+    // count directly and is called below instead.
   }
 
   function timeAgo(iso) {
@@ -304,10 +312,16 @@
     const body = document.getElementById('listBody');
     if (!rows.length) {
       body.innerHTML = `<div class="empty-state"><i class="bi bi-check2-circle"></i>No notifications match this filter.</div>`;
+      document.getElementById('notifPagination').innerHTML = '';
       return;
     }
 
-    body.innerHTML = rows.map(n => `
+    // Pagination — same pattern as Stock Levels (inventory.html): 25/page.
+    const totalPages = Math.max(1, Math.ceil(rows.length / notifPageSize));
+    notifPage = Math.min(notifPage, totalPages);
+    const pageRows = rows.slice((notifPage - 1) * notifPageSize, notifPage * notifPageSize);
+
+    body.innerHTML = pageRows.map(n => `
       <div class="n-row ${n.is_read ? 'is-handled' : ''}" onclick="openDetail(${n.id})">
         <div class="n-dot nd-${priClass[n.priority] || 'medium'}"></div>
         <span class="n-pri np-${priClass[n.priority] || 'medium'}">${escapeHtml(n.priority)}</span>
@@ -322,6 +336,18 @@
         </div>
       </div>
     `).join('');
+
+    document.getElementById('notifPagination').innerHTML = rows.length > notifPageSize ? `
+      <div class="d-flex justify-content-between align-items-center" style="padding:12px 18px; border-top:1px solid var(--border);">
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeNotifPage(-1)" ${notifPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${notifPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeNotifPage(1)" ${notifPage === totalPages ? 'disabled' : ''}>Next</button>
+      </div>` : '';
+  }
+
+  function changeNotifPage(delta) {
+    notifPage += delta;
+    renderList();
   }
 
   async function loadNotifications() {
@@ -331,7 +357,9 @@
       allNotifications = Array.isArray(data) ? data : [];
       populateTypeSelect();
       updateSummary();
+      notifPage = 1; // fresh data — back to page 1
       renderList();
+      refreshSidebarAlertBadge(); // keep the shared badges in sync with the true unread count
     } catch (e) {
       console.error('loadNotifications failed:', e);
       document.getElementById('listBody').innerHTML =
@@ -359,6 +387,7 @@
       allNotifications = allNotifications.filter(n => n.id !== id);
       updateSummary();
       renderList();
+      refreshSidebarAlertBadge(); // keep the shared badges in sync with the true unread count
     } catch (e) {
       console.error('dismiss failed:', e);
       alert('Could not dismiss notification.');
