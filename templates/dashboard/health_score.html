@@ -154,6 +154,7 @@
                 <tr><td colspan="10" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+        <div id="hsPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
 </div>
 {% endblock %}
 
@@ -174,6 +175,8 @@
 let allData = [];
 let currentFilter = 'ALL';
 let currentSearch = '';
+let hsPage = 1;
+const hsPageSize = 25;
 
 function statusBadge(s) {
     const map = {
@@ -218,11 +221,13 @@ function filterTable(filter, btn) {
     currentFilter = filter;
     document.querySelectorAll('#filterButtons button').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
+    hsPage = 1; // filter changed — back to page 1
     renderTable();
 }
 
 function handleSearchInput() {
     currentSearch = document.getElementById('productSearch').value.trim().toLowerCase();
+    hsPage = 1; // search changed — back to page 1
     renderTable();
 }
 
@@ -242,9 +247,19 @@ function renderTable() {
             ? `No products match "${currentSearch}".`
             : 'No products found.';
         tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted">${message}</td></tr>`;
+        document.getElementById('hsPagination').innerHTML = '';
         return;
     }
-    tbody.innerHTML = rows.map(r => `
+
+    // Pagination — same pattern used elsewhere (Stock Levels in
+    // inventory.html, Purchases, Batches, Reorder, Lifecycle, Loss
+    // Analysis, Discount Engine, Notifications): 25 rows/page, client-side
+    // slice, Previous / "Page X of Y" / Next.
+    const totalPages = Math.max(1, Math.ceil(rows.length / hsPageSize));
+    hsPage = Math.min(hsPage, totalPages);
+    const pageRows = rows.slice((hsPage - 1) * hsPageSize, hsPage * hsPageSize);
+
+    tbody.innerHTML = pageRows.map(r => `
         <tr>
             <td style="font-weight:600">${r.product__product_name ?? r.product_name ?? '—'}</td>
             <td>${r.product__category__category_name ?? r.category ?? '—'}</td>
@@ -258,6 +273,16 @@ function renderTable() {
             <td><button class="btn btn-outline-secondary btn-sm" onclick="showProductDetails(${r.product ?? r.product__id ?? 'null'})">Details</button></td>
         </tr>
     `).join('');
+
+    document.getElementById('hsPagination').innerHTML = rows.length > hsPageSize ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeHsPage(-1)" ${hsPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${hsPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeHsPage(1)" ${hsPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+}
+
+function changeHsPage(delta) {
+    hsPage += delta;
+    renderTable();
 }
 
 // ── Product detail + history (per row "Details" button) ────────────────────
@@ -394,6 +419,7 @@ async function loadHealthScores() {
             setLastCalculatedLabel(latestStamp, false);
         }
 
+        hsPage = 1; // fresh data — back to page 1
         renderTable();
     } catch(e) {
         document.getElementById('hsBody').innerHTML = '<tr><td colspan="10" class="text-center text-muted">Could not load data.</td></tr>';

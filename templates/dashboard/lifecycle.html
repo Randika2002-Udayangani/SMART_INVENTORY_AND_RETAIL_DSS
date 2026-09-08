@@ -71,6 +71,7 @@
         <tbody id="lifecycleBody"></tbody>
       </table>
     </div>
+    <div id="lifecyclePagination" class="d-flex justify-content-between align-items-center mt-3"></div>
   </div>
 {% endblock %}
 
@@ -111,6 +112,10 @@
     document.getElementById('errorState').style.display = 'none';
   }
 
+  let allLifecycleResults = [];
+  let lifecyclePage = 1;
+  const lifecyclePageSize = 25;
+
   async function loadLifecycle() {
     clearError();
     try {
@@ -122,31 +127,56 @@
       document.getElementById('countDeclining').innerText = summary.DECLINING ?? '0';
       document.getElementById('countSlow').innerText = summary.SLOW_MOVING ?? '0';
 
-      const results = data.results ?? [];
-      if (results.length === 0) {
+      allLifecycleResults = data.results ?? [];
+      if (allLifecycleResults.length === 0) {
         document.getElementById('emptyState').style.display = 'block';
         document.getElementById('tableSection').style.display = 'none';
         document.getElementById('emptyMsg').innerText = data.note || 'No lifecycle data yet. Click Calculate to run.';
+        document.getElementById('lifecyclePagination').innerHTML = '';
         return;
       }
 
       document.getElementById('emptyState').style.display = 'none';
       document.getElementById('tableSection').style.display = 'block';
-      document.getElementById('lifecycleBody').innerHTML = results.map(result => `
-        <tr>
-          <td>${escapeHtml(result.product_name)}</td>
-          <td>${statusBadge(result.lifecycle_status ?? result.status)}</td>
-          <td>${recPill(result.recommendation)}</td>
-          <td>${escapeHtml(result.sales_velocity)}</td>
-          <td>${escapeHtml(result.calculated_date)}</td>
-        </tr>
-      `).join('');
+      lifecyclePage = 1; // fresh data — back to page 1
+      renderLifecycleTable();
     } catch (error) {
       console.error('loadLifecycle failed:', error);
       document.getElementById('emptyState').style.display = 'none';
       document.getElementById('tableSection').style.display = 'none';
+      document.getElementById('lifecyclePagination').innerHTML = '';
       showError('Lifecycle data could not be loaded. Please try again.');
     }
+  }
+
+  // Pagination — same pattern used elsewhere (Stock Levels in
+  // inventory.html, Purchases, Batches, Reorder, Notifications): 25
+  // rows/page, client-side slice, Previous / "Page X of Y" / Next.
+  function renderLifecycleTable() {
+    const rows = allLifecycleResults;
+    const totalPages = Math.max(1, Math.ceil(rows.length / lifecyclePageSize));
+    lifecyclePage = Math.min(lifecyclePage, totalPages);
+    const pageRows = rows.slice((lifecyclePage - 1) * lifecyclePageSize, lifecyclePage * lifecyclePageSize);
+
+    document.getElementById('lifecycleBody').innerHTML = pageRows.map(result => `
+      <tr>
+        <td>${escapeHtml(result.product_name)}</td>
+        <td>${statusBadge(result.lifecycle_status ?? result.status)}</td>
+        <td>${recPill(result.recommendation)}</td>
+        <td>${escapeHtml(result.sales_velocity)}</td>
+        <td>${escapeHtml(result.calculated_date)}</td>
+      </tr>
+    `).join('');
+
+    document.getElementById('lifecyclePagination').innerHTML = rows.length > lifecyclePageSize ? `
+      <button class="btn btn-sm btn-outline-secondary" onclick="changeLifecyclePage(-1)" ${lifecyclePage === 1 ? 'disabled' : ''}>Previous</button>
+      <span class="text-muted small">Page ${lifecyclePage} of ${totalPages}</span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="changeLifecyclePage(1)" ${lifecyclePage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+  }
+
+  function changeLifecyclePage(delta) {
+    lifecyclePage += delta;
+    renderLifecycleTable();
   }
 
   async function runCalculate() {
