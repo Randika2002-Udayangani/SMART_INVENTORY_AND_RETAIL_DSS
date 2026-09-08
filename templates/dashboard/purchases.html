@@ -246,6 +246,7 @@ document.getElementById('npSupplierSearch').addEventListener('input', (e) => {
 // Product names/IDs aren't financial data, so this loads for every role.
 // productLookup maps the exact text shown in the search box to the real
 // product ID, since batch items need to POST product_id, not a name.
+
 let productLookup = {};
 
 async function loadProductsForAutocomplete() {
@@ -253,23 +254,28 @@ async function loadProductsForAutocomplete() {
         const data = await apiFetch('/api/products/');
         const products = extractArray(data);
         const datalist = document.getElementById('productOptions');
+
         datalist.innerHTML = '';
         productLookup = {};
+
         products.forEach(p => {
             const id = p.id ?? p.product_id;
             const name = p.product_name ?? p.name ?? 'Unnamed product';
-            const sku = p.sku_code ?? p.sku ?? '';
-            const label = sku ? `${name} (${sku})` : name;
+
             if (id == null) return;
-            productLookup[label] = id;
+
+            productLookup[name] = id;
+
             const opt = document.createElement('option');
-            opt.value = label;
+            opt.value = name;
+
             datalist.appendChild(opt);
         });
     } catch(e) {
         console.error('loadProductsForAutocomplete failed:', e);
     }
 }
+
 
 // Event delegation so this also covers rows added later via addBatchRow()
 document.getElementById('batchItemsContainer').addEventListener('input', (e) => {
@@ -289,6 +295,7 @@ function extractArray(data) {
 
 let allPurchases = [];
 let purchaseSearchTerm = '';
+
 
 async function loadPurchases() {
     try {
