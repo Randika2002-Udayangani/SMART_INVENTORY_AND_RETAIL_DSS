@@ -509,7 +509,8 @@ class LossRecordView(APIView):
 
         data = queryset.values(
             'id', 'product', 'product__product_name', 'batch', 'loss_type',
-            'loss_quantity', 'loss_value', 'loss_date', 'notes'
+            'loss_quantity', 'loss_value', 'loss_date', 'notes',
+            'recorded_by', 'recorded_by__username'
         )
         data = [
             {**row, 'product_name': row.pop('product__product_name')}

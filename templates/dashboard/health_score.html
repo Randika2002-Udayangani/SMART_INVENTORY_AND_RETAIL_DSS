@@ -30,6 +30,33 @@
         z-index: 120;
         background-color: var(--card2);
     }
+
+    /* Product Health Details modal — replaces the native alert() popup */
+    .hs-modal-backdrop {
+        position: fixed; inset: 0; background: rgba(15,23,42,0.45);
+        display: none; align-items: center; justify-content: center; z-index: 1050; padding: 16px;
+    }
+    .hs-modal-backdrop.show { display: flex; }
+    .hs-modal-box {
+        background: var(--card); border-radius: 12px; width: 100%; max-width: 640px;
+        max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    }
+    .hs-modal-header {
+        display:flex; justify-content:space-between; align-items:center;
+        padding: 18px 22px; border-bottom: 1px solid var(--border);
+    }
+    .hs-modal-header h5 { margin:0; font-weight:700; color: var(--txt); }
+    .hs-modal-close { background:none; border:none; font-size:20px; color: var(--muted); cursor:pointer; line-height:1; }
+    .hs-modal-body { padding: 20px 22px; }
+    .hs-detail-grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; margin-bottom: 20px; }
+    .hs-detail-item .lbl { font-size:11px; text-transform:uppercase; letter-spacing:.03em; color: var(--muted); margin-bottom:4px; }
+    .hs-detail-item .val { font-weight:600; color: var(--txt); word-break: break-word; }
+    .hs-detail-item.full { grid-column: 1 / -1; }
+    .hs-history-heading { font-weight:700; font-size:13px; margin-bottom:8px; color: var(--txt); }
+    .hs-modal-footer { padding: 14px 22px; border-top: 1px solid var(--border); text-align:right; }
+    @media (max-width: 640px) {
+        .hs-detail-grid { grid-template-columns: 1fr; }
+    }
 </style>
 {% endblock %}
 
@@ -155,6 +182,22 @@
             </tbody>
         </table>
         <div id="hsPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
+</div>
+
+<!-- Product Health Details Modal -->
+<div id="hsDetailsBackdrop" class="hs-modal-backdrop" onclick="if(event.target===this) closeHsDetails()">
+    <div class="hs-modal-box">
+        <div class="hs-modal-header">
+            <h5 id="hsDetailsTitle">Product Health Details</h5>
+            <button type="button" class="hs-modal-close" onclick="closeHsDetails()">&times;</button>
+        </div>
+        <div class="hs-modal-body" id="hsDetailsBody">
+            <!-- populated by showProductDetails() -->
+        </div>
+        <div class="hs-modal-footer">
+            <button class="btn btn-outline-secondary btn-sm" onclick="closeHsDetails()">Close</button>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -288,7 +331,7 @@ function changeHsPage(delta) {
 // ── Product detail + history (per row "Details" button) ────────────────────
 async function showProductDetails(productId) {
     if (!productId) {
-        alert('Product id not available for this row.');
+        showHsDetailsError('Product id not available for this row.');
         return;
     }
     try {
@@ -297,30 +340,70 @@ async function showProductDetails(productId) {
             apiFetch(`/api/health-scores/history/${productId}/`)
         ]);
 
-        const lines = [
-            `Product: ${detail.product_name ?? '—'}`,
-            `SKU: ${detail.sku_code ?? '—'}`,
-            `Overall score: ${numberCell(detail.overall_score)} (${detail.status ?? '—'})`,
-            `Velocity: ${numberCell(detail.velocity_score)}  Margin: ${numberCell(detail.margin_score)}`,
-            `Expiry risk: ${numberCell(detail.expiry_risk_score)}  Stock duration: ${numberCell(detail.stock_duration_score)}`,
-            `Rating score: ${detail.rating_sufficient ? numberCell(detail.rating_score) : 'not enough ratings yet'}`,
-            `Weighting mode: ${detail.weighting_mode ?? '—'}`,
-            `Recommended action: ${detail.recommended_action ?? '—'}`,
-            `Calculated at: ${formatTimestamp(detail.calculated_at)}`,
-            '',
-            `Score history (${history.length} run${history.length === 1 ? '' : 's'}):`,
-        ];
+        const field = (label, value, full = false) => `
+            <div class="hs-detail-item${full ? ' full' : ''}">
+                <div class="lbl">${escapeHtmlHs(label)}</div>
+                <div class="val">${escapeHtmlHs(value ?? '—')}</div>
+            </div>`;
 
-        history.slice(0, 10).forEach(h => {
-            lines.push(`  ${formatTimestamp(h.calculated_at || h.calculated_date)} — ${numberCell(h.overall_score)} (${h.status})`);
-        });
-        if (history.length > 10) lines.push(`  …and ${history.length - 10} earlier run(s).`);
-        if (history.length === 0) lines.push('  No history yet — this is the first calculation for this product.');
+        document.getElementById('hsDetailsTitle').textContent = detail.product_name ?? 'Product Health Details';
 
-        alert(lines.join('\n'));
+        let historyHtml;
+        if (history.length === 0) {
+            historyHtml = '<p class="text-muted small mb-0">No history yet — this is the first calculation for this product.</p>';
+        } else {
+            const rows = history.slice(0, 10).map(h => `
+                <tr>
+                    <td>${escapeHtmlHs(formatTimestamp(h.calculated_at || h.calculated_date))}</td>
+                    <td>${escapeHtmlHs(numberCell(h.overall_score))}</td>
+                    <td>${statusBadge(h.status)}</td>
+                </tr>`).join('');
+            const more = history.length > 10
+                ? `<p class="text-muted small mt-2 mb-0">…and ${history.length - 10} earlier run(s).</p>`
+                : '';
+            historyHtml = `
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Calculated At</th><th>Score</th><th>Status</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>${more}`;
+        }
+
+        document.getElementById('hsDetailsBody').innerHTML = `
+            <div class="hs-detail-grid">
+                ${field('SKU', detail.sku_code)}
+                ${field('Overall Score', `${numberCell(detail.overall_score)} (${detail.status ?? '—'})`)}
+                ${field('Velocity', numberCell(detail.velocity_score))}
+                ${field('Margin', numberCell(detail.margin_score))}
+                ${field('Expiry Risk', numberCell(detail.expiry_risk_score))}
+                ${field('Stock Duration', numberCell(detail.stock_duration_score))}
+                ${field('Rating Score', detail.rating_sufficient ? numberCell(detail.rating_score) : 'Not enough ratings yet')}
+                ${field('Weighting Mode', detail.weighting_mode)}
+                ${field('Recommended Action', detail.recommended_action, true)}
+                ${field('Calculated At', formatTimestamp(detail.calculated_at), true)}
+            </div>
+            <div class="hs-history-heading">Score History (${history.length} run${history.length === 1 ? '' : 's'})</div>
+            ${historyHtml}`;
+
+        document.getElementById('hsDetailsBackdrop').classList.add('show');
     } catch (e) {
-        alert('Could not load product details: ' + e.message);
+        showHsDetailsError('Could not load product details: ' + e.message);
     }
+}
+
+function showHsDetailsError(message) {
+    document.getElementById('hsDetailsTitle').textContent = 'Product Health Details';
+    document.getElementById('hsDetailsBody').innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtmlHs(message)}</div>`;
+    document.getElementById('hsDetailsBackdrop').classList.add('show');
+}
+
+function closeHsDetails() {
+    document.getElementById('hsDetailsBackdrop').classList.remove('show');
+}
+
+function escapeHtmlHs(value) {
+    return String(value ?? '').replace(/[&<>"']/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[character]));
 }
 
 // ── Critical Products card — uses the dedicated critical endpoint,
