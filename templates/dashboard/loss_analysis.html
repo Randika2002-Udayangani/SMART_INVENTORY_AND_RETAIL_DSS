@@ -102,6 +102,7 @@
             </tbody>
         </table>
         </div>
+        <div id="lossPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
 
     <!-- Record Damage Form -->
@@ -152,6 +153,7 @@
             </tbody>
         </table>
         </div>
+        <div id="returnsPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
 
 </div>
@@ -164,6 +166,12 @@
 // to the real product ID, since the API needs product_id not a name.
 let dmgProductLookup = {};
 let canSeeFinancials = false;
+let allLosses = [];
+let lossPage = 1;
+const lossPageSize = 25;
+let allReturns = [];
+let returnsPage = 1;
+const returnsPageSize = 25;
 
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -239,53 +247,102 @@ async function loadLosses() {
     const url = filter ? `/api/losses/?loss_type=${filter}` : '/api/losses/';
     try {
         const data = await apiFetch(url);
-        const tbody = document.getElementById('lossTableBody');
-        const rows = Array.isArray(data) ? data : (data.results ?? []);
-        if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No loss records found.</td></tr>';
-        } else {
-            tbody.innerHTML = rows.map(r => `
-                <tr>
-                    <td>${escapeHtml(r.product_name ?? r['product__product_name'] ?? '—')}</td>
-                    <td><span class="badge bg-secondary">${escapeHtml(r.loss_type)}</span></td>
-                    <td>${escapeHtml(r.loss_quantity ?? r.quantity ?? '—')}</td>
-                    <td>Rs ${Number(r.loss_value ?? 0).toLocaleString()}</td>
-                    <td>${escapeHtml(r.loss_date ?? r.date ?? r.created_at ?? '—')}</td>
-                </tr>
-            `).join('');
-        }
+        allLosses = Array.isArray(data) ? data : (data.results ?? []);
+        lossPage = 1; // fresh data (filter changed / reload) — back to page 1
+        renderLosses();
     } catch(e) {
         document.getElementById('lossTableBody').innerHTML = `<tr><td colspan="5" class="text-center text-danger">${escapeHtml(e.message)}</td></tr>`;
+        document.getElementById('lossPagination').innerHTML = '';
         showPageError('Loss records could not be loaded.');
     }
+}
+
+// Pagination — same pattern used elsewhere (Stock Levels in inventory.html,
+// Purchases, Batches, Reorder, Lifecycle, Notifications): 25 rows/page,
+// client-side slice, Previous / "Page X of Y" / Next.
+function renderLosses() {
+    const tbody = document.getElementById('lossTableBody');
+    const rows = allLosses;
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No loss records found.</td></tr>';
+        document.getElementById('lossPagination').innerHTML = '';
+        return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / lossPageSize));
+    lossPage = Math.min(lossPage, totalPages);
+    const pageRows = rows.slice((lossPage - 1) * lossPageSize, lossPage * lossPageSize);
+
+    tbody.innerHTML = pageRows.map(r => `
+        <tr>
+            <td>${escapeHtml(r.product_name ?? r['product__product_name'] ?? '—')}</td>
+            <td><span class="badge bg-secondary">${escapeHtml(r.loss_type)}</span></td>
+            <td>${escapeHtml(r.loss_quantity ?? r.quantity ?? '—')}</td>
+            <td>Rs ${Number(r.loss_value ?? 0).toLocaleString()}</td>
+            <td>${escapeHtml(r.loss_date ?? r.date ?? r.created_at ?? '—')}</td>
+        </tr>
+    `).join('');
+
+    document.getElementById('lossPagination').innerHTML = rows.length > lossPageSize ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeLossPage(-1)" ${lossPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${lossPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeLossPage(1)" ${lossPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+}
+
+function changeLossPage(delta) {
+    lossPage += delta;
+    renderLosses();
 }
 
 // Load supplier returns
 async function loadReturns() {
     try {
         const data = await apiFetch('/api/supplier-returns/');
-        const tbody = document.getElementById('returnsTableBody');
-        const rows = Array.isArray(data) ? data : (data.results ?? []);
-        if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No supplier returns found.</td></tr>';
-        } else {
-            tbody.innerHTML = rows.map(r => `
-                <tr>
-                   <td>${escapeHtml(r.supplier_name ?? (typeof r.supplier === 'object' ? r.supplier?.name : r.supplier) ?? '—')}</td>
-                   <td>${escapeHtml(r.product_name ?? (typeof r.product === 'object' ? r.product?.name : r.product) ?? '—')}</td>
-                    <td>${escapeHtml(r.quantity_returned ?? '—')}</td>
-                    <td><span class="badge ${r.status==='CONFIRMED'?'bg-success':r.status==='REJECTED'?'bg-danger':'bg-warning'}">${escapeHtml(r.status)}</span></td>
-                    <td>
-                        <button class="btn-success-soft me-1" onclick="updateReturn(${r.id},'CONFIRMED')">Confirm</button>
-                        <button class="btn-danger-soft" onclick="updateReturn(${r.id},'REJECTED')">Reject</button>
-                    </td>
-                </tr>
-            `).join('');
-        }
+        allReturns = Array.isArray(data) ? data : (data.results ?? []);
+        returnsPage = 1; // fresh data — back to page 1
+        renderReturns();
     } catch(e) {
         document.getElementById('returnsTableBody').innerHTML = `<tr><td colspan="5" class="text-center text-danger">${escapeHtml(e.message)}</td></tr>`;
+        document.getElementById('returnsPagination').innerHTML = '';
         showPageError('Supplier returns could not be loaded.');
     }
+}
+
+function renderReturns() {
+    const tbody = document.getElementById('returnsTableBody');
+    const rows = allReturns;
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No supplier returns found.</td></tr>';
+        document.getElementById('returnsPagination').innerHTML = '';
+        return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / returnsPageSize));
+    returnsPage = Math.min(returnsPage, totalPages);
+    const pageRows = rows.slice((returnsPage - 1) * returnsPageSize, returnsPage * returnsPageSize);
+
+    tbody.innerHTML = pageRows.map(r => `
+        <tr>
+           <td>${escapeHtml(r.supplier_name ?? (typeof r.supplier === 'object' ? r.supplier?.name : r.supplier) ?? '—')}</td>
+           <td>${escapeHtml(r.product_name ?? (typeof r.product === 'object' ? r.product?.name : r.product) ?? '—')}</td>
+            <td>${escapeHtml(r.quantity_returned ?? '—')}</td>
+            <td><span class="badge ${r.status==='CONFIRMED'?'bg-success':r.status==='REJECTED'?'bg-danger':'bg-warning'}">${escapeHtml(r.status)}</span></td>
+            <td>
+                <button class="btn-success-soft me-1" onclick="updateReturn(${r.id},'CONFIRMED')">Confirm</button>
+                <button class="btn-danger-soft" onclick="updateReturn(${r.id},'REJECTED')">Reject</button>
+            </td>
+        </tr>
+    `).join('');
+
+    document.getElementById('returnsPagination').innerHTML = rows.length > returnsPageSize ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeReturnsPage(-1)" ${returnsPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${returnsPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeReturnsPage(1)" ${returnsPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+}
+
+function changeReturnsPage(delta) {
+    returnsPage += delta;
+    renderReturns();
 }
 
 async function updateReturn(id, status) {

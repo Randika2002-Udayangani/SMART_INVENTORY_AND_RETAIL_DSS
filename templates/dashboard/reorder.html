@@ -75,12 +75,16 @@
         </tbody>
       </table>
     </div>
+    <div id="reorderPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
   </div>
 {% endblock %}
 
 {% block page_scripts %}
 <script>
   let canManageReorders = false;
+  let allRecommendations = [];
+  let reorderPage = 1;
+  const reorderPageSize = 25;
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>'"]/g, char => ({
@@ -104,7 +108,25 @@
     document.getElementById('errorState').hidden = true;
   }
 
+  // Actions now reflect the recommendation's actual status, instead of
+  // always showing both live buttons regardless of what's already been
+  // done. Once a recommendation is ORDERED, "Order" is pointless to click
+  // again — so it's shown greyed out/disabled, and "Ignore" is dropped
+  // entirely (there's nothing left to ignore once it's been ordered).
+  // Same idea for IGNORED. AUTO_RESOLVED means the system already closed
+  // it out, so no action buttons apply at all.
   function renderActionCell(recommendation) {
+    const status = recommendation.status;
+    if (status === 'ORDERED') {
+      return `<button class="btn btn-sm btn-secondary" disabled>&#10003; Ordered</button>`;
+    }
+    if (status === 'IGNORED') {
+      return `<button class="btn btn-sm btn-secondary" disabled>Ignored</button>`;
+    }
+    if (status === 'AUTO_RESOLVED') {
+      return `<span class="text-muted">—</span>`;
+    }
+    // PENDING (or anything unrecognised) — both actions still make sense.
     return `
       <button class="btn btn-sm btn-success me-1" onclick="updateStatus(${recommendation.id}, 'ORDERED')">Order</button>
       <button class="btn btn-sm btn-outline-secondary" onclick="updateStatus(${recommendation.id}, 'IGNORED')">Ignore</button>
@@ -122,29 +144,56 @@
     try {
       const query = params.toString();
       const data = await apiFetch(`/api/reorder/recommendations/${query ? `?${query}` : ''}`);
-      const rows = Array.isArray(data) ? data : (data.results ?? []);
-      const tbody = document.getElementById('reorderBody');
-      if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${canManageReorders ? 7 : 6}" class="text-center text-muted">No recommendations found. Click Calculate Reorder.</td></tr>`;
-        return;
-      }
-      tbody.innerHTML = rows.map(recommendation => `
-        <tr>
-          <td>${escapeHtml(recommendation.product_name)}</td>
-          <td>${escapeHtml(recommendation.current_stock)}</td>
-          <td>${escapeHtml(recommendation.safety_stock)}</td>
-          <td>${escapeHtml(recommendation.suggested_quantity)}</td>
-          <td>${urgencyBadge(recommendation.urgency)}</td>
-          <td><span class="badge bg-secondary">${escapeHtml(recommendation.status)}</span></td>
-          <td class="action-cell">${renderActionCell(recommendation)}</td>
-        </tr>
-      `).join('');
-      document.querySelectorAll('.action-cell').forEach(cell => { cell.hidden = !canManageReorders; });
+      allRecommendations = Array.isArray(data) ? data : (data.results ?? []);
+      reorderPage = 1; // fresh data (filter changed / reload) — back to page 1
+      renderRecommendations();
     } catch (error) {
       console.error('loadRecommendations failed:', error);
       document.getElementById('reorderBody').innerHTML = `<tr><td colspan="${canManageReorders ? 7 : 6}" class="text-center text-muted">Could not load recommendations.</td></tr>`;
+      document.getElementById('reorderPagination').innerHTML = '';
       showError('Reorder recommendations could not be loaded. Please try again.');
     }
+  }
+
+  // Renders the current page of allRecommendations. Pagination follows the
+  // same pattern used elsewhere (Stock Levels in inventory.html, Purchases,
+  // Batches, Notifications) — 25 rows/page, client-side slice, Previous /
+  // "Page X of Y" / Next.
+  function renderRecommendations() {
+    const tbody = document.getElementById('reorderBody');
+    const rows = allRecommendations;
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="${canManageReorders ? 7 : 6}" class="text-center text-muted">No recommendations found. Click Calculate Reorder.</td></tr>`;
+      document.getElementById('reorderPagination').innerHTML = '';
+      return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / reorderPageSize));
+    reorderPage = Math.min(reorderPage, totalPages);
+    const pageRows = rows.slice((reorderPage - 1) * reorderPageSize, reorderPage * reorderPageSize);
+
+    tbody.innerHTML = pageRows.map(recommendation => `
+      <tr>
+        <td>${escapeHtml(recommendation.product_name)}</td>
+        <td>${escapeHtml(recommendation.current_stock)}</td>
+        <td>${escapeHtml(recommendation.safety_stock)}</td>
+        <td>${escapeHtml(recommendation.suggested_quantity)}</td>
+        <td>${urgencyBadge(recommendation.urgency)}</td>
+        <td><span class="badge bg-secondary">${escapeHtml(recommendation.status)}</span></td>
+        <td class="action-cell">${renderActionCell(recommendation)}</td>
+      </tr>
+    `).join('');
+    document.querySelectorAll('.action-cell').forEach(cell => { cell.hidden = !canManageReorders; });
+
+    document.getElementById('reorderPagination').innerHTML = rows.length > reorderPageSize ? `
+      <button class="btn btn-sm btn-outline-secondary" onclick="changeReorderPage(-1)" ${reorderPage === 1 ? 'disabled' : ''}>Previous</button>
+      <span class="text-muted small">Page ${reorderPage} of ${totalPages}</span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="changeReorderPage(1)" ${reorderPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+  }
+
+  function changeReorderPage(delta) {
+    reorderPage += delta;
+    renderRecommendations();
   }
 
   async function updateStatus(id, nextStatus) {
