@@ -15,8 +15,56 @@
         .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
         .nav-tabs .nav-link { color:var(--txt); }
         .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
-        .detail-modal { display:none; position:fixed; inset:0; z-index:1060; background:rgba(15,23,42,.45); padding:5vh 1rem; overflow:auto; }
-        .detail-modal.show { display:block; }
+        .detail-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 1060;
+        background: rgba(15,23,42,.45);
+        padding: 5vh 1rem;
+        overflow-y: auto;
+        overflow-x: hidden;
+}
+
+        .detail-modal.show {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+}
+
+        .detail-modal .modal-dialog {
+        position: relative;
+        width: 100%;
+        max-width: 900px;
+        margin: 0 auto;
+        z-index: 1061;
+}
+
+        .detail-modal .modal-content {
+        position: relative;
+        width: 100%;
+        background: var(--card, #fff);
+        border: 1px solid var(--border, #dee2e6);
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0,0,0,.2);
+}
+
+        .detail-modal .modal-header {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.25rem;
+        background: var(--card, #fff);
+        border-bottom: 1px solid var(--border, #dee2e6);
+}
+
+        .detail-modal .modal-body {
+        position: relative;
+        padding: 1.25rem;
+        background: var(--card, #fff);
+}
     </style>
 {% endblock %}
 

@@ -51,7 +51,7 @@ from core.utils import get_last_sync_date, get_latest_sync_uploads
 class StockSnapshotView(APIView):
     def get(self, request):
         last_sync = get_last_sync_date()
-        products  = Product.objects.filter(is_active=True)
+        products = Product.objects.filter(is_active=True).select_related('category', 'brand')
         result    = []
 
         for product in products:
@@ -68,8 +68,11 @@ class StockSnapshotView(APIView):
                 stock_status = 'AVAILABLE'
 
             result.append({
+                
                 'product_id'       : product.id,
                 'product_name'     : product.product_name,
+                'category_name'    : product.category.category_name if product.category else None,
+                'brand_name'       : product.brand.brand_name if product.brand else None,
                 'sku_code'         : product.sku_code,
                 'current_stock'    : current_stock,
                 'reorder_threshold': reorder,
@@ -77,7 +80,6 @@ class StockSnapshotView(APIView):
                 'avg_cost_price'   : str(product.avg_cost_price),
                 'last_sync_date'   : last_sync,
             })
-
         return Response({
             'last_sync_date': last_sync,
             'note'          : 'Stock is snapshot-based.',
