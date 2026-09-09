@@ -30,6 +30,34 @@
         .loss-table { min-width:650px; }
         .returns-table { min-width:760px; }
     }
+    .loss-table tbody tr { cursor: pointer; }
+    .loss-table tbody tr:hover { background: var(--card2, #f3f4f6); }
+
+    /* Loss record details modal */
+    .loss-modal-backdrop {
+        position: fixed; inset: 0; background: rgba(15,23,42,0.45);
+        display: none; align-items: center; justify-content: center; z-index: 1050; padding: 16px;
+    }
+    .loss-modal-backdrop.show { display: flex; }
+    .loss-modal-box {
+        background: var(--card); border-radius: 12px; width: 100%; max-width: 560px;
+        max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    }
+    .loss-modal-header {
+        display:flex; justify-content:space-between; align-items:center;
+        padding: 18px 22px; border-bottom: 1px solid var(--border);
+    }
+    .loss-modal-header h5 { margin:0; font-weight:700; color: var(--txt); }
+    .loss-modal-close { background:none; border:none; font-size:20px; color: var(--muted); cursor:pointer; line-height:1; }
+    .loss-modal-body { padding: 20px 22px; }
+    .loss-detail-grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; }
+    .loss-detail-item .lbl { font-size:11px; text-transform:uppercase; letter-spacing:.03em; color: var(--muted); margin-bottom:4px; }
+    .loss-detail-item .val { font-weight:600; color: var(--txt); word-break: break-word; }
+    .loss-detail-item.full { grid-column: 1 / -1; }
+    .loss-modal-footer { padding: 14px 22px; border-top: 1px solid var(--border); text-align:right; }
+    @media (max-width: 560px) {
+        .loss-detail-grid { grid-template-columns: 1fr; }
+    }
 </style>
 {% endblock %}
 
@@ -103,6 +131,22 @@
         </table>
         </div>
         <div id="lossPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
+    </div>
+
+    <!-- Loss Record Details Modal -->
+    <div id="lossDetailsBackdrop" class="loss-modal-backdrop" onclick="if(event.target===this) closeLossDetails()">
+        <div class="loss-modal-box">
+            <div class="loss-modal-header">
+                <h5>Loss Record Details</h5>
+                <button type="button" class="loss-modal-close" onclick="closeLossDetails()">&times;</button>
+            </div>
+            <div class="loss-modal-body" id="lossDetailsBody">
+                <!-- populated by showLossDetails() -->
+            </div>
+            <div class="loss-modal-footer">
+                <button class="btn btn-outline-secondary btn-sm" onclick="closeLossDetails()">Close</button>
+            </div>
+        </div>
     </div>
 
     <!-- Record Damage Form -->
@@ -273,15 +317,17 @@ function renderLosses() {
     lossPage = Math.min(lossPage, totalPages);
     const pageRows = rows.slice((lossPage - 1) * lossPageSize, lossPage * lossPageSize);
 
-    tbody.innerHTML = pageRows.map(r => `
-        <tr>
+    tbody.innerHTML = pageRows.map(r => {
+        const key = r.id ?? allLosses.indexOf(r);
+        return `
+        <tr onclick="showLossDetails('${key}')">
             <td>${escapeHtml(r.product_name ?? r['product__product_name'] ?? '—')}</td>
             <td><span class="badge bg-secondary">${escapeHtml(r.loss_type)}</span></td>
             <td>${escapeHtml(r.loss_quantity ?? r.quantity ?? '—')}</td>
             <td>Rs ${Number(r.loss_value ?? 0).toLocaleString()}</td>
             <td>${escapeHtml(r.loss_date ?? r.date ?? r.created_at ?? '—')}</td>
-        </tr>
-    `).join('');
+        </tr>`;
+    }).join('');
 
     document.getElementById('lossPagination').innerHTML = rows.length > lossPageSize ? `
         <button class="btn btn-sm btn-outline-secondary" onclick="changeLossPage(-1)" ${lossPage === 1 ? 'disabled' : ''}>Previous</button>
@@ -292,6 +338,39 @@ function renderLosses() {
 function changeLossPage(delta) {
     lossPage += delta;
     renderLosses();
+}
+
+// Row click -> details modal. Shows every field the API returned for this
+// record, most importantly `notes`, which has no column in the table and
+// was previously invisible to managers after staff recorded damage.
+function showLossDetails(key) {
+    const record = allLosses.find((r, idx) => String(r.id ?? idx) === String(key));
+    if (!record) return;
+
+    const field = (label, value, full = false) => `
+        <div class="loss-detail-item${full ? ' full' : ''}">
+            <div class="lbl">${escapeHtml(label)}</div>
+            <div class="val">${escapeHtml(value ?? '—')}</div>
+        </div>`;
+
+    const html = `
+        <div class="loss-detail-grid">
+            ${field('Product', record.product_name ?? record['product__product_name'])}
+            ${field('Loss Type', record.loss_type)}
+            ${field('Quantity', record.loss_quantity ?? record.quantity)}
+            ${field('Loss Value', record.loss_value != null ? 'Rs ' + Number(record.loss_value).toLocaleString() : null)}
+            ${field('Date', record.loss_date ?? record.date ?? record.created_at)}
+            ${field('Recorded By', record.recorded_by__username ?? (record.recorded_by ? 'User #' + record.recorded_by : null))}
+            ${field('Batch', record.batch_number ?? record.batch_id ?? record.batch)}
+            ${field('Notes', record.notes ?? record.remarks ?? record.description, true)}
+        </div>`;
+
+    document.getElementById('lossDetailsBody').innerHTML = html;
+    document.getElementById('lossDetailsBackdrop').classList.add('show');
+}
+
+function closeLossDetails() {
+    document.getElementById('lossDetailsBackdrop').classList.remove('show');
 }
 
 // Load supplier returns
