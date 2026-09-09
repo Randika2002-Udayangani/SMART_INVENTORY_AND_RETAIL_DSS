@@ -429,7 +429,7 @@
 
   function money(value) {
     return 'Rs ' + Number(value || 0).toLocaleString('en-LK', {
-      minimumFractionDigits: 0,
+      minimumFractionDigits: 2,
       maximumFractionDigits: 2
     });
   }
