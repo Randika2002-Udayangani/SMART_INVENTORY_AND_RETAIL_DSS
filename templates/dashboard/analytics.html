@@ -33,7 +33,21 @@
   .perf-flag.HIGH_MARGIN_LOW_VOLUME { background: #dbeafe; color: #1d4ed8; }
   .perf-flag.LOW_MARGIN_HIGH_VOLUME { background: #fef3c7; color: #92400e; }
   .perf-flag.NORMAL { background: var(--card2); color: var(--muted); }
+  .status-badge { font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: 600; display: inline-block; white-space: nowrap; }
+  .status-badge.good { background: #dcfce7; color: #15803d; }
+  .status-badge.warn { background: #fef9c3; color: #854d0e; }
+  .status-badge.bad { background: #fee2e2; color: #b91c1c; }
+  .status-badge.muted { background: var(--card2); color: var(--muted); }
+  .pa-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .pa-row:last-child { border-bottom: none; }
   @media (max-width: 960px) { .an-chart { height: 240px; } .an-chart-wide { height: 260px; } }
+
+  #productAnalysisModal .modal-dialog {
+  margin-left: calc(var(--an-sidebar-w, 0px) + (100vw - var(--an-sidebar-w, 0px) - 100%) / 2);
+  }
+  @media (max-width: 960px) {
+    #productAnalysisModal .modal-dialog { margin-left: auto; }
+  }
 </style>
 {% endblock %}
 
@@ -96,7 +110,7 @@
       <div class="d-flex justify-content-between align-items-start mb-2">
         <div><h6 class="fw-bold mb-0">Sales Trend — Revenue vs Profit</h6><small class="text-muted">Do rising sales translate into rising profit?</small></div>
         <select id="anTrendMetric" class="form-select form-select-sm w-auto">
-          <option value="amount">Revenue / Profit</option>
+          <option value="amount">Revenue + Profit</option>
           <option value="units">Units sold</option>
         </select>
       </div>
@@ -160,15 +174,59 @@
           <th>WAC</th><th>Cost</th>
           <th class="sortable" data-sort="profit">Profit <span class="sort-arrow">↕</span></th>
           <th class="sortable" data-sort="margin">Margin % <span class="sort-arrow">↕</span></th>
-          <th>Flag</th>
+          <th>Flag</th><th>Action</th>
         </tr>
       </thead>
-      <tbody id="anProductsBody"><tr><td colspan="11" class="text-center text-muted py-4">Loading…</td></tr></tbody>
+      <tbody id="anProductsBody"><tr><td colspan="12" class="text-center text-muted py-4">Loading…</td></tr></tbody>
     </table>
   </div>
   <div class="d-flex justify-content-between align-items-center">
     <small id="anCount" class="text-muted"></small>
     <div><button id="anPrev" class="btn btn-sm btn-outline-secondary">Previous</button> <button id="anNext" class="btn btn-sm btn-outline-secondary">Next</button></div>
+  </div>
+</div>
+
+<!-- Product Analysis Modal -->
+<div class="modal fade" id="productAnalysisModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content" style="background:var(--card); border:1px solid var(--border);">
+      <div class="modal-header" style="border-bottom:1px solid var(--border);">
+        <div>
+          <h5 class="modal-title fw-bold mb-0" id="paProductName">Product Analysis</h5>
+          <small class="text-muted" id="paProductMeta"></small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="paLoading" class="an-loading">Loading product analysis…</div>
+        <div id="paError" class="an-error" style="display:none;"></div>
+        <div id="paBody" style="display:none;">
+          <div class="row g-3 mb-3" id="paKpis"></div>
+
+          <div class="an-card mb-3" id="paRecommendationCard"></div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-lg-6">
+              <div class="an-card h-100">
+                <h6 class="fw-bold mb-2">Lifecycle &amp; Health</h6>
+                <div id="paLifecycleHealth"></div>
+              </div>
+            </div>
+            <div class="col-lg-6">
+              <div class="an-card h-100">
+                <h6 class="fw-bold mb-2">Stock &amp; Reorder</h6>
+                <div id="paReorder"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="an-card">
+            <h6 class="fw-bold mb-2">Monthly Sales &amp; Profit</h6>
+            <div class="an-chart an-chart-wide"><canvas id="paMonthlyChart"></canvas><div id="paMonthlyState" class="an-loading">Loading…</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -178,6 +236,25 @@
 (function () {
   const $ = id => document.getElementById(id);
   const money = v => 'Rs ' + Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Formats a raw backend timestamp/date string (e.g. "2026-09-11
+  // 13:36:33.247517+05:30" or "2026-09-11") into something readable
+  // (e.g. "Sep 11, 2026, 1:36 PM" or "Sep 11, 2026"). Falls back to the
+  // raw string if it can't be parsed, rather than showing "Invalid Date".
+  function formatDateTime(raw, includeTime = true) {
+    if (!raw) return '—';
+    const parsed = new Date(raw.replace(' ', 'T'));
+    if (isNaN(parsed.getTime())) return raw;
+    const dateStr = parsed.toLocaleDateString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric'
+    });
+    if (!includeTime) return dateStr;
+    const timeStr = parsed.toLocaleTimeString(undefined, {
+      hour: 'numeric', minute: '2-digit'
+    });
+    return `${dateStr}, ${timeStr}`;
+  }
+
   const pct = v => (v === null || v === undefined) ? '—' : Number(v).toFixed(1) + '%';
   const COLORS = { revenue: '#22c55e', profit: '#0f3d3e', units: '#f59e0b', cat: '#34d17a', brand: '#8b5cf6' };
   let charts = {};
@@ -205,6 +282,16 @@
     $('anFrom').value = iso(from);
     $('anTo').value = iso(to);
   }
+
+  function syncModalOffset() {
+    const sidebar = document.querySelector('.sidebar');
+    const w = (sidebar && window.innerWidth > 960) ? sidebar.getBoundingClientRect().width : 0;
+    document.documentElement.style.setProperty('--an-sidebar-w', w + 'px');
+  }
+  window.addEventListener('resize', syncModalOffset);
+  syncModalOffset();
+
+  
 
   function chooseGranularity() {
     if (!$('anFrom').value || !$('anTo').value) return;
@@ -248,8 +335,8 @@
     lastOverview = o;
     $('anPeriodLabel').innerText = `Analytics period: ${o.period.date_from} – ${o.period.date_to}`;
     $('anSyncLabel').innerText = o.data_quality.latest_sales_date
-      ? `Sales data through ${o.data_quality.latest_sales_date} · Last synchronized: ${o.data_quality.last_synchronized}`
-      : `Last synchronized: ${o.data_quality.last_synchronized}`;
+      ? `Sales data through ${formatDateTime(o.data_quality.latest_sales_date, false)} · Last synchronized: ${formatDateTime(o.data_quality.last_synchronized)}`
+      : `Last synchronized: ${formatDateTime(o.data_quality.last_synchronized)}`;
 
     if (o.data_quality.products_missing_wac > 0) {
       $('anQualityBanner').style.display = 'block';
@@ -374,9 +461,12 @@
       makeChart('trendChart', 'line', {
         labels: trend.map(p => p.period_label),
         datasets: units
-          ? [{ label: 'Units sold', data: trend.map(p => p.total_qty), borderColor: COLORS.units, tension: .25 }]
-          : [{ label: 'Revenue', data: trend.map(p => p.total_revenue), borderColor: COLORS.revenue, tension: .25 }],
-      }, { scales: { y: { beginAtZero: true } } });
+          ? [{ label: 'Units sold', data: trend.map(p => p.total_qty), borderColor: COLORS.units, backgroundColor: COLORS.units, tension: .25 }]
+          : [
+              { label: 'Revenue', data: trend.map(p => p.total_revenue), borderColor: '#22c55e', backgroundColor: '#22c55e33', tension: .25, yAxisID: 'y' },
+              { label: 'Profit', data: trend.map(p => p.total_profit ?? 0), borderColor: '#eab308', backgroundColor: '#eab30833', tension: .25, yAxisID: 'y' },
+            ],
+      }, { scales: { y: { beginAtZero: true } }, plugins: { legend: { display: !units } } });
     } catch (e) {
       showState('trendChart', 'trendState', 'error', errorMessage(e));
     }
@@ -384,7 +474,7 @@
 
   async function loadProducts() {
     const search = encodeURIComponent($('anSearch').value.trim());
-    $('anProductsBody').innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">Loading…</td></tr>';
+    $('anProductsBody').innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4">Loading…</td></tr>';
     try {
       const p = await apiFetch(`/api/analytics/products/?${dateQS()}&sort=${currentSort}&page=${productPage}&page_size=${PAGE_SIZE}&search=${search}`);
       $('anCount').innerText = `${p.count} products`;
@@ -395,12 +485,101 @@
             <td>${r.units_sold}</td><td>${money(r.revenue)}</td><td>${money(r.wac)}</td><td>${money(r.cost)}</td>
             <td>${money(r.profit)}</td><td>${pct(r.margin_pct)}</td>
             <td><span class="perf-flag ${r.performance_flag}">${r.performance_flag.replaceAll('_', ' ')}</span></td>
+            <td><button class="btn btn-sm btn-outline-primary view-analysis-btn" data-id="${r.product_id}" data-name="${String(r.product_name).replace(/"/g, '&quot;')}">View Analysis</button></td>
           </tr>`).join('')
-        : '<tr><td colspan="11" class="text-center text-muted py-4">No sales data available for the selected period.</td></tr>';
+        : '<tr><td colspan="12" class="text-center text-muted py-4">No sales data available for the selected period.</td></tr>';
       $('anPrev').disabled = productPage === 1;
       $('anNext').disabled = productPage * PAGE_SIZE >= p.count;
     } catch (e) {
-      $('anProductsBody').innerHTML = `<tr><td colspan="11" class="text-center py-4" style="color:#b91c1c;">${errorMessage(e)}</td></tr>`;
+      $('anProductsBody').innerHTML = `<tr><td colspan="12" class="text-center py-4" style="color:#b91c1c;">${errorMessage(e)}</td></tr>`;
+    }
+  }
+
+  // ── Product Analysis modal (View Analysis drill-down) ──────────────────
+  function statusTone(value) {
+    const good = ['HEALTHY', 'GROWING', 'STABLE', 'LOW', 'RETAIN', 'MONITOR'];
+    const warn = ['WATCH', 'MEDIUM', 'NEW'];
+    const bad = ['AT RISK', 'CRITICAL', 'DECLINING', 'SLOW_MOVING', 'HIGH', 'REORDER', 'DISCOUNT', 'REVIEW'];
+    if (good.includes(value)) return 'good';
+    if (warn.includes(value)) return 'warn';
+    if (bad.includes(value)) return 'bad';
+    return 'muted';
+  }
+
+  function badge(value, label) {
+    if (value === null || value === undefined) return '<span class="status-badge muted">—</span>';
+    return `<span class="status-badge ${statusTone(value)}">${label || value}</span>`;
+  }
+
+  async function openProductAnalysis(productId, productName) {
+    $('paProductName').innerText = productName || 'Product Analysis';
+    $('paProductMeta').innerText = '';
+    $('paLoading').style.display = 'flex';
+    $('paError').style.display = 'none';
+    $('paBody').style.display = 'none';
+    const modal = bootstrap.Modal.getOrCreateInstance($('productAnalysisModal'));
+    modal.show();
+
+    try {
+      const a = await apiFetch(`/api/analytics/products/${productId}/analysis/?${dateQS()}`);
+      renderProductAnalysis(a);
+      $('paLoading').style.display = 'none';
+      $('paBody').style.display = 'block';
+    } catch (e) {
+      $('paLoading').style.display = 'none';
+      $('paError').style.display = 'flex';
+      $('paError').innerText = errorMessage(e);
+    }
+  }
+
+  function renderProductAnalysis(a) {
+    const p = a.product, s = a.summary;
+    $('paProductName').innerText = p.name;
+    $('paProductMeta').innerText = `SKU ${p.sku_code || '—'} · ${p.brand || 'Unbranded'} · ${p.category || 'Uncategorised'} · ${a.period.date_from} – ${a.period.date_to}`;
+
+    const kpis = [
+      ['Revenue', money(s.revenue)], ['Profit', money(s.profit)], ['Margin', pct(s.margin_pct)],
+      ['Units Sold', Number(s.units_sold).toLocaleString()], ['Current Stock', Number(s.current_stock).toLocaleString()],
+    ];
+    $('paKpis').innerHTML = kpis.map(([label, val]) =>
+      `<div class="col-6 col-md-4 col-xl-2"><div class="kpi-card"><div class="kpi-lbl">${label}</div><div class="kpi-val">${val}</div></div></div>`
+    ).join('');
+
+    const r = a.recommendation;
+    const warnStyle = statusTone(r.action) === 'bad' ? 'background:#fee2e2;border-color:#fca5a5;color:#b91c1c;' : '';
+    $('paRecommendationCard').innerHTML = `
+      <h6 class="fw-bold mb-1">Manager Recommendation</h6>
+      <div class="quality-banner" style="margin-bottom:0;${warnStyle}">
+        <strong>${r.action}</strong>${r.suggested_quantity ? ` — ${r.suggested_quantity} units` : ''}<br>
+        <span class="small">${r.reason}</span>
+      </div>`;
+
+    const lc = a.lifecycle, hs = a.health;
+    $('paLifecycleHealth').innerHTML = `
+      <div class="pa-row"><span class="small text-muted">Lifecycle</span>${lc ? badge(lc.status) : '<span class="text-muted small">Not calculated yet</span>'}</div>
+      ${lc ? `<div class="small text-muted mb-2">Recommendation: ${lc.recommendation} · velocity ${lc.sales_velocity}</div>` : ''}
+      <div class="pa-row"><span class="small text-muted">Health Score</span>${hs ? badge(hs.status, `${hs.overall_score}/100 · ${hs.status}`) : '<span class="text-muted small">Not calculated yet</span>'}</div>
+      ${hs && hs.recommended_action ? `<div class="small text-muted">${hs.recommended_action}</div>` : ''}
+    `;
+
+    const ro = a.reorder;
+    $('paReorder').innerHTML = ro ? `
+      <div class="pa-row"><span class="small text-muted">Urgency</span>${badge(ro.urgency)}</div>
+      <div class="pa-row"><strong class="small">Avg daily sales</strong><span class="small">${ro.avg_daily_sales} units/day</span></div>
+      <div class="pa-row"><strong class="small">Days of stock</strong><span class="small">${ro.days_of_stock} days (lead time ${ro.lead_time_days}d)</span></div>
+      <div class="pa-row"><strong class="small">Suggested reorder</strong><span class="small">${ro.suggested_quantity} units (safety ${ro.safety_stock})</span></div>
+    ` : '<span class="text-muted small">No recent sales velocity to base a reorder estimate on.</span>';
+
+    const trend = a.monthly_sales || [];
+    showState('paMonthlyChart', 'paMonthlyState', trend.length ? null : 'empty', trend.length ? null : 'No monthly sales history for this product yet.');
+    if (trend.length) {
+      makeChart('paMonthlyChart', 'bar', {
+        labels: trend.map(m => m.month),
+        datasets: [
+          { label: 'Revenue', data: trend.map(m => m.revenue), backgroundColor: COLORS.revenue },
+          { label: 'Profit', data: trend.map(m => m.profit), backgroundColor: COLORS.profit },
+        ],
+      }, { scales: { y: { beginAtZero: true } } });
     }
   }
 
@@ -426,6 +605,10 @@
     currentSort = th.dataset.sort === 'qty' ? 'qty' : th.dataset.sort;
     productPage = 1;
     loadProducts();
+  });
+  $('anProductsBody').addEventListener('click', e => {
+    const btn = e.target.closest('.view-analysis-btn');
+    if (btn) openProductAnalysis(btn.dataset.id, btn.dataset.name);
   });
 
   setPresetDates();

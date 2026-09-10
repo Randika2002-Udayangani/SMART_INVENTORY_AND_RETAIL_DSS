@@ -28,6 +28,7 @@ from products.models import Product
 from users.audit import log_action
 from users.models import SystemConfig
 from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore, ReorderRecommendation
+from inventory.services.fefo import deduct_stock_fefo
 
 from .models import (
     UploadLog,
@@ -342,6 +343,37 @@ class ItemLedgerPDFUploadView(APIView):
                 )
 
                 inserted += 1
+
+                # ── FIX: stock was never actually deducted on sale ────────
+                # ItemSalesRecord existed but PurchaseBatch.remaining_quantity
+                # was never touched -- this endpoint has been silently NOT
+                # doing what Section 9 of the API doc documents ("Deducts
+                # stock via FEFO") since it was first built. See
+                # inventory/services/fefo.py for full root-cause notes.
+                # Does not fail the upload on shortfall -- the sale itself
+                # is real/authoritative data; an oversell here means the
+                # STOCK bookkeeping is behind (likely from historical sales
+                # recorded before this fix existed, not yet reconciled via
+                # reconcile_stock_fefo), not that the sale should be
+                # rejected. Surfaced as a warning instead.
+                sale_record = ItemSalesRecord.objects.filter(
+                    product=product, sale_date=sale_date
+                ).order_by('-id').first()
+
+                fefo_result = deduct_stock_fefo(
+                    product_id=product.id,
+                    quantity=qty,
+                    source='SALE_SYNC_ITEM_LEDGER',
+                    reference_id=sale_record.id if sale_record else None,
+                )
+                if fefo_result['shortfall'] > 0:
+                    errors.append(
+                        f'{sale_date}: sold {qty} but only '
+                        f'{fefo_result["deducted"]} could be deducted from '
+                        f'sellable batches (shortfall {fefo_result["shortfall"]}). '
+                        f'Stock bookkeeping for this product may need '
+                        f'reconciliation -- see reconcile_stock_fefo command.'
+                    )
 
             # ---------------------------------------------------------
             # Update Sync Date

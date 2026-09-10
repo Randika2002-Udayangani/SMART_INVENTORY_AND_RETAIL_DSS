@@ -21,6 +21,7 @@ from datetime import date, timedelta
 from django.db.models import Sum, Count
 from sales.models import ItemSalesRecord, DailyBillSummary
 from products.models import Product
+from django.db.models.functions import TruncMonth
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -394,42 +395,12 @@ def slow_moving(start_date, end_date, product_results=None):
 
 def sales_trend(period='daily', months=6, start_date=None, end_date=None):
     """
-    Buckets sales into daily / weekly / monthly totals for chart
-    rendering — per API Design Doc §10:
-    "Daily/weekly/monthly sales trend data for chart.
-    Pass ?period=daily/weekly/monthly and ?months=6"
-
-    Fix (analytics overview rebuild): originally this only ever computed
-    its own date range from `months` back from today() — meaning the
-    trend chart could never share the same date range as every other
-    analytics endpoint on the page, which all take explicit
-    date_from/date_to. That's the "inconsistent date filter" bug.
-
-    start_date/end_date, when both given, now take priority over
-    months and are used as-is. months stays as the fallback for any
-    caller (e.g. a manager-dashboard trend widget) that just wants
-    "last N months from today" without picking exact dates.
-
-    Uses Django's Trunc* DB functions to do the bucketing inside
-    the database (single aggregate query) rather than pulling every
-    row and bucketing in Python — same "push the work to the DB"
-    approach as calculate_sales_and_profit()'s grouped annotate.
-
-    period='daily'   → TruncDate,  one point per calendar day
-    period='weekly'  → TruncWeek,  one point per ISO week start
-    period='monthly' → TruncMonth, one point per calendar month
-    Anything else falls back to 'daily' rather than raising —
-    matches the defensive-default pattern already used for
-    SystemConfig lookups elsewhere in this file's sibling module
-    (discount_engine.py's _get_config_value).
-
-    Returns:
-        list of dicts, oldest → newest:
-            period_label   str  — ISO date of the bucket start
-            total_qty      int
-            total_revenue  float
-
-    Called by: GET /api/analytics/sales-trend/?period=daily&months=6
+    total_profit — WAC-based profit per bucket, computed the same way
+    calculate_sales_and_profit() does: revenue - (qty * product.avg_cost_price),
+    summed across all products active in that bucket. Requires bucketing by
+    product_id as well as by date so each product's own WAC is applied
+    correctly, rather than a single blended cost across every product sold
+    that day/week/month.
     """
     from django.db.models.functions import TruncDate, TruncWeek, TruncMonth
 
@@ -444,11 +415,12 @@ def sales_trend(period='daily', months=6, start_date=None, end_date=None):
         end_date   = date.today()
         start_date = end_date - timedelta(days=months * 30)
 
+    # ── Query 1: bucket + product grouped totals (one query) ──────────────────
     bucketed = (
         ItemSalesRecord.objects
         .filter(sale_date__range=(start_date, end_date))
         .annotate(bucket=trunc_fn('sale_date'))
-        .values('bucket')
+        .values('bucket', 'product_id')
         .annotate(
             total_qty     = Sum('quantity_sold'),
             total_revenue = Sum('total_amount'),
@@ -456,15 +428,37 @@ def sales_trend(period='daily', months=6, start_date=None, end_date=None):
         .order_by('bucket')
     )
 
+    # ── Query 2: fetch avg_cost_price for every product involved, once ────────
+    product_ids = {row['product_id'] for row in bucketed}
+    cost_map = {
+        p.id: (p.avg_cost_price or Decimal('0.00'))
+        for p in Product.objects.filter(id__in=product_ids).only('id', 'avg_cost_price')
+    }
+
+    # ── Aggregate per bucket in Python — no further DB queries ────────────────
+    buckets = {}
+    for row in bucketed:
+        key = row['bucket']
+        qty = row['total_qty'] or 0
+        revenue = row['total_revenue'] or Decimal('0.00')
+        avg_cost = cost_map.get(row['product_id'], Decimal('0.00'))
+        profit = revenue - (qty * avg_cost)
+
+        if key not in buckets:
+            buckets[key] = {'total_qty': 0, 'total_revenue': Decimal('0.00'), 'total_profit': Decimal('0.00')}
+        buckets[key]['total_qty']     += qty
+        buckets[key]['total_revenue'] += revenue
+        buckets[key]['total_profit']  += profit
+
     return [
         {
-            'period_label'  : str(row['bucket']),
-            'total_qty'     : row['total_qty']     or 0,
-            'total_revenue' : float(row['total_revenue'] or 0),
+            'period_label'  : str(bucket_key),
+            'total_qty'     : v['total_qty'],
+            'total_revenue' : float(v['total_revenue']),
+            'total_profit'  : float(v['total_profit']),
         }
-        for row in bucketed
+        for bucket_key, v in sorted(buckets.items())
     ]
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # F05-F: Category Performance
@@ -612,3 +606,51 @@ def store_revenue(start_date, end_date):
             'date_to':   str(end_date),
         }
     }
+
+
+
+def product_monthly_trend(product_id, months=6):
+    """
+    Monthly units/revenue/profit for ONE product, last `months` months.
+    Profit uses product.avg_cost_price (current WAC) — same simplification
+    calculate_sales_and_profit() already uses; historical months are priced
+    at today's WAC, not the WAC that was in effect that month.
+    """
+    today = date.today()
+    year, month = today.year, today.month - (months - 1)
+    while month <= 0:
+        month += 12
+        year -= 1
+    start_date = date(year, month, 1)
+
+    try:
+        product = Product.objects.get(pk=product_id)
+    except Product.DoesNotExist:
+        return None
+
+    avg_cost = product.avg_cost_price or Decimal('0.00')
+
+    rows = (
+        ItemSalesRecord.objects
+        .filter(product_id=product_id, sale_date__gte=start_date)
+        .annotate(month=TruncMonth('sale_date'))
+        .values('month')
+        .annotate(units_sold=Sum('quantity_sold'), revenue=Sum('total_amount'))
+        .order_by('month')
+    )
+
+    trend = []
+    for r in rows:
+        units = r['units_sold'] or 0
+        revenue = r['revenue'] or Decimal('0.00')
+        cost = units * avg_cost
+        profit = revenue - cost
+        trend.append({
+            'month': r['month'].strftime('%Y-%m'),
+            'units_sold': units,
+            'revenue': float(revenue),
+            'cost': float(cost),
+            'profit': float(profit),
+            'margin_pct': float(round(profit / revenue * 100, 2)) if revenue else 0.0,
+        })
+    return trend
