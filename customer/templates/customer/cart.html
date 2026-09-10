@@ -200,6 +200,16 @@
     const token = sessionStorage.getItem('jwt');
     let selectedSlot = '';
 
+    function updateCartBadge() {
+        const cart  = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        const total = cart.reduce((sum, item) => sum + item.qty, 0);
+        const badge = document.getElementById('cartBadge');
+        if (badge) {
+            badge.textContent = total;
+            badge.style.display = total > 0 ? 'inline' : 'none';
+        }
+    }
+
     // ── Build nav bar ────────────────────────────────────────────
     function buildNav() {
         const token = sessionStorage.getItem('jwt');
@@ -248,8 +258,11 @@
     }
     // ── Render cart ──────────────────────────────────────────────
     function renderCart() {
-        const cart    = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        console.log('Cart data:', cart);          
+        console.log('Cart length:', cart.length); 
         const content = document.getElementById('cartContent');
+        console.log('Content div:', content);   
 
         if (cart.length === 0) {
             content.innerHTML = `
@@ -543,7 +556,7 @@
         window.location.href = '/customer/login/';
     }
 
-    // ── Start ────────────────────────────────────────────────────
+    
     buildNav();
     renderCart();
 </script>

@@ -201,6 +201,7 @@
 </div>
 
 <script>
+    let allProducts = []; 
 
     buildNav();
     loadProducts();
@@ -221,7 +222,7 @@
         }
     }
 
-updateWelcome();
+    updateWelcome();
     // ── Demo products (for suggestions + fallback) ───────────────
     const demoProducts = [
         { id:1, product_name:"Anchor Full Cream Milk 1L",  sku_code:"MLK001", unit_price:350.00, discounted_price:280.00, expiry_date:"2026-07-25", discount_pct:20 },
@@ -296,11 +297,12 @@ updateWelcome();
             return;
         }
 
-        const matches = demoProducts.filter(p =>
-            p.product_name.toLowerCase().includes(query)
-        ).slice(0, 6);
+            const sourceProducts = allProducts.length > 0 ? allProducts : demoProducts;
+            const matches = sourceProducts.filter(p =>
+                p.product_name.toLowerCase().includes(query)
+            ).slice(0, 6);
 
-        if (matches.length === 0) {
+                    if (matches.length === 0) {
             dropdown.style.display = 'none';
             return;
         }
@@ -321,8 +323,7 @@ updateWelcome();
                     id="suggestion-${i}">
                     <span class="icon">🛒</span>
                     <span>${highlighted}</span>
-                    <span class="price">Rs ${p.discounted_price || p.unit_price}</span>
-                </div>`;
+                    <span class="price">Rs ${parseFloat(p.discounted_price || p.unit_price || 0).toFixed(2)}</span>                </div>`;
         }).join('');
 
         activeSuggestionIndex  = -1;
@@ -443,6 +444,8 @@ updateWelcome();
 
             const data     = await res.json();
             const products = Array.isArray(data) ? data : (data.results || []);
+            allProducts = products;
+
             console.log('First product:', products[0]);
 
             if (products.length === 0) {
@@ -553,7 +556,7 @@ updateWelcome();
 
     updateCartBadge();
 
-    // ── Start ────────────────────────────────────────────────────
+    
     loadProducts();
 </script>
 
