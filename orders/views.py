@@ -26,6 +26,7 @@ from .models import Customer, OnlineOrder, OnlineOrderItem
 from .tokens import get_tokens_for_customer
 from .authentication import CustomerJWTAuthentication
 from rest_framework.permissions import IsAuthenticated
+from users.permissions import IsManagerOrAdmin
 from rest_framework_simplejwt.tokens import RefreshToken
 from .chatbot import chatbot_response
 
@@ -612,6 +613,12 @@ class OrderStatusUpdateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         new_status = new_status.upper()
+
+        if new_status == "CANCELLED" and not IsManagerOrAdmin().has_permission(request, self):
+            return Response(
+                {"error": "Only managers or admins can cancel an order."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         if new_status not in self.ALLOWED_TRANSITIONS.get(order.status, []):
             return Response(

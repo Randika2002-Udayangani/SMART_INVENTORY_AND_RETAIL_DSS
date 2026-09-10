@@ -615,9 +615,6 @@
         </li>
       `).join('') : '<li style="padding:24px 0;color:var(--muted);text-align:center">No unread notifications.</li>';
       document.getElementById('notificationBadge').innerText = data.length + ' Unread';
-      // #sidebarAlertCount and #dashboardNavBadge are now refreshed once,
-      // shared, on every page — see refreshSidebarAlertBadge() in base.html.
-      // Setting them here too was harmless but redundant (double fetch).
       document.getElementById('activeAlertsCount').innerText = data.length;
 
       const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0 };
@@ -717,7 +714,7 @@
     }
   }
 
-  async function fetchExpirySummary() {
+  async function fetchExpirySummary(canSeeFinancials) {
     try {
       const data = await apiFetch('/api/reports/expiry-summary/');
       const windows = [
@@ -729,8 +726,13 @@
       windows.forEach(w => {
         const items = Array.isArray(data[w.items]) ? data[w.items] : [];
         document.getElementById(w.number).innerText = Number(data[w.count] || 0);
-        const estimatedLoss = items.reduce((sum, batch) => sum + Number(batch.estimated_loss || 0), 0);
-        document.getElementById(w.loss).innerText = `Estimated loss ${money(estimatedLoss)}`;
+        const lossEl = document.getElementById(w.loss);
+        if (canSeeFinancials) {
+          const estimatedLoss = items.reduce((sum, batch) => sum + Number(batch.estimated_loss || 0), 0);
+          lossEl.innerText = `Estimated loss ${money(estimatedLoss)}`;
+        } else {
+          lossEl.style.display = 'none';
+        }
         items.forEach(batch => batches.push({ ...batch, css: w.css }));
       });
       dashboardMetrics.expiringThirty = Number(data.total_expiring_in_30_days ||
@@ -741,7 +743,7 @@
         <li>
           <div>
             <div class="exp-name">${escapeHtml(b.product_name || 'Unknown product')}</div>
-            <div class="exp-batch">Batch #${escapeHtml(b.batch_id || b.id)} · ${Number(b.remaining_quantity || 0)} units · ${money(b.estimated_loss)}</div>
+            <div class="exp-batch">Batch #${escapeHtml(b.batch_id || b.id)} · ${Number(b.remaining_quantity || 0)} units${canSeeFinancials ? ` · ${money(b.estimated_loss)}` : ''}</div>
           </div>
           <span class="exp-days ${b.css}">${b.days_until_expiry} days</span>
         </li>
@@ -860,7 +862,7 @@
     fetchPendingOrders();
     fetchLowStockCount();
     fetchExpiringCount();
-    fetchExpirySummary();
+    fetchExpirySummary(canSeeFinancials);
     fetchSyncDate();
     fetchHealthScores();
     fetchTopProducts();

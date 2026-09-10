@@ -65,6 +65,14 @@
   </button>
 </div>
 
+<div id="anAccessDenied" style="display:none;max-width:520px;margin:60px auto;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:36px 32px;text-align:center;">
+  <div style="font-size:34px;color:#b91c1c;margin-bottom:10px;"><i class="bi bi-shield-lock-fill"></i></div>
+  <div style="font-size:17px;font-weight:700;color:var(--txt);margin-bottom:6px;">Manager or Admin access required</div>
+  <div style="font-size:12.5px;color:var(--muted);">Analytics data is available to managers and administrators.</div>
+</div>
+
+<div id="anBody">
+
 <div id="anGlobalError" class="quality-banner" style="display:none;background:#fee2e2;border-color:#fca5a5;color:#b91c1c;"></div>
 <div id="anQualityBanner" class="quality-banner" style="display:none;"></div>
 
@@ -228,6 +236,7 @@
       </div>
     </div>
   </div>
+</div>
 </div>
 {% endblock %}
 
@@ -613,8 +622,15 @@
 
   setPresetDates();
   chooseGranularity();
-  fetchCurrentUser();
-  loadAll();
+  fetchCurrentUser().then(role => {
+    const canSeeFinancials = role === 'ADMIN' || role === 'MANAGER';
+    if (!canSeeFinancials) {
+      document.getElementById('anBody').style.display = 'none';
+      document.getElementById('anAccessDenied').style.display = 'block';
+      return;
+    }
+    loadAll();
+  });
 })();
 </script>
 {% endblock %}

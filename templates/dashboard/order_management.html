@@ -97,7 +97,7 @@
     COMPLETED: [],
     CANCELLED: []
   };
-  let canManageOrders = false;
+  let canCancelOrders = false;
   let showingOverdue = false;
   let searchTimer;
 
@@ -120,8 +120,9 @@
   function loadOrdersDebounced() { clearTimeout(searchTimer); searchTimer = setTimeout(loadOrders, 250); }
 
   function renderActions(order) {
-    if (!canManageOrders) return '';
-    return (ALLOWED_TRANSITIONS[order.status] || []).map(nextStatus => {
+    return (ALLOWED_TRANSITIONS[order.status] || [])
+      .filter(nextStatus => nextStatus !== 'CANCELLED' || canCancelOrders)
+      .map(nextStatus => {
       const buttonClass = nextStatus === 'CANCELLED' ? 'btn-outline-secondary' : 'btn-success';
       const label = nextStatus === 'CONFIRMED' ? 'Confirm' : nextStatus[0] + nextStatus.slice(1).toLowerCase();
       return `<button class="btn btn-sm ${buttonClass} me-1" onclick="updateStatus(event, ${order.id}, '${nextStatus}')">${label}</button>`;
@@ -238,8 +239,7 @@
 
   async function initializeOrderPage() {
     const role = await fetchCurrentUser();
-    canManageOrders = role === 'ADMIN' || role === 'MANAGER';
-    document.getElementById('actionHeader').hidden = !canManageOrders;
+    canCancelOrders = role === 'ADMIN' || role === 'MANAGER';
     await loadOrders();
   }
   initializeOrderPage();
