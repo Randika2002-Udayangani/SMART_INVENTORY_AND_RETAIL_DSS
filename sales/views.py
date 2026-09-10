@@ -1316,7 +1316,7 @@ def _pdf_response(filename, title, headers, rows, summary=None):
 @permission_classes([IsAuthenticated])
 def sales_report_export(request):
     """GET /api/reports/sales/?format=excel|pdf&date_from=&date_to="""
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1371,7 +1371,7 @@ def sales_report_export(request):
 @permission_classes([IsAuthenticated])
 def profit_report_export(request):
     """GET /api/reports/profit/?format=excel|pdf&date_from=&date_to="""
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1452,7 +1452,7 @@ def profit_report_export(request):
 @permission_classes([IsAuthenticated])
 def inventory_report_export(request):
     """GET /api/reports/inventory/?format=excel|pdf"""
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1522,7 +1522,7 @@ def inventory_report_export(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def health_score_report_export(request):
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1582,7 +1582,7 @@ def health_score_report_export(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def supplier_report_export(request):
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1627,7 +1627,7 @@ def supplier_report_export(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def lifecycle_report_export(request):
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1663,7 +1663,7 @@ def lifecycle_report_export(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def loss_report_export(request):
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1717,7 +1717,7 @@ def loss_report_export(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def reorder_report_export(request):
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 

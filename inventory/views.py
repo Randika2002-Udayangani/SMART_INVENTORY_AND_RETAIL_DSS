@@ -249,6 +249,12 @@ def expiry_summary(request):
     d7    = today + timedelta(days=7)
     d14   = today + timedelta(days=14)
     d30   = today + timedelta(days=30)
+
+    # Same ADMIN/MANAGER check as IsManagerOrAdmin, reused directly rather
+    # than applied as this view's permission_classes — STAFF must still be
+    # able to call this endpoint for the counts/batch list, they just don't
+    # get cost_price/estimated_loss in the response.
+    can_see_financials = IsManagerOrAdmin().has_permission(request, None)
  
     # Base queryset: only ACTIVE batches with stock and an expiry date
     active_with_expiry = PurchaseBatch.objects.filter(
@@ -269,10 +275,7 @@ def expiry_summary(request):
     def _serialize_batch(batch):
         """Return the detail dict for one batch."""
         days_left = (batch.expiry_date - today).days
-        est_loss  = round(
-            float(batch.remaining_quantity) * float(batch.cost_price or 0), 2
-        )
-        return {
+        data = {
             'batch_id':          batch.id,
             'product_id':        batch.product.id,
             'product_name':      batch.product.product_name,
@@ -280,9 +283,13 @@ def expiry_summary(request):
             'expiry_date':       str(batch.expiry_date),
             'days_until_expiry': days_left,
             'remaining_quantity': batch.remaining_quantity,
-            'cost_price':        float(batch.cost_price or 0),
-            'estimated_loss':    est_loss,  # remaining_qty x cost_price
         }
+        if can_see_financials:
+            data['cost_price']     = float(batch.cost_price or 0)
+            data['estimated_loss'] = round(
+                float(batch.remaining_quantity) * float(batch.cost_price or 0), 2
+            )  # remaining_qty x cost_price
+        return data
  
     return Response({
         'as_of':                    str(today),
