@@ -1,12 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discount Engine — Smart Inventory DSS</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+{% extends "dashboard/base.html" %}
+
+{% block title %}Discount Engine — Smart Inventory DSS{% endblock %}
+{% block nav_discount %}active{% endblock %}
+
+{% block extra_css %}
     <style>
-        body { background:#f0f4f8; font-family:'Segoe UI',sans-serif; }
         .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
         .btn-primary { background:#2d6a4f; border:none; }
         .badge-pending { background:#fef9c3; color:#854d0e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
@@ -14,8 +12,9 @@
         .badge-ignored { background:#f3f4f6; color:#374151; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
         .rule-form { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }
     </style>
-</head>
-<body>
+{% endblock %}
+
+{% block content %}
 <div class="page-header d-flex justify-content-between align-items-center">
     <div>
         <h4 class="mb-0 fw-bold">Discount Engine</h4>
@@ -44,6 +43,7 @@
                 <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+        <div id="discountPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         <div id="discountMsg" class="mt-2" aria-live="polite"></div>
     </div>
 
@@ -91,20 +91,17 @@
                     <tbody id="rulesBody"><tr><td colspan="7" class="text-center text-muted">Loading...</td></tr></tbody>
                 </table>
             </div>
+            <div id="rulesPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         </div>
     </div>
 </div>
 
+{% endblock %}
+
+{% block page_scripts %}
 <script>
 const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
-if (!token) { window.location.href = '/dashboard/login/'; }
-
-function doLogout() {
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('refresh_token');
-    window.location.href = '/dashboard/login/';
-}
 
 function switchTab(name, btn) {
     document.getElementById('tab-recommendations').style.display = name === 'recommendations' ? 'block' : 'none';
@@ -158,6 +155,10 @@ function statusBadge(s) {
     return `<span class="${map[s] || 'badge-pending'}">${s}</span>`;
 }
 
+let allDiscounts = [];
+let discountPage = 1;
+const discountPageSize = 25;
+
 async function loadDiscounts() {
     try {
         await ensureRuleAccess();
@@ -165,29 +166,56 @@ async function loadDiscounts() {
             headers: { 'Authorization': 'Bearer ' + token }
         });
         const data = await res.json();
-        const rows = Array.isArray(data) ? data : (data.results ?? []);
-        const tbody = document.getElementById('discountBody');
-        if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No discount recommendations. Click Calculate Discounts.</td></tr>';
-            return;
-        }
-        tbody.innerHTML = rows.map(r => `
-            <tr>
-                <td>${r.product_name ?? '—'}</td>
-                <td>${r.batch != null ? `Batch #${r.batch}` : '—'}</td>
-                <td>${r.days_until_expiry ?? '—'}</td>
-                <td><strong>${r.recommended_discount_pct ?? '—'}%</strong></td>
-                <td>${statusBadge(r.status)}</td>
-                <td><button class="btn btn-sm btn-outline-secondary" onclick='showRecommendationDetails(${JSON.stringify(r)})'>Details</button></td>
-                <td class="recommendation-actions-cell">
-                    ${canManageRules() ? `<button class="btn btn-sm btn-success me-1" onclick="updateStatus(${r.id},'APPLIED')">Apply</button>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="updateStatus(${r.id},'IGNORED')">Ignore</button>` : ''}
-                </td>
-            </tr>
-        `).join('');
+        allDiscounts = Array.isArray(data) ? data : (data.results ?? []);
+        discountPage = 1; // fresh data — back to page 1
+        renderDiscounts();
     } catch(e) {
         document.getElementById('discountBody').innerHTML = '<tr><td colspan="7" class="text-center text-muted">Could not load data.</td></tr>';
+        document.getElementById('discountPagination').innerHTML = '';
     }
+}
+
+// Pagination — same pattern used elsewhere (Stock Levels in inventory.html,
+// Purchases, Batches, Reorder, Lifecycle, Loss Analysis, Notifications):
+// 25 rows/page, client-side slice, Previous / "Page X of Y" / Next.
+function renderDiscounts() {
+    const tbody = document.getElementById('discountBody');
+    const rows = allDiscounts;
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No discount recommendations. Click Calculate Discounts.</td></tr>';
+        document.getElementById('discountPagination').innerHTML = '';
+        return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / discountPageSize));
+    discountPage = Math.min(discountPage, totalPages);
+    const pageRows = rows.slice((discountPage - 1) * discountPageSize, discountPage * discountPageSize);
+
+    tbody.innerHTML = pageRows.map(r => `
+        <tr>
+            <td>${r.product_name ?? '—'}</td>
+            <td>${r.batch != null ? `Batch #${r.batch}` : '—'}</td>
+            <td>${r.days_until_expiry ?? '—'}</td>
+            <td><strong>${r.recommended_discount_pct ?? '—'}%</strong></td>
+            <td>${statusBadge(r.status)}</td>
+            <td><button class="btn btn-sm btn-outline-secondary" onclick='showRecommendationDetails(${JSON.stringify(r)})'>Details</button></td>
+            <td class="recommendation-actions-cell">
+                ${canManageRules() ? `<button class="btn btn-sm btn-success me-1" onclick="updateStatus(${r.id},'APPLIED')">Apply</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="updateStatus(${r.id},'IGNORED')">Ignore</button>` : ''}
+            </td>
+        </tr>
+    `).join('');
+    setRecommendationActionsVisibility();
+
+    document.getElementById('discountPagination').innerHTML = rows.length > discountPageSize ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeDiscountPage(-1)" ${discountPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${discountPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeDiscountPage(1)" ${discountPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+}
+
+function changeDiscountPage(delta) {
+    discountPage += delta;
+    renderDiscounts();
 }
 
 function showDiscountMessage(text, type) {
@@ -263,6 +291,10 @@ function ruleArray(data) {
     return Array.isArray(data) ? data : (data.results ?? data.rules ?? []);
 }
 
+let allRules = [];
+let rulePage = 1;
+const rulePageSize = 25;
+
 async function loadRules() {
     const tbody = document.getElementById('rulesBody');
     try {
@@ -274,36 +306,61 @@ async function loadRules() {
         if (res.status === 403) {
             showRuleAccessMessage();
             tbody.innerHTML = '<tr><td colspan="7" class="text-center text-warning">Manager or Admin access required</td></tr>';
+            document.getElementById('rulesPagination').innerHTML = '';
             return;
         }
         if (!res.ok) throw new Error('Could not load rules');
-        const rows = ruleArray(await res.json());
-        if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No discount rules configured.</td></tr>';
-            return;
-        }
-        tbody.innerHTML = rows.map(rule => `
-            <tr>
-                <td>${rule.id}</td>
-                <td>${rule.days_from_expiry_min} to ${rule.days_from_expiry_max} days</td>
-                <td>${rule.discount_percentage}%</td>
-                <td>${rule.minimum_margin_pct}%</td>
-                <td>${ruleStatusBadge(rule.is_active)}</td>
-                <td>${rule.created_at ? new Date(rule.created_at).toLocaleString('en-GB', {
-                    day: '2-digit', month: 'short', year: 'numeric',
-                    hour: '2-digit', minute: '2-digit'
-                }) : '—'}</td>
-                <td class="rule-actions-cell">
-                    ${canManageRules() ? `<button class="btn btn-sm btn-outline-primary me-1" onclick='editRule(${JSON.stringify(rule)})'>Edit</button>
-                    ${rule.is_active ? `<button class="btn btn-sm btn-outline-danger" onclick="deactivateRule(${rule.id})">Deactivate</button>` : ''}` : ''}
-                </td>
-            </tr>
-        `).join('');
-        setRuleActionsVisibility();
+        allRules = ruleArray(await res.json());
+        rulePage = 1; // fresh data — back to page 1
+        renderRules();
     } catch (error) {
         if (error.status === 403) showRuleAccessMessage();
         tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Could not load discount rules.</td></tr>';
+        document.getElementById('rulesPagination').innerHTML = '';
     }
+}
+
+function renderRules() {
+    const tbody = document.getElementById('rulesBody');
+    const rows = allRules;
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No discount rules configured.</td></tr>';
+        document.getElementById('rulesPagination').innerHTML = '';
+        return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / rulePageSize));
+    rulePage = Math.min(rulePage, totalPages);
+    const pageRows = rows.slice((rulePage - 1) * rulePageSize, rulePage * rulePageSize);
+
+    tbody.innerHTML = pageRows.map(rule => `
+        <tr>
+            <td>${rule.id}</td>
+            <td>${rule.days_from_expiry_min} to ${rule.days_from_expiry_max} days</td>
+            <td>${rule.discount_percentage}%</td>
+            <td>${rule.minimum_margin_pct}%</td>
+            <td>${ruleStatusBadge(rule.is_active)}</td>
+            <td>${rule.created_at ? new Date(rule.created_at).toLocaleString('en-GB', {
+                day: '2-digit', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            }) : '—'}</td>
+            <td class="rule-actions-cell">
+                ${canManageRules() ? `<button class="btn btn-sm btn-outline-primary me-1" onclick='editRule(${JSON.stringify(rule)})'>Edit</button>
+                ${rule.is_active ? `<button class="btn btn-sm btn-outline-danger" onclick="deactivateRule(${rule.id})">Deactivate</button>` : ''}` : ''}
+            </td>
+        </tr>
+    `).join('');
+    setRuleActionsVisibility();
+
+    document.getElementById('rulesPagination').innerHTML = rows.length > rulePageSize ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeRulePage(-1)" ${rulePage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${rulePage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeRulePage(1)" ${rulePage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+}
+
+function changeRulePage(delta) {
+    rulePage += delta;
+    renderRules();
 }
 
 function setRuleActionsVisibility() {
@@ -411,5 +468,4 @@ async function deactivateRule(id) {
 
 loadDiscounts();
 </script>
-</body>
-</html>
+{% endblock %}

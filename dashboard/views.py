@@ -6,9 +6,6 @@ def dashboard_home(request):
 def dashboard_login(request):
     return render(request, 'dashboard/login.html')
 
-def sales_report(request):
-    return render(request, 'dashboard/sales_report.html')
-
 def notifications(request):
     return render(request, 'dashboard/notifications.html')
 
@@ -42,6 +39,9 @@ def inventory(request):
 def purchases(request):
     return render(request, 'dashboard/purchases.html')
 
+def purchase_detail(request, pk):
+    return render(request, 'dashboard/purchase_detail.html', {'purchase_id': pk})
+
 def suppliers(request):
     return render(request, 'dashboard/suppliers.html')
 
@@ -56,3 +56,6 @@ def audit_log(request):
 
 def user_management(request):
     return render(request, 'dashboard/user_management.html')
+
+def order_management(request):
+    return render(request, 'dashboard/order_management.html')

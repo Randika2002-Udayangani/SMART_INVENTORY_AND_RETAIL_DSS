@@ -1,128 +1,124 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>System Configuration - Smart Inventory DSS</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { background:#f0f4f8; color:#1a2e1e; font-family:'Segoe UI',sans-serif; }
-    .page-header { background:#0f3d3e; color:#fff; padding:20px 30px; }
-    .card { border:1px solid #d8e4dc; border-radius:10px; }
-    .section-heading { color:#0f3d3e; }
-    .setting-card { background:#fff; }
-    .status-card { background:#e8eef0; border-color:#cbd7da; }
-    .config-row + .config-row { border-top:1px solid #e5ebe7; }
-    .config-key { font-size:.8rem; color:#64748b; }
-    .config-description { font-size:.9rem; }
-    .config-value { min-width:150px; }
-    .upload-row.current-sync { border-left:4px solid #2d6a4f; padding-left:1rem; background:#f3faf5; }
-    .status-badge { font-size:.75rem; }
-    .muted { color:#64748b; }
-    .btn-primary { background:#2d6a4f; border:0; }
-  </style>
-</head>
-<body>
-<header class="page-header d-flex justify-content-between align-items-center">
-  <div><h4 class="mb-1">System Configuration</h4><small>Operational values used by decision-support rules</small></div>
-  <div><a href="/dashboard/" class="btn btn-light btn-sm me-2">Dashboard</a><button onclick="logout()" class="btn btn-danger btn-sm">Logout</button></div>
-</header>
-<main class="container-fluid p-4">
-  <div id="message" class="alert d-none"></div>
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <div><h5 class="section-heading mb-1">Decision-Support Settings</h5><div class="muted">Values that shape alerts, discounts, and order rules.</div></div>
-    <button class="btn btn-outline-secondary btn-sm" onclick="loadConfig()">Refresh</button>
+{% extends "dashboard/base.html" %}
+
+{% block title %}System Configuration — Smart Inventory DSS{% endblock %}
+
+{% block extra_css %}
+<style>
+  .config-page-header { margin-bottom: 24px; }
+  .section-heading { color: var(--sidebar); }
+  .config-row + .config-row { border-top: 1px solid var(--border); }
+  .config-key { font-size: .8rem; color: var(--muted); }
+  .config-description { font-size: .9rem; }
+  .config-value { min-width: 150px; }
+  .upload-row.current-sync { border-left: 4px solid var(--green2); padding-left: 1rem; background: var(--card2); }
+  .status-badge { font-size: .75rem; }
+  .config-readonly { color: var(--muted); font-size: .85rem; }
+</style>
+{% endblock %}
+
+{% block nav_config %}active{% endblock %}
+
+{% block content %}
+  <div class="topbar config-page-header">
+    <div><h1>System Configuration</h1><div class="sub">Operational values used by decision-support rules</div></div>
+    <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;"><i class="bi bi-box-arrow-right"></i> Logout</button>
   </div>
-  <div id="settingsSection" class="mb-4"><div class="card setting-card p-4 muted">Loading...</div></div>
+
+  <div id="message" class="alert" hidden></div>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div><h5 class="section-heading mb-1">Decision-Support Settings</h5><div class="text-muted">Values that shape alerts, discounts, and order rules.</div></div>
+    <button class="btn btn-outline-secondary btn-sm" onclick="loadConfig(this)">Refresh</button>
+  </div>
+  <div id="settingsSection" class="mb-4"><div class="card p-4 text-muted">Loading...</div></div>
+
   <section aria-labelledby="status-heading">
     <h5 id="status-heading" class="section-heading mb-1">System Status</h5>
-    <p class="muted mb-3">Read-only facts about system activity and uploads.</p>
-    <div id="statusSection" class="card status-card p-4"><div class="muted">Loading...</div></div>
+    <p class="text-muted mb-3">Read-only facts about system activity and uploads.</p>
+    <div id="statusSection" class="card p-4"><div class="text-muted">Loading...</div></div>
   </section>
-</main>
+{% endblock %}
+
+{% block page_scripts %}
 <script>
-const token = sessionStorage.getItem('access_token');
-if (!token) location.href = '/dashboard/login/';
-function logout() { sessionStorage.clear(); location.href = '/dashboard/login/'; }
-function showMessage(text, type='success') { const el=document.getElementById('message'); el.className='alert alert-'+type; el.textContent=text; }
-async function api(url, options={}) { const headers=new Headers(options.headers||{}); headers.set('Authorization','Bearer '+token); const r=await fetch(url,{...options,headers}); const data=await r.json().catch(()=>({})); if(!r.ok) throw new Error(data.error||'Request failed'); return data; }
-const CONFIG_LABELS = {
-    'expiry_alert_days': { label: 'Expiry Alert Threshold', unit: 'days', group: 'Alerts & Discounts', section: 'settings' },
-    'min_margin_pct': { label: 'Minimum Profit Margin', unit: '%', group: 'Alerts & Discounts', section: 'settings' },
-    'max_order_advance_days': { label: 'Maximum Order Advance Booking', unit: 'days', group: 'Online Orders', section: 'settings' },
-    'min_order_advance_hours': { label: 'Minimum Order Advance Notice', unit: 'hours', group: 'Online Orders', section: 'settings' },
-    'min_order_value': { label: 'Minimum Order Value', unit: 'Rs', group: 'Online Orders', section: 'settings' }
-};
+  let canEditConfig = false;
+
+  const CONFIG_LABELS = {
+    expiry_alert_days: { label: 'Expiry Alert Threshold', unit: 'days', group: 'Alerts & Discounts', section: 'settings' },
+    min_margin_pct: { label: 'Minimum Profit Margin', unit: '%', group: 'Alerts & Discounts', section: 'settings' },
+    max_order_advance_days: { label: 'Maximum Order Advance Booking', unit: 'days', group: 'Online Orders', section: 'settings' },
+    min_order_advance_hours: { label: 'Minimum Order Advance Notice', unit: 'hours', group: 'Online Orders', section: 'settings' },
+    min_order_value: { label: 'Minimum Order Value', unit: 'Rs', group: 'Online Orders', section: 'settings' }
+  };
   const UPLOAD_LABELS = { DAILY_BILLS: 'Daily Bills PDF', SUPPLIER_INVOICE: 'Supplier Invoice PDF', ITEM_SALES: 'Item Ledger PDF' };
-function titleCaseKey(key) { return String(key).replace(/[_-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()); }
-function encodeKey(key) { return encodeURIComponent(String(key)).replace(/'/g, '%27'); }
-function configMeta(key, value) {
-  if (CONFIG_LABELS[key]) return CONFIG_LABELS[key];
-  const isStatus = /sync|log|date/i.test(key);
-  return { label: titleCaseKey(key), unit: '', group: isStatus ? 'Other' : 'Other Settings', section: isStatus ? 'status' : 'settings' };
-}
-function updatedText(row) { return row.updated_at ? new Date(row.updated_at).toLocaleString() : '-'; }
-function isNumericValue(value) { return value !== '' && Number.isFinite(Number(value)); }
-function inputType(row, meta) { return meta.section === 'settings' && (CONFIG_LABELS[row.key] || isNumericValue(row.value)) ? 'number' : 'text'; }
-function settingRow(row, meta) {
-  const key = String(row.key);
-  const encodedKey = encodeKey(key);
-  const inputId = 'value-' + encodedKey;
-  const unit = meta.unit ? ` <span class="muted">${escapeHtml(meta.unit)}</span>` : '';
-  return `<div class="config-row row g-3 align-items-center py-3">
-    <div class="col-lg-3"><strong>${escapeHtml(meta.label)}</strong><div class="config-key">${escapeHtml(key)}</div></div>
-    <div class="col-lg-2"><div class="input-group input-group-sm config-value"><input class="form-control" id="${escapeHtml(inputId)}" type="${inputType(row, meta)}" min="0" value="${escapeHtml(row.value)}"><span class="input-group-text">${unit || '&nbsp;'}</span></div></div>
-    <div class="col-lg-3 config-description">${escapeHtml(row.description || '')}</div>
-    <div class="col-lg-2 muted small">${escapeHtml(updatedText(row))}</div>
-    <div class="col-lg-2 text-lg-end"><button class="btn btn-primary btn-sm" onclick="saveConfig('${encodedKey}')">Save</button></div>
-  </div>`;
-}
-function statusRow(row, meta) {
-  return `<div class="config-row py-3"><div class="row g-2">
-    <div class="col-md-4"><strong>${escapeHtml(meta.label)}</strong><div class="config-key">${escapeHtml(row.key)}</div></div>
-    <div class="col-md-4">${escapeHtml(row.value)}</div><div class="col-md-4 muted small">${escapeHtml(updatedText(row))}</div>
-  </div>${meta.note ? `<div class="muted small mt-2">${escapeHtml(meta.note)}</div>` : ''}</div>`;
-}
-function formatUploadDate(value) {
-  if (!value) return '-';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'numeric', minute:'2-digit', second:'2-digit', hour12:true });
-}
-function uploadRow(upload, currentSyncType) {
-  const label = UPLOAD_LABELS[upload.upload_type] || titleCaseKey(upload.upload_type);
-  const isCurrent = upload.upload_type === currentSyncType;
-  const status = upload.found ? upload.status : '';
-  const badgeClass = status === 'SUCCESS' ? 'text-bg-success' : 'text-bg-warning';
-  const error = status === 'PARTIAL' && upload.error_message ? upload.error_message.length > 150 ? upload.error_message.slice(0, 150) + '...' : upload.error_message : '';
-  return `<div class="config-row upload-row py-3 ${isCurrent ? 'current-sync' : ''}">
-    <div class="row g-2 align-items-center">
-      <div class="col-md-3"><strong>${escapeHtml(label)}</strong><div class="config-key">${escapeHtml(upload.upload_type)}</div></div>
-      <div class="col-md-4">${escapeHtml(upload.found ? upload.file_name : 'No upload yet')}</div>
-      <div class="col-md-2">${upload.found ? `<span class="badge status-badge ${badgeClass}">${escapeHtml(status)}</span>` : '<span class="muted small">No status</span>'}</div>
-      <div class="col-md-3 muted small">${escapeHtml(formatUploadDate(upload.upload_date))}</div>
-    </div>
-    ${isCurrent ? '<div class="small mt-2"><span class="badge text-bg-primary">Currently determines Dashboard Last Sync</span></div>' : ''}
-    ${error ? `<div class="muted small mt-2">${escapeHtml(error)}</div>` : ''}
-  </div>`;
-}
-function groupedRows(rows, section) {
-  return rows.reduce((groups, row) => { if (row.key === 'last_item_ledger_sync') return groups; const meta = configMeta(row.key, row.value); if (meta.section !== section) return groups; (groups[meta.group] ||= []).push({ row, meta }); return groups; }, {});
-}
-async function loadConfig() {
-  try {
-    const [rows, uploadData] = await Promise.all([api('/api/config/'), api('/api/inventory/last-uploads-by-type/')]);
-    const settings = groupedRows(rows, 'settings');
-    const status = groupedRows(rows, 'status');
-    document.getElementById('settingsSection').innerHTML = Object.keys(settings).length ? Object.entries(settings).map(([group, entries]) => `<section class="card setting-card p-4 mb-3" aria-labelledby="group-${encodeKey(group)}"><h6 id="group-${encodeKey(group)}" class="mb-1">${escapeHtml(group)}</h6>${entries.map(({row, meta}) => settingRow(row, meta)).join('')}</section>`).join('') : '<div class="card setting-card p-4 muted">No decision-support settings.</div>';
-    const uploadRows = Array.isArray(uploadData.uploads) ? uploadData.uploads : [];
-    const uploadSection = `<section aria-labelledby="uploads-heading"><h6 id="uploads-heading" class="mb-1">Uploads</h6><p class="muted small mb-2">These three upload types together determine the 'Last Sync' shown on the Dashboard. Whichever was most recent (highlighted below) is the value currently displayed there.</p>${uploadRows.map(upload => uploadRow(upload, uploadData.current_sync_type)).join('')}</section>`;
-    const otherStatus = Object.keys(status).length ? Object.entries(status).map(([group, entries]) => `<section aria-labelledby="status-group-${encodeKey(group)}"><h6 id="status-group-${encodeKey(group)}" class="mb-1">${escapeHtml(group)}</h6>${entries.map(({row, meta}) => statusRow(row, meta)).join('')}</section>`).join('') : '';
-    document.getElementById('statusSection').innerHTML = uploadSection + otherStatus;
-  } catch(e) { showMessage(e.message,'danger'); }
-}
-async function saveConfig(encodedKey) { const key=decodeURIComponent(encodedKey); const input=document.getElementById('value-'+encodedKey); const oldValue=input.defaultValue; const newValue=input.value; const meta=configMeta(key, oldValue); if (!confirm(`Change "${meta.label}" from ${oldValue} to ${newValue}? This affects live decision-support rules.`)) return; try { await api('/api/config/'+encodeURIComponent(key)+'/',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:newValue})}); showMessage('Configuration saved.'); loadConfig(); } catch(e) { showMessage(e.message,'danger'); } }
-function escapeHtml(value) { return String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c])); }
-loadConfig();
+
+  function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[character])); }
+  function encodeKey(key) { return encodeURIComponent(String(key)).replace(/'/g, '%27'); }
+  function titleCaseKey(key) { return String(key).replace(/[_-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()); }
+  function showMessage(text, type = 'success') { const element = document.getElementById('message'); element.className = `alert alert-${type}`; element.innerText = text; element.hidden = false; }
+  function updatedText(row) { return row.updated_at ? new Date(row.updated_at).toLocaleString() : '-'; }
+  function isNumericValue(value) { return value !== '' && Number.isFinite(Number(value)); }
+  function configMeta(key, value) { if (CONFIG_LABELS[key]) return CONFIG_LABELS[key]; return { label: titleCaseKey(key), unit: '', group: /sync|log|date/i.test(key) ? 'Other' : 'Other Settings', section: /sync|log|date/i.test(key) ? 'status' : 'settings' }; }
+
+  function settingRow(row, meta) {
+    const encodedKey = encodeKey(row.key);
+    const inputId = `value-${encodedKey}`;
+    const type = CONFIG_LABELS[row.key] || isNumericValue(row.value) ? 'number' : 'text';
+    const editor = canEditConfig
+      ? `<div class="input-group input-group-sm config-value"><input class="form-control" id="${escapeHtml(inputId)}" type="${type}" min="0" value="${escapeHtml(row.value)}"><span class="input-group-text">${escapeHtml(meta.unit || '')}</span></div>`
+      : `<div class="config-readonly">${escapeHtml(row.value)} ${escapeHtml(meta.unit || '')}</div>`;
+    const save = canEditConfig ? `<button class="btn btn-primary btn-sm" data-config-key="${escapeHtml(encodedKey)}" onclick="saveConfig(this)">Save</button>` : '';
+    return `<div class="config-row row g-3 align-items-center py-3"><div class="col-lg-3"><strong>${escapeHtml(meta.label)}</strong><div class="config-key">${escapeHtml(row.key)}</div></div><div class="col-lg-2">${editor}</div><div class="col-lg-3 config-description">${escapeHtml(row.description || '')}</div><div class="col-lg-2 text-muted small">${escapeHtml(updatedText(row))}</div><div class="col-lg-2 text-lg-end">${save}</div></div>`;
+  }
+
+  function statusRow(row, meta) { return `<div class="config-row py-3"><div class="row g-2"><div class="col-md-4"><strong>${escapeHtml(meta.label)}</strong><div class="config-key">${escapeHtml(row.key)}</div></div><div class="col-md-4">${escapeHtml(row.value)}</div><div class="col-md-4 text-muted small">${escapeHtml(updatedText(row))}</div></div></div>`; }
+  function formatUploadDate(value) { if (!value) return '-'; const date = new Date(value); return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString('en-GB'); }
+
+  function uploadRow(upload, currentSyncType) {
+    const label = UPLOAD_LABELS[upload.upload_type] || titleCaseKey(upload.upload_type);
+    const isCurrent = upload.upload_type === currentSyncType;
+    const status = upload.found ? upload.status : '';
+    const badgeClass = status === 'SUCCESS' ? 'text-bg-success' : 'text-bg-warning';
+    const error = status === 'PARTIAL' && upload.error_message ? upload.error_message.length > 150 ? `${upload.error_message.slice(0, 150)}...` : upload.error_message : '';
+    return `<div class="config-row upload-row py-3 ${isCurrent ? 'current-sync' : ''}"><div class="row g-2 align-items-center"><div class="col-md-3"><strong>${escapeHtml(label)}</strong><div class="config-key">${escapeHtml(upload.upload_type)}</div></div><div class="col-md-4">${escapeHtml(upload.found ? upload.file_name : 'No upload yet')}</div><div class="col-md-2">${upload.found ? `<span class="badge status-badge ${badgeClass}">${escapeHtml(status)}</span>` : '<span class="text-muted small">No status</span>'}</div><div class="col-md-3 text-muted small">${escapeHtml(formatUploadDate(upload.upload_date))}</div></div>${isCurrent ? '<div class="small mt-2"><span class="badge text-bg-primary">Currently determines Dashboard Last Sync</span></div>' : ''}${error ? `<div class="text-muted small mt-2">${escapeHtml(error)}</div>` : ''}</div>`;
+  }
+
+  function groupedRows(rows, section) { return rows.reduce((groups, row) => { if (row.key === 'last_item_ledger_sync') return groups; const meta = configMeta(row.key, row.value); if (meta.section !== section) return groups; (groups[meta.group] ||= []).push({ row, meta }); return groups; }, {}); }
+
+  async function loadConfig(button) {
+    if (button) { button.disabled = true; button.textContent = 'Refreshing...'; }
+    try {
+      const [rows, uploadData] = await Promise.all([apiFetch('/api/config/'), apiFetch('/api/inventory/last-uploads-by-type/')]);
+      const settings = groupedRows(rows, 'settings');
+      const status = groupedRows(rows, 'status');
+      document.getElementById('settingsSection').innerHTML = Object.keys(settings).length ? Object.entries(settings).map(([group, entries]) => `<section class="card p-4 mb-3"><h6 class="mb-1">${escapeHtml(group)}</h6>${entries.map(({row, meta}) => settingRow(row, meta)).join('')}</section>`).join('') : '<div class="card p-4 text-muted">No decision-support settings.</div>';
+      const uploadRows = Array.isArray(uploadData.uploads) ? uploadData.uploads : [];
+      const uploadSection = `<section><h6 class="mb-1">Uploads</h6><p class="text-muted small mb-2">These upload types together determine the Dashboard Last Sync value. The highlighted upload is the current one.</p>${uploadRows.map(upload => uploadRow(upload, uploadData.current_sync_type)).join('')}</section>`;
+      const otherStatus = Object.keys(status).length ? Object.entries(status).map(([group, entries]) => `<section><h6 class="mb-1">${escapeHtml(group)}</h6>${entries.map(({row, meta}) => statusRow(row, meta)).join('')}</section>`).join('') : '';
+      document.getElementById('statusSection').innerHTML = uploadSection + otherStatus;
+    } catch (error) { showMessage(error.message, 'danger'); }
+    finally { if (button) { button.disabled = false; button.textContent = 'Refresh'; } }
+  }
+
+  async function saveConfig(button) {
+    const encodedKey = button.dataset.configKey;
+    const key = decodeURIComponent(encodedKey);
+    const input = document.getElementById(`value-${encodedKey}`);
+    const newValue = input.value.trim();
+    if (!newValue) { showMessage('Configuration value cannot be blank.', 'danger'); return; }
+    if (input.type === 'number' && (!Number.isFinite(Number(newValue)) || Number(newValue) < 0)) { showMessage('Configuration value must be a non-negative number.', 'danger'); return; }
+    const meta = configMeta(key, input.defaultValue);
+    if (!confirm(`Change "${meta.label}" from ${input.defaultValue} to ${newValue}? This affects live decision-support rules.`)) return;
+    button.disabled = true;
+    try { await apiFetch(`/api/config/${encodeURIComponent(key)}/`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: newValue }) }); showMessage('Configuration saved.'); await loadConfig(); }
+    catch (error) { showMessage(error.message, 'danger'); }
+    finally { button.disabled = false; }
+  }
+
+  async function initializeConfig() {
+    const role = await fetchCurrentUser();
+    canEditConfig = role === 'ADMIN' || role === 'MANAGER';
+    await loadConfig();
+  }
+  initializeConfig();
 </script>
-</body>
-</html>
+{% endblock %}

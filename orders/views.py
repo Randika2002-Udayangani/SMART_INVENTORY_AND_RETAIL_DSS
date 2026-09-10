@@ -1,8 +1,8 @@
 import json
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from django.db.models import Avg, Count
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from core.authentication import LenientJWTAuthentication
 from .models import ChatbotLog, ProductRating, ProductRatingSummary
 from .serializers import RatingCreateSerializer, ProductRatingPublicSerializer
@@ -213,18 +213,6 @@ class CustomerLoginView(APIView):
         )
 
 
-# ============================================================
-# In orders/views.py:
-# 1) DELETE the existing stub `class CustomerProfileView(APIView): ...`
-#    and replace it with the version below.
-# 2) ADD these imports near the top, with your other imports:
-#    from rest_framework.permissions import IsAuthenticated
-#    from rest_framework_simplejwt.tokens import RefreshToken
-#    from .authentication import CustomerJWTAuthentication
-# 3) APPEND CustomerLogoutView and CustomerChangePasswordView below.
-# ============================================================
-
-
 class CustomerProfileView(APIView):
 
     """
@@ -318,131 +306,177 @@ class OrderListCreateView(APIView):
         CustomerJWTAuthentication,
     ]
 
-
     permission_classes = [
-
         IsAuthenticated
-
     ]
 
-
     def get(self, request):
-        # New staff GET logic
-        ...
+        staff_authentication = LenientJWTAuthentication()
+        staff_credentials = staff_authentication.authenticate(request)
+        if staff_credentials is None:
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
+        params = request.query_params
+        orders = OnlineOrder.objects.select_related("customer").annotate(
+            item_count=Count("onlineorderitem")
+        )
+
+        order_status = params.get("status")
+        if order_status:
+            orders = orders.filter(status=order_status.upper())
+
+        date_from = params.get("date_from")
+        date_to = params.get("date_to")
+        if date_from:
+            orders = orders.filter(pickup_date__gte=date_from)
+        if date_to:
+            orders = orders.filter(pickup_date__lte=date_to)
+
+        search = params.get("search")
+        if search:
+            from django.db.models import Q
+            orders = orders.filter(
+                Q(order_reference__icontains=search)
+                | Q(customer__name__icontains=search)
+            )
+
+        return Response([
+            {
+                "id": order.id,
+                "order_reference": order.order_reference,
+                "customer_name": order.customer.name,
+                "pickup_date": order.pickup_date,
+                "pickup_time_slot": order.pickup_time_slot,
+                "status": order.status,
+                "total_amount": order.total_amount,
+                "collection_deadline": order.collection_deadline,
+                "item_count": order.item_count,
+            }
+            for order in orders.order_by("-id")
+        ])
 
     def post(self, request):
-        # OLD OrderCreateView.post() BODY
         customer = request.user
 
-        pickup_date = request.data.get("pickup_date")
+        pickup_date_str = request.data.get("pickup_date")
         time_slot = request.data.get("time_slot")
         items = request.data.get("items")
+        notes = request.data.get("notes", "")
 
-        if not all([pickup_date, time_slot, items]):
+        if not all([pickup_date_str, time_slot, items]):
             return Response(
                 {"error": "Missing required fields"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if time_slot not in [
-            "MORNING",
-            "AFTERNOON",
-            "EVENING"
-        ]:
+        if time_slot not in ["MORNING", "AFTERNOON", "EVENING"]:
             return Response(
                 {"error": "Invalid pickup time"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        order_reference = (
-            f"ORD-2026-"
-            f"{str(OnlineOrder.objects.count() + 1).zfill(5)}"
-        )
-
-        order = OnlineOrder.objects.create(
-            customer=customer,
-            pickup_date=pickup_date,
-            pickup_time_slot=time_slot,
-            order_reference=order_reference,
-            status="PENDING"
-        )
-
-        total = 0
-
-        for item in items:
-
-            product_id = item.get("product_id")
-
-            quantity = int(
-                item.get("quantity")
+        try:
+            pickup_date = datetime.strptime(pickup_date_str, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "pickup_date must be in YYYY-MM-DD format"},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
+        # ---- Pass 1: validate every item BEFORE creating anything ----
+        validated_items = []
+        for item in items:
+            product_id = item.get("product_id")
+
             try:
-                product = Product.objects.get(
-                    id=product_id
+                quantity = int(item.get("quantity"))
+            except (TypeError, ValueError):
+                return Response(
+                    {"error": f"Invalid quantity for product {product_id}"},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
 
-            except Product.DoesNotExist:
-
+            if quantity <= 0:
                 return Response(
-                    {
-                        "error":
-                        f"Product {product_id} not found"
-                    },
+                    {"error": f"Invalid quantity for product {product_id}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return Response(
+                    {"error": f"Product {product_id} not found"},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            available_stock = get_available_stock(
-                product_id
-            )
+            available_stock = get_available_stock(product_id)
 
             if quantity > available_stock:
-
                 return Response(
                     {
-                        "error":
-                        f"Insufficient stock for {product.product_name}",
-                        "requested_quantity":
-                        quantity,
-                        "available_stock":
-                        available_stock
+                        "error": f"Insufficient stock for {product.product_name}",
+                        "requested_quantity": quantity,
+                        "available_stock": available_stock
                     },
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            price = product.unit_price
+            validated_items.append((product, quantity))
 
-            OnlineOrderItem.objects.create(
-                order=order,
-                product=product,
-                quantity=quantity,
-                unit_price=price
+        # ---- Pass 2: everything passed validation — create atomically ----
+        collection_deadline = pickup_date + timedelta(days=2)
+
+        with transaction.atomic():
+            order_reference = (
+                f"ORD-2026-"
+                f"{str(OnlineOrder.objects.count() + 1).zfill(5)}"
             )
 
-            StockLedger.objects.create(
-                product=product,
-                transaction_type="SALE_SYNC",
-                source="ONLINE_ORDER",
-                quantity_change=-quantity,
-                reference_id=order.id
+            order = OnlineOrder.objects.create(
+                customer=customer,
+                pickup_date=pickup_date,
+                pickup_time_slot=time_slot,
+                order_reference=order_reference,
+                status="PENDING",
+                collection_deadline=collection_deadline,
+                notes=notes,
             )
 
-            total += price * quantity
+            total = 0
 
-        order.total_amount = total
-        order.save()
+            for product, quantity in validated_items:
+                price = product.unit_price
+
+                OnlineOrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    quantity=quantity,
+                    unit_price=price
+                )
+
+                StockLedger.objects.create(
+                    product=product,
+                    transaction_type="SALE_SYNC",
+                    source="ONLINE_ORDER",
+                    quantity_change=-quantity,
+                    reference_id=order.id
+                )
+
+                total += price * quantity
+
+            order.total_amount = total
+            order.save()
 
         return Response(
             {
-                "message":
-                "Order created successfully",
-                "order_reference":
-                order.order_reference,
-                "status":
-                order.status,
-                "total_amount":
-                float(order.total_amount)
+                "message": "Order created successfully",
+                "order_reference": order.order_reference,
+                "status": order.status,
+                "total_amount": float(order.total_amount)
             },
             status=status.HTTP_201_CREATED
         )
@@ -549,33 +583,6 @@ class OrderListView(APIView):
         return Response(response)
 
 
-# ============================================================
-# SECTION 2 — REPLACE `class OrderStatusUpdateView(APIView):`
-# entirely with this.
-#
-# THE BUG: the current version authenticates with
-# CustomerJWTAuthentication and never checks the order belongs to
-# the requesting customer — any logged-in customer could PUT any
-# order id and move it to CONFIRMED/READY/COMPLETED/CANCELLED.
-#
-# THE ACTUAL FIX: per the API Design Doc's Role Access Matrix
-# (Section 23), PATCH /api/orders/{id}/status/ is STAFF-ONLY —
-# customers were never supposed to hit this endpoint at all. So
-# the fix isn't "add an ownership check to a customer-facing
-# endpoint" — it's routing this correctly as staff-only. A
-# customer cancelling their own order is a separate, still-
-# unbuilt DELETE endpoint (flagged in the earlier branch review,
-# not part of this patch).
-#
-# Also fixes: PUT -> PATCH (matches the v3.0 spec fix already
-# applied everywhere else in the doc), and wires real Audit_Log
-# entries via log_action() instead of the bare, useless
-# `AuditLog.objects.create(action=...)` call that was there before
-# (that was writing to core.models.AuditLog, which only has an
-# `action` text field — not the real audit table users/models.py
-# defines with user/table_name/old_value/new_value).
-# ============================================================
-
 class OrderStatusUpdateView(APIView):
 
     authentication_classes = [LenientJWTAuthentication]
@@ -612,8 +619,16 @@ class OrderStatusUpdateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if new_status == "CONFIRMED" and not OnlineOrderItem.objects.filter(order=order).exists():
+            return Response(
+                {"error": "Cannot confirm an order with no items."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         old_status = order.status
         order.status = new_status
+        if new_status == "CONFIRMED":
+            order.confirmed_by = request.user
         order.save()
 
         log_action(
@@ -639,17 +654,45 @@ class OrderStatusUpdateView(APIView):
         return self.patch(request, pk)
 
 
-# ============================================================
-# orders/views.py — REPLACE the existing `def chatbot(request):`
-# function (the last ~50 lines of the file, currently calling
-# chatbot_response(message, customer_id) and returning it as-is)
-# with this. Only change: logs every query to ChatbotLog, which
-# GET /api/chatbot/logs/ and /logs/{session_id}/ need data for —
-# those two endpoints from Section 18 also don't exist yet and
-# aren't included in this patch (say the word if you want them too;
-# they're a straightforward ListView + filtered detail view over
-# ChatbotLog, maybe 20 minutes of work once this is in).
-# ============================================================
+class OrderDetailView(APIView):
+    authentication_classes = [LenientJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            order = OnlineOrder.objects.select_related("customer").get(id=pk)
+        except OnlineOrder.DoesNotExist:
+            return Response(
+                {"error": "Order not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        items = OnlineOrderItem.objects.filter(order=order).select_related("product")
+        return Response({
+            "id": order.id,
+            "order_reference": order.order_reference,
+            "customer": {
+                "name": order.customer.name,
+                "email": order.customer.email,
+                "phone": order.customer.contact_number,
+            },
+            "pickup_date": order.pickup_date,
+            "pickup_time_slot": order.pickup_time_slot,
+            "notes": order.notes,
+            "status": order.status,
+            "collection_deadline": order.collection_deadline,
+            "total_amount": order.total_amount,
+            "items": [
+                {
+                    "product_name": item.product.product_name,
+                    "quantity": item.quantity,
+                    "unit_price": item.unit_price,
+                    "line_total": item.unit_price * item.quantity,
+                }
+                for item in items
+            ],
+        })
+
 
 @csrf_exempt
 def chatbot(request):
@@ -686,14 +729,6 @@ def chatbot(request):
 
     return JsonResponse(result, safe=True)
 
-
-# ============================================================
-# SECTION 3 — APPEND to the bottom of orders/views.py.
-# Ratings CRUD (F14) — Section 19 of the API Design Doc.
-# Nothing here existed anywhere in the repo before this patch;
-# models and serializers already existed as scaffolding, this
-# wires the actual views.
-# ============================================================
 
 class RatingCreateView(APIView):
     """
@@ -749,15 +784,6 @@ class ProductRatingListView(APIView):
     """
     GET /api/ratings/product/{product_id}/ — public (No auth per
     Section 19.1), used on the product detail page.
-
-    NOTE: Section 19's intro text says ratings are "internal only —
-    not publicly visible", but its own endpoint table marks this GET
-    as public for the product page. Those two statements conflict.
-    This implementation follows the endpoint table (since that's
-    what Chalani needs to build against) but deliberately omits any
-    customer-identifying fields (name/email) from the response to
-    stay in the spirit of "internal only" — flag this contradiction
-    to Randika/the team rather than treating it as resolved.
     """
     authentication_classes = []
     permission_classes = [AllowAny]
@@ -903,10 +929,6 @@ class RatingDeactivateView(APIView):
         return Response({"message": "Rating deactivated"})
 
 
-
-
-
-
 def _release_order_stock(order, reason):
     """
     Reverses the stock deduction OrderListCreateView.post() makes at
@@ -914,11 +936,7 @@ def _release_order_stock(order, reason):
     (the closest existing category — StockLedger.TRANSACTION_TYPES
     has no dedicated ORDER_CANCELLED/ORDER_EXPIRED type yet) with a
     descriptive `source` so it's traceable in
-    GET /api/inventory/ledger/. If you'd rather add proper choices,
-    it's a one-line model change plus a migration — flagging it as
-    optional rather than doing it here, since a stray migration file
-    landing in a "local safety net only" branch could cause a
-    conflict if it's ever merged after Randika's own migrations move.
+    GET /api/inventory/ledger/.
     """
     items = OnlineOrderItem.objects.filter(order=order)
     for item in items:
@@ -931,14 +949,9 @@ def _release_order_stock(order, reason):
         )
 
 
-
-
 class OrderMyOrdersView(APIView):
     """
     GET /api/orders/my-orders/ — Customer token, own order history.
-    This is the logic that used to live (mis-scoped) in the old
-    OrderListView at orders/list/ — pulled out into its own endpoint
-    at the correct URL per Section 17.1.
     """
     authentication_classes = [CustomerJWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -969,16 +982,12 @@ class OrderMyOrdersView(APIView):
         return Response(response)
 
 
-
 class OrderCancelView(APIView):
     """
     DELETE /api/orders/{id}/ — per Section 17.1: "Customer cancels
     their own order (Customer token) or Staff cancels (Yes token).
     Releases stock reservations. Customer can only cancel their own
     orders — server enforces this."
-
-    Same dual-authenticator trick as OrderListCreateView: try staff
-    auth first, fall through to customer auth.
     """
     authentication_classes = [LenientJWTAuthentication, CustomerJWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -1015,11 +1024,6 @@ class OrderCancelView(APIView):
 
         _release_order_stock(order, "ORDER_CANCELLED")
 
-        # log_action's `user` param expects a Django auth_user — a
-        # Customer instance isn't compatible with that FK, so we
-        # pass None for customer-initiated cancellations. The
-        # cancelled_by field on the order itself already records
-        # who did it.
         log_action(
             user=None if is_customer else request.user,
             action="ORDER_CANCELLED",
@@ -1034,9 +1038,6 @@ class OrderCancelView(APIView):
             "message": "Order cancelled",
             "order_reference": order.order_reference,
         })
-
-
-
 
 
 class OrderReferenceLookupView(APIView):
@@ -1061,7 +1062,6 @@ class OrderReferenceLookupView(APIView):
         try:
             order = OnlineOrder.objects.get(order_reference=ref)
         except OnlineOrder.DoesNotExist:
-            # Same response as a contact mismatch below — see note above.
             return Response(
                 {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
             )
@@ -1090,17 +1090,6 @@ class OrderReferenceLookupView(APIView):
             ],
         })
 
-
-
-# ------------------------------------------------------------
-# FIX 2 — orders/overdue/ split: GET is now read-only (list only),
-# mutation (auto-expire + stock release + audit log) moved to
-# POST /orders/overdue/process/. Same pattern as the
-# /api/losses/auto-detect/ fix already in the doc.
-#
-# _release_order_stock() from patch2 is unchanged and reused here —
-# don't duplicate it.
-# ------------------------------------------------------------
 
 class OrderOverdueView(APIView):
     """
@@ -1134,10 +1123,7 @@ class OrderOverdueProcessView(APIView):
     """
     POST /api/orders/overdue/process/ — staff. Actually performs the
     auto-expire: moves each overdue READY order to EXPIRED, releases
-    its stock, and writes an Audit_Log entry per order. Kept as a
-    deliberate, explicit action rather than something that fires on
-    every dashboard page load — matches the reasoning already used
-    for /api/losses/auto-detect/.
+    its stock, and writes an Audit_Log entry per order.
     """
     authentication_classes = [LenientJWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -1172,4 +1158,3 @@ class OrderOverdueProcessView(APIView):
             "message": f"{len(expired_refs)} order(s) auto-expired and stock released.",
             "expired_orders": expired_refs,
         })
-

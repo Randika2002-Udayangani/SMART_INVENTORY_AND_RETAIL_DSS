@@ -12,7 +12,7 @@ from inventory.views import (
 
 from sales.views import ItemSalesListView
 from sales.views import profit_summary
-from analytics.views import slow_moving, sales_trend, category_performance, store_revenue
+from analytics.views import slow_moving, sales_trend, category_performance, store_revenue, overview, products
 
 urlpatterns = [
     # ── F05 Profit & Analytics ────────────────────────────
@@ -38,4 +38,10 @@ urlpatterns = [
     path('analytics/sales-trend/', sales_trend, name='analytics-sales-trend'),
     path('analytics/category-performance/', category_performance, name='analytics-category-performance'),
     path('analytics/store-revenue/', store_revenue, name='analytics-store-revenue'),
+
+    # ── Manager Analytics page rebuild — consolidated overview + product table ──
+    # Wires up calculate_sales_and_profit/get_top_products/aggregate_by_brand_and_category,
+    # written+tested in profit_engine.py but unwired per API_Design_Document_v3.2 §26.3.
+    path('analytics/overview/', overview, name='analytics-overview'),
+    path('analytics/products/', products, name='analytics-products'),
 ]

@@ -14,6 +14,7 @@ from .views import (
     CustomerProfileView,
     CustomerChangePasswordView,
     OrderListCreateView,
+    OrderDetailView,
     OrderStatusUpdateView,
     OrderOverdueView,
     OrderOverdueProcessView,
@@ -43,6 +44,7 @@ urlpatterns = [
     path("orders/reference/<str:ref>/", OrderReferenceLookupView.as_view(), name="order-reference"),
 
     path("orders/", OrderListCreateView.as_view(), name="order-list-create"),
+    path("orders/<int:pk>/detail/", OrderDetailView.as_view(), name="order-detail"),
     path("orders/<int:pk>/status/", OrderStatusUpdateView.as_view(), name="order-status"),
     path("orders/<int:pk>/", OrderCancelView.as_view(), name="order-cancel"),
 

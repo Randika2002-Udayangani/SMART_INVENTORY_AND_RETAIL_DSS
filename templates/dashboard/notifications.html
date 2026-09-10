@@ -1,13 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Smart Inventory DSS — Notifications</title>
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet"/>
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
-  <style>
+{% extends "dashboard/base.html" %}
+
+{% block title %}Smart Inventory DSS — Notifications{% endblock %}
+
+{% block extra_css %}
+<style>
     :root {
       --bg:       #e8f5eb;
       --card:     #f4faf5;
@@ -25,41 +21,6 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--txt); min-height: 100vh; }
-
-    /* ── SIDEBAR (identical to home.html) ───────────────── */
-    .sidebar { overflow-y: auto;
-      width: 220px; height: 100vh; background: var(--sidebar);
-      position: fixed; top: 0; left: 0;
-      display: flex; flex-direction: column; z-index: 100;
-      border-right: 1px solid rgba(255,255,255,0.06);
-    }
-    .sb-logo { padding: 20px 18px 14px; border-bottom: 1px solid rgba(255,255,255,0.15); }
-    .sb-logo .lt { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #d4f7e0; }
-    .sb-logo .ls { font-size: 9.5px; color: rgba(255,255,255,0.5); margin-top: 2px; }
-    .sb-nav { padding: 12px 8px; flex: 1; overflow-y: auto; max-height: calc(100vh - 80px); }
-    .sb-sec { font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 0 10px 6px; margin-top: 10px; }
-    .sb-nav a {
-      display: flex; align-items: center; gap: 9px; padding: 8px 10px;
-      border-radius: 7px; color: rgba(255,255,255,0.72); text-decoration: none;
-      font-size: 13px; font-weight: 500; transition: all 0.14s; margin-bottom: 1px;
-    }
-    .sb-nav a:hover { background: rgba(255,255,255,0.13); color: #fff; }
-    .sb-nav a.active { background: rgba(255,255,255,0.20); color: #fff; font-weight: 600; }
-    .sb-nav a i { font-size: 15px; width: 17px; text-align: center; }
-    .sb-nav a .badge-pill {
-      margin-left: auto; background: rgba(239,68,68,0.85); color: #fff;
-      font-size: 9.5px; font-weight: 700; border-radius: 10px;
-      padding: 1px 7px; line-height: 1.5;
-    }
-    .sb-footer { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.15); font-size: 11.5px; color: rgba(255,255,255,0.5); }
-    .sb-footer .name { color: #fff; font-weight: 600; font-size: 12.5px; }
-
-    /* ── MAIN ────────────────────────────────────────────── */
-    .main { margin-left: 220px; padding: 24px 28px 40px; }
-
-    .topbar { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 22px; }
-    .topbar h1 { font-size: 19px; font-weight: 700; }
-    .topbar .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 
     /* ── SUMMARY STRIP ───────────────────────────────────── */
     .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
@@ -168,61 +129,14 @@
     .detail-row .dv { font-family: 'DM Mono', monospace; text-align: right; }
 
     @media (max-width: 960px) {
-      .sidebar { display: none; } .main { margin-left: 0; padding: 16px; }
       .summary-grid { grid-template-columns: repeat(2,1fr); }
     }
   </style>
-</head>
-<body>
+{% endblock %}
 
-<!-- ── SIDEBAR ───────────────────────────────────────────── -->
-<aside class="sidebar">
-  <div class="sb-logo">
-    <div class="lt">Smart Inventory</div>
-    <div class="ls">Decision Support System — Samanala Super Mart</div>
-  </div>
-  <nav class="sb-nav">
-    <div class="sb-sec">Overview</div>
-    <a href="/dashboard/"><i class="bi bi-grid-1x2"></i> Dashboard</a>
-    <a href="/dashboard/analytics/"><i class="bi bi-bar-chart-line"></i> Analytics</a>
+{% block nav_notifications %}active{% endblock %}
 
-    <div class="sb-sec">Inventory</div>
-    <a href="/dashboard/inventory/"><i class="bi bi-box-seam"></i> Product Management</a>
-    <a href="/dashboard/purchases/?tab=purchases"><i class="bi bi-receipt"></i> Purchases</a>
-    <a href="/dashboard/purchases/?tab=batches"><i class="bi bi-layers"></i> Batches</a>
-    <a href="/dashboard/purchases/?tab=expiring"><i class="bi bi-calendar-x"></i> Expiry Alerts</a>
-    <a href="/dashboard/sales-upload/"><i class="bi bi-upload"></i> Sales Upload</a>
-    <a href="/dashboard/products/"><i class="bi bi-boxes"></i> Products</a>
-
-    <div class="sb-sec">Decision Support</div>
-    <a href="/dashboard/health-score/"><i class="bi bi-heart-pulse"></i> Health Score</a>
-    <a href="/dashboard/discount-engine/"><i class="bi bi-tag"></i> Discount Engine</a>
-    <a href="/dashboard/reorder/"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
-    <a href="/dashboard/loss-analysis/"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
-    <a href="/dashboard/lifecycle/"><i class="bi bi-activity"></i> Lifecycle</a>
-
-    <div class="sb-sec">Operations</div>
-    <a href="#" onclick="alert('Coming soon'); return false;"><i class="bi bi-receipt"></i> Order Management</a>
-    <a href="/dashboard/suppliers/"><i class="bi bi-truck"></i> Suppliers</a>
-
-    <div class="sb-sec">Reports</div>
-    <a href="/dashboard/reports/"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
-    <a href="/dashboard/sales-report/"><i class="bi bi-bar-chart"></i> Sales Report</a>
-    <a href="/dashboard/notifications/" class="active"><i class="bi bi-bell"></i> Notifications <span class="badge-pill" id="sidebarAlertCount">0</span></a>
-
-    <div class="sb-sec">Administration</div>
-    <a href="/dashboard/system-config/"><i class="bi bi-sliders"></i> System Config</a>
-    <a href="/dashboard/audit-log/"><i class="bi bi-journal-text"></i> Audit Log</a>
-    <a href="/dashboard/users/"><i class="bi bi-people"></i> User Management</a>
-  </nav>
-  <div class="sb-footer">
-    <div class="name">Manager</div>
-    <div>Samanala Super Mart</div>
-  </div>
-</aside>
-
-<!-- ── MAIN CONTENT ──────────────────────────────────────── -->
-<main class="main">
+{% block content %}
 
   <div class="topbar">
     <div>
@@ -230,9 +144,6 @@
       <div class="sub">Unread staff notifications — CRITICAL / HIGH / MEDIUM</div>
     </div>
     <div style="display:flex; gap:8px;">
-      <a href="/dashboard/" style="background:#fff;color:var(--txt);border:1.5px solid var(--border);padding:8px 16px;border-radius:6px;font-size:13px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;">
-        <i class="bi bi-arrow-left"></i> Dashboard
-      </a>
       <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
         <i class="bi bi-box-arrow-right"></i> Logout
       </button>
@@ -278,7 +189,7 @@
       <button class="f-pill fp-medium" data-pri="MEDIUM" onclick="setPriorityFilter('MEDIUM', this)">Medium</button>
     </div>
     <div class="filter-right">
-      <select class="type-select" id="typeSelect" onchange="renderList()">
+      <select class="type-select" id="typeSelect" onchange="notifPage = 1; renderList();">
         <option value="all">All types</option>
       </select>
     </div>
@@ -294,9 +205,8 @@
       <span class="card-badge" id="listCount" style="background:var(--card2);border:1px solid var(--border);border-radius:5px;padding:3px 9px;font-size:10.5px;color:var(--muted);">—</span>
     </div>
     <div id="listBody"></div>
+    <div id="notifPagination"></div>
   </div>
-
-</main>
 
 <!-- ── DETAIL MODAL ──────────────────────────────────────── -->
 <div class="modal fade" id="detailModal" tabindex="-1">
@@ -319,42 +229,14 @@
   </div>
 </div>
 
-<!-- ── SCRIPTS ───────────────────────────────────────────── -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+{% endblock %}
+
+{% block page_scripts %}
 <script>
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>'"]/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
     }[char]));
-  }
-
-  async function apiFetch(url, options = {}) {
-    const token = sessionStorage.getItem('access_token');
-if (!token) { window.location.href = '/dashboard/login/'; }
-    const headers = new Headers(options.headers || {});
-    headers.set('Authorization', 'Bearer ' + token);
-    const response = await fetch(url, { ...options, headers });
-    if (response.status === 401) {
-      sessionStorage.removeItem('access_token');
-      sessionStorage.removeItem('refresh_token');
-      window.location.href = '/dashboard/login/';
-      throw new Error('Authentication expired');
-    }
-    if (!response.ok && response.status !== 204) throw new Error(`${response.status} ${response.statusText}`);
-    return response.status === 204 ? null : response.json();
-  }
-
-  function checkAuth() {
-    const token = sessionStorage.getItem('access_token');
-if (!token) { window.location.href = '/dashboard/login/'; }
-    if (!token) { window.location.href = '/dashboard/login/'; }
-  }
-  checkAuth();
-
-  function doLogout() {
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('refresh_token');
-    window.location.href = '/dashboard/login/';
   }
 
   // ── State ──────────────────────────────────────────────
@@ -363,6 +245,8 @@ if (!token) { window.location.href = '/dashboard/login/'; }
   let statusTab = 'unread';
   let priorityFilter = 'all';
   let activeDetailId = null;
+  let notifPage = 1;
+  const notifPageSize = 25;
 
   const priClass = { CRITICAL: 'critical', HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
   const tabLabels = { unread: 'Unread', read: 'Read', all: 'Total' };
@@ -379,6 +263,7 @@ if (!token) { window.location.href = '/dashboard/login/'; }
     priorityFilter = pri;
     document.querySelectorAll('.f-pill[data-pri]').forEach(b => b.classList.remove('on'));
     btn.classList.add('on');
+    notifPage = 1; // filter changed — back to page 1
     renderList();
   }
 
@@ -396,7 +281,11 @@ if (!token) { window.location.href = '/dashboard/login/'; }
     document.getElementById('sumCritical').innerText = counts.CRITICAL;
     document.getElementById('sumHigh').innerText = counts.HIGH;
     document.getElementById('sumMedium').innerText = counts.MEDIUM;
-    document.getElementById('sidebarAlertCount').innerText = allNotifications.length;
+    // #sidebarAlertCount is NOT set from allNotifications here on purpose —
+    // allNotifications is filtered by statusTab (unread/read/all), so on the
+    // Read or Total tab this would overwrite the badge with the wrong count.
+    // refreshSidebarAlertBadge() (base.html) always fetches the true unread
+    // count directly and is called below instead.
   }
 
   function timeAgo(iso) {
@@ -423,10 +312,16 @@ if (!token) { window.location.href = '/dashboard/login/'; }
     const body = document.getElementById('listBody');
     if (!rows.length) {
       body.innerHTML = `<div class="empty-state"><i class="bi bi-check2-circle"></i>No notifications match this filter.</div>`;
+      document.getElementById('notifPagination').innerHTML = '';
       return;
     }
 
-    body.innerHTML = rows.map(n => `
+    // Pagination — same pattern as Stock Levels (inventory.html): 25/page.
+    const totalPages = Math.max(1, Math.ceil(rows.length / notifPageSize));
+    notifPage = Math.min(notifPage, totalPages);
+    const pageRows = rows.slice((notifPage - 1) * notifPageSize, notifPage * notifPageSize);
+
+    body.innerHTML = pageRows.map(n => `
       <div class="n-row ${n.is_read ? 'is-handled' : ''}" onclick="openDetail(${n.id})">
         <div class="n-dot nd-${priClass[n.priority] || 'medium'}"></div>
         <span class="n-pri np-${priClass[n.priority] || 'medium'}">${escapeHtml(n.priority)}</span>
@@ -441,6 +336,18 @@ if (!token) { window.location.href = '/dashboard/login/'; }
         </div>
       </div>
     `).join('');
+
+    document.getElementById('notifPagination').innerHTML = rows.length > notifPageSize ? `
+      <div class="d-flex justify-content-between align-items-center" style="padding:12px 18px; border-top:1px solid var(--border);">
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeNotifPage(-1)" ${notifPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${notifPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeNotifPage(1)" ${notifPage === totalPages ? 'disabled' : ''}>Next</button>
+      </div>` : '';
+  }
+
+  function changeNotifPage(delta) {
+    notifPage += delta;
+    renderList();
   }
 
   async function loadNotifications() {
@@ -450,7 +357,9 @@ if (!token) { window.location.href = '/dashboard/login/'; }
       allNotifications = Array.isArray(data) ? data : [];
       populateTypeSelect();
       updateSummary();
+      notifPage = 1; // fresh data — back to page 1
       renderList();
+      refreshSidebarAlertBadge(); // keep the shared badges in sync with the true unread count
     } catch (e) {
       console.error('loadNotifications failed:', e);
       document.getElementById('listBody').innerHTML =
@@ -478,6 +387,7 @@ if (!token) { window.location.href = '/dashboard/login/'; }
       allNotifications = allNotifications.filter(n => n.id !== id);
       updateSummary();
       renderList();
+      refreshSidebarAlertBadge(); // keep the shared badges in sync with the true unread count
     } catch (e) {
       console.error('dismiss failed:', e);
       alert('Could not dismiss notification.');
@@ -526,8 +436,7 @@ if (!token) { window.location.href = '/dashboard/login/'; }
     await dismiss(id);
   }
 
+  fetchCurrentUser();
   loadNotifications();
 </script>
-</body>
-</html>
-
+{% endblock %}

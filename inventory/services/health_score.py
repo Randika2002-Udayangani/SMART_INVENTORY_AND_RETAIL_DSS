@@ -103,7 +103,7 @@ def calculate_health_scores():
         row['product_id']: row['total'] or 0
         for row in (
             PurchaseBatch.objects
-            .filter(product_id__in=product_ids, status='ACTIVE')
+            .filter(product_id__in=product_ids, status__in=['ACTIVE', 'PENDING_EXPIRY'])
             .values('product_id')
             .annotate(total=Sum('remaining_quantity'))
         )
@@ -114,16 +114,11 @@ def calculate_health_scores():
         row['product_id']: row['nearest']
         for row in (
             PurchaseBatch.objects
-            .filter(
-                product_id__in=product_ids,
-                status='ACTIVE',
-                expiry_date__isnull=False
-            )
+            .filter(product_id__in=product_ids, status__in=['ACTIVE', 'PENDING_EXPIRY'], expiry_date__isnull=False)
             .values('product_id')
             .annotate(nearest=Min('expiry_date'))
         )
     }
-
     # ── Query 5: Category avg daily sales (velocity denominator) ──────────────
     # Pre-compute once per category — avoids recalculating inside the loop
     category_ids = list({p.category_id for p in active_products})
