@@ -1,7 +1,8 @@
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Avg, F
-from rest_framework import generics
+from rest_framework import generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -10,9 +11,10 @@ from .serializers import SupplierSerializer
 from users.audit import log_action
 from core.permissions import ReadPublicWriteAuthenticated
 from core.authentication import LenientJWTAuthentication
+from users.permissions import IsManagerOrAdmin
 
 from purchases.models import Purchase, PurchaseBatch
-from inventory.models import SupplierReturn
+from inventory.models import DiscountRecommendation, SupplierReturn
 from orders.models import ProductRating
 
 
@@ -39,6 +41,11 @@ class SupplierDetailView(ReadPublicWriteAuthenticated, generics.RetrieveUpdateDe
     serializer_class = SupplierSerializer
     authentication_classes = [LenientJWTAuthentication]
 
+    def get_permissions(self):
+        if self.request.method in ('PUT', 'PATCH', 'DELETE'):
+            return [permissions.IsAuthenticated(), IsManagerOrAdmin()]
+        return super().get_permissions()
+
     def perform_update(self, serializer):
         old_data = SupplierSerializer(self.get_object()).data
         supplier = serializer.save()
@@ -54,6 +61,15 @@ class SupplierDetailView(ReadPublicWriteAuthenticated, generics.RetrieveUpdateDe
 
     def perform_destroy(self, instance):
         old_data = SupplierSerializer(instance).data
+        with transaction.atomic():
+            # These records protect the supplier from deletion. Remove the
+            # dependent history first, then delete the supplier atomically.
+            SupplierReturn.objects.filter(supplier=instance).delete()
+            DiscountRecommendation.objects.filter(
+                batch__purchase__supplier=instance
+            ).delete()
+            Purchase.objects.filter(supplier=instance).delete()
+            instance.delete()
         log_action(
             user=self.request.user,
             action='DELETE',
@@ -63,7 +79,6 @@ class SupplierDetailView(ReadPublicWriteAuthenticated, generics.RetrieveUpdateDe
             new_value=None,
             request=self.request,
         )
-        instance.delete()
 
 
 # ═════════════════════════════════════════════════════════════════
