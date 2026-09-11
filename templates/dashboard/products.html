@@ -82,7 +82,7 @@
             <select id="prodCategory" class="form-select form-select-sm" style="width:180px;">
                 <option value="">All Categories</option>
             </select>
-            <button class="btn btn-primary btn-sm" onclick="loadProducts()">Search</button>
+            <button class="btn btn-primary btn-sm" onclick="searchProducts()">Search</button>
             <button class="btn btn-outline-secondary btn-sm" onclick="reclassify()">Reclassify Products</button>
             <button class="btn btn-primary btn-sm" onclick="openAddForm()">+ Add Product</button>
         </div>
@@ -95,6 +95,7 @@
                     <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+            <div id="prodPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         </div>
     </div>
        
@@ -311,6 +312,34 @@ async function request(url, options = {}) {
     }
 }
 
+let productPage = 1;
+const PRODUCT_PAGE_SIZE = 25;
+
+function updateProductPagination(data) {
+    const isPaginated = !Array.isArray(data);
+    const total = isPaginated ? (data.count ?? 0) : extractArray(data).length;
+    const totalPages = Math.max(1, Math.ceil(total / PRODUCT_PAGE_SIZE));
+    const pagination = document.getElementById('prodPagination');
+    if (totalPages === 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+    pagination.innerHTML = `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeProductPage(-1)" ${productPage === 1 || !data.previous ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${productPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeProductPage(1)" ${productPage === totalPages || !data.next ? 'disabled' : ''}>Next</button>`;
+}
+
+function searchProducts() {
+    productPage = 1;
+    loadProducts();
+}
+
+function changeProductPage(delta) {
+    productPage += delta;
+    loadProducts();
+}
+
 
 
 function switchTab(name, btn) {
@@ -434,7 +463,7 @@ async function loadBrandsForProductForm() {
 async function loadProducts() {
     const search = document.getElementById('prodSearch').value;
     const category = document.getElementById('prodCategory').value;
-    let url = '/api/products/?';
+    let url = `/api/products/?page=${productPage}&page_size=${PRODUCT_PAGE_SIZE}&`;
     if (search) url += `search=${encodeURIComponent(search)}&`;
     if (category) url += `category=${category}`;
 
@@ -445,6 +474,7 @@ async function loadProducts() {
         const tbody = document.getElementById('prodBody');
         if (rows.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No products found.</td></tr>';
+            updateProductPagination(data);
             return;
         }
         tbody.innerHTML = rows.map(p => `
@@ -463,6 +493,7 @@ async function loadProducts() {
                 </td>
             </tr>
         `).join('');
+        updateProductPagination(data);
     } catch(e) {
         document.getElementById('prodBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Could not load products.</td></tr>';
     }
@@ -736,9 +767,10 @@ async function recalculateWAC(id) {
 
 async function saveProduct() {
     const id = document.getElementById('prodId').value;
+    const sku = document.getElementById('prodSku').value.trim();
     const body = {
         product_name: document.getElementById('prodName').value,
-        sku_code: document.getElementById('prodSku').value,
+        sku_code: sku || null,
         unit_price: Number(document.getElementById('prodPrice').value),
         cost_price: Number(document.getElementById('prodCostPrice').value),
         category: Number(document.getElementById('prodCategoryId').value) || null,
@@ -765,7 +797,11 @@ async function saveProduct() {
             setTimeout(hideEditForm, 1000);
         } else {
             const err = await res.json().catch(() => ({}));
-            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${escapeHtml(JSON.stringify(err))}</div>`;
+            const details = Object.entries(err).map(([field, messages]) => {
+                const text = Array.isArray(messages) ? messages.join(', ') : messages;
+                return `${field}: ${text}`;
+            }).join('; ') || 'Unable to save product.';
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${escapeHtml(details)}</div>`;
         }
     } catch(e) {
         msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
