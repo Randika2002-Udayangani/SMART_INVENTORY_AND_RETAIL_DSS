@@ -224,7 +224,7 @@ function setDefaultDates() {
 }
 
 async function downloadReport(endpoint, filenameBase, format, extraParams = {}, button = null) {
-    const params = new URLSearchParams({ format, ...extraParams });
+    const params = new URLSearchParams({ file_format: format, ...extraParams });
     setDownloadLoading(button, true);
     try {
         const blob = await fetchBlob(`${endpoint}?${params}`);

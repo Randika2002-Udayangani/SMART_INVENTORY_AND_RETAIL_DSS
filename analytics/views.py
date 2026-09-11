@@ -2,7 +2,7 @@ from datetime import date, timedelta, datetime
 from decimal import Decimal
 
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from users.permissions import IsManagerOrAdmin
 from rest_framework.response import Response
 from rest_framework import status
 
@@ -67,7 +67,7 @@ def _parse_date_range(request, default_days=30):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsManagerOrAdmin])
 def slow_moving(request):
     """
     GET /api/analytics/slow-moving/?date_from=&date_to=
@@ -90,7 +90,7 @@ def slow_moving(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsManagerOrAdmin])
 def sales_trend(request):
     """
     GET /api/analytics/sales-trend/?date_from=&date_to=&granularity=daily|weekly|monthly
@@ -144,7 +144,7 @@ def sales_trend(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsManagerOrAdmin])
 def category_performance(request):
     """
     GET /api/analytics/category-performance/?date_from=&date_to=
@@ -165,7 +165,7 @@ def category_performance(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsManagerOrAdmin])
 def store_revenue(request):
     """
     GET /api/analytics/store-revenue/?date_from=&date_to=
@@ -212,7 +212,7 @@ def _safe_pct_change(current, previous):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsManagerOrAdmin])
 def overview(request):
     """
     GET /api/analytics/overview/?date_from=&date_to=&brand=&category=
@@ -418,7 +418,7 @@ def _serialize_product_row(r):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsManagerOrAdmin])
 def products(request):
     """
     GET /api/analytics/products/?date_from=&date_to=&search=&brand=&category=
@@ -501,7 +501,7 @@ def products(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsManagerOrAdmin])
 def product_analysis(request, product_id):
     """
     GET /api/analytics/products/<product_id>/analysis/?date_from=&date_to=&months=
