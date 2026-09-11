@@ -2,38 +2,114 @@
 #   v1: N×3 queries          — 3 DB queries per product inside loop
 #   v2: 4 total queries      — pre-aggregated with grouped annotate
 #   v3: 5 total queries      — added bulk_create
-#   v4 (this): 6 total queries — all fixes applied:
-#       Fix 1 — row['total'] or 0 guard in all three maps
-#       Fix 2 — delete existing records before bulk_create (no duplicates)
-#       Fix 3 — UniqueConstraint added via separate migration file
-#       Fix 4 — .only() on Product query (70% memory reduction)
-#       Fix 5 — Subquery in get_latest_lifecycle (N queries → 1 query)
+#   v4: 6 total queries      — all fixes applied (see prior header notes)
+#   v5 (this): 9 total queries — DECLINING recommendation now health-aware:
+#       DECLINING no longer hardcodes 'DISCOUNT'. It now looks up the
+#       product's latest InventoryHealthScore.status and maps to a
+#       triage-level recommendation (MONITOR / REVIEW_DISCOUNT /
+#       DISCOUNT_REVIEW / IMMEDIATE_ACTION). The actual discount decision
+#       (expiry + stock + margin + recovery) remains entirely owned by
+#       F09 (sales/services/discount_engine.py or wherever it lives),
+#       which does NOT read ProductLifecycle at all — it works purely
+#       off PurchaseBatch data. This change only fixes what the LIFECYCLE
+#       DASHBOARD displays to managers; it does not touch F09.
 #
 # Query breakdown:
-#       Query 1 — DELETE existing records for this period
-#       Query 2 — active products (id, product_name, introduced_date only)
-#       Query 3 — current period sales aggregated by product
-#       Query 4 — historical period sales aggregated by product
-#       Query 5 — slow moving period sales aggregated by product
-#       Query 6 — ONE bulk_create for all lifecycle records
+#       Query 1  — DELETE existing records for this period
+#       Query 2  — active products (id, product_name, introduced_date only)
+#       Query 3  — current period sales aggregated by product
+#       Query 4  — historical period sales aggregated by product
+#       Query 5  — slow moving period sales aggregated by product
+#       Query 5b — persistence check for SLOW_MOVING escalation
+#       Query 5c — latest InventoryHealthScore.status per product (NEW)
+#       Query 6  — ONE bulk_create for all lifecycle records
 #
 # Called by : Randika → POST /api/lifecycle/calculate/
 # Displays  : Lavanya → lifecycle report page
-# Feeds into: F07 (SLOW_MOVING), F09 (DECLINING)
+# Feeds into: F07 (SLOW_MOVING) via get_latest_lifecycle('SLOW_MOVING')
+#             NOTE: F09 does NOT actually consume lifecycle data — it was
+#             documented as a consumer in an earlier version of this file
+#             but calculate_discounts() only reads PurchaseBatch /
+#             DiscountRule / SystemConfig. Confirmed by inspecting F09
+#             directly. That earlier "Feeds into: F09" note was stale.
 #
 # Logic priority order (matches Week 2 pseudocode document):
 #   NEW → SLOW_MOVING → GROWING/DECLINING → STABLE
 #   Note: SLOW_MOVING check runs before velocity comparison intentionally.
 #   A product with < 5 units in 60 days is considered dead regardless
 #   of velocity ratio. A declining product with near-zero sales is more
-#   usefully classified as SLOW_MOVING → DISCONTINUE than DECLINING → DISCOUNT.
+#   usefully classified as SLOW_MOVING than DECLINING.
+#
+#   [Updated] SLOW_MOVING no longer auto-recommends DISCONTINUE off a single
+#   60-day window — that flagged ~600 products at once and wasn't actionable.
+#   Classification (the elif chain / STATUS) is unchanged. Only the
+#   RECOMMENDATION layer changed:
+#     SLOW_MOVING (1st time or non-consecutive) → CLEARANCE
+#     SLOW_MOVING for 3 consecutive monthly runs → PHASE_OUT (review to discontinue)
+#   DISCONTINUE is no longer assigned automatically by this function; it's
+#   reserved as a manual/manager action taken after reviewing a PHASE_OUT
+#   product against profitability + remaining stock.
+#
+#   [Updated v5] DECLINING no longer auto-recommends DISCOUNT off velocity
+#   alone. A product can be DECLINING (sales trend) while still HEALTHY
+#   (current inventory condition) — e.g. a strong historical baseline,
+#   seasonality, or temporary demand dip. DECLINING is now a trend SIGNAL;
+#   the actual severity of the recommendation is scaled by the product's
+#   latest Inventory Health Score status:
+#     DECLINING + HEALTHY   → MONITOR            (no action needed yet)
+#     DECLINING + WATCH     → REVIEW_DISCOUNT    (worth a manager look)
+#     DECLINING + AT RISK   → DISCOUNT_REVIEW    (likely discount candidate)
+#     DECLINING + CRITICAL  → IMMEDIATE_ACTION   (urgent — expiry/stock risk)
+#     DECLINING + no score yet → MONITOR (default; don't assume risk)
+#   Whether a discount is actually applied, and at what %, is still decided
+#   exclusively by F09 based on PurchaseBatch expiry/stock/margin data.
+#   This function never calculates a discount percentage or price.
 
 
 from datetime import date, timedelta
-from django.db.models import Sum, Max, Subquery, OuterRef
+from django.db.models import Sum, Max, Count, Subquery, OuterRef
 from products.models import Product
 from sales.models import ItemSalesRecord
-from inventory.models import ProductLifecycle
+from inventory.models import ProductLifecycle, InventoryHealthScore
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Health-status → DECLINING recommendation mapping
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _resolve_declining_recommendation(health_status):
+    """
+    Maps a DECLINING lifecycle classification + the product's latest
+    Inventory Health Score status to a triage-level recommendation.
+
+    This function does NOT decide whether a discount is applied, at what
+    percentage, or whether return-to-supplier / discard is a better
+    option — that decision belongs entirely to F09
+    (calculate_discounts()), which independently evaluates expiry date,
+    remaining stock, and profit margin from PurchaseBatch records.
+
+    This mapping exists purely so a healthy-but-declining product does
+    not surface an automatic "DISCOUNT" label on the lifecycle dashboard
+    before F09 has even evaluated whether a discount makes sense.
+
+    Args:
+        health_status: one of InventoryHealthScore.STATUS_CHOICES values
+            ('HEALTHY', 'WATCH', 'AT RISK', 'CRITICAL'), or None if no
+            health score has been calculated yet for this product.
+
+    Returns:
+        One of the ProductLifecycle.RECOMMENDATION_CHOICES values.
+    """
+    mapping = {
+        'HEALTHY' : 'MONITOR',
+        'WATCH'   : 'REVIEW_DISCOUNT',
+        'AT RISK' : 'DISCOUNT_REVIEW',
+        'CRITICAL': 'IMMEDIATE_ACTION',
+    }
+    # No health score yet for this product (e.g. calculate_health_scores()
+    # hasn't run, or ran after this product was added) — default to the
+    # least aggressive recommendation rather than assuming risk.
+    return mapping.get(health_status, 'MONITOR')
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -50,20 +126,28 @@ def run_lifecycle_calculation():
         Historical period → days 31 to 120    (day 31 to day 120)
         Slow moving check → last 60 days      (day 0  to day 60)
 
-    Classification rules (matches Week 2 pseudocode document exactly):
+    Classification rules (STATUS unchanged from Week 2 pseudocode document;
+    RECOMMENDATION layer updated — see file header notes above):
         introduced_date > today - 30     → NEW         → MONITOR
-        slow_moving_qty < 5              → SLOW_MOVING → DISCONTINUE
+        slow_moving_qty < 5              → SLOW_MOVING → CLEARANCE
+                                            (→ PHASE_OUT if slow 3 periods running)
         current > historical × 1.15      → GROWING     → RETAIN
-        current < historical × 0.85      → DECLINING   → DISCOUNT
+        current < historical × 0.85      → DECLINING   → health-tiered:
+                                              MONITOR / REVIEW_DISCOUNT /
+                                              DISCOUNT_REVIEW / IMMEDIATE_ACTION
+                                              (see _resolve_declining_recommendation)
         everything else                  → STABLE      → RETAIN
 
-    Database queries: 6 total regardless of product count
-        Query 1 — DELETE existing records for this period
-        Query 2 — active products (3 fields only via .only())
-        Query 3 — current period aggregated
-        Query 4 — historical period aggregated
-        Query 5 — slow moving period aggregated
-        Query 6 — bulk_create all lifecycle records
+    Database queries: 9 total regardless of product count
+        Query 1  — DELETE existing records for this period
+        Query 2  — active products (3 fields only via .only())
+        Query 3  — current period aggregated
+        Query 4  — historical period aggregated
+        Query 5  — slow moving period aggregated
+        Query 5b(i)  — distinct prior comparison_periods (last 2)
+        Query 5b(ii) — SLOW_MOVING streak count per product across those periods
+        Query 5c — latest InventoryHealthScore.status per product
+        Query 6  — bulk_create all lifecycle records
 
     Returns:
         {
@@ -105,9 +189,14 @@ def run_lifecycle_calculation():
     # ── Query 2: Fetch ALL active products — only needed fields ───────────────
     # .only() loads just 3 fields instead of all 10 Product fields
     # Reduces memory usage by ~70% for large product catalogs
-    active_products = Product.objects.filter(
-        is_active=True
-    ).only('id', 'product_name', 'introduced_date')
+    # Wrapped in list() so it's evaluated exactly once — we both build a
+    # product_ids list from it (for Query 5c) and iterate it in the main
+    # loop below; without list(), Django would re-run the query twice.
+    active_products = list(
+        Product.objects.filter(
+            is_active=True
+        ).only('id', 'product_name', 'introduced_date')
+    )
 
     # ── Query 3: Current period totals per product ────────────────────────────
     # ONE grouped query — all products at once
@@ -143,6 +232,59 @@ def run_lifecycle_calculation():
             .filter(sale_date__range=(slow_moving_start, today))
             .values('product_id')
             .annotate(total=Sum('quantity_sold'))
+        )
+    }
+
+    # ── Query 5b: Persistence check for SLOW_MOVING → PHASE_OUT escalation ────
+    # SLOW_MOVING should not mean DISCONTINUE on a single run. We only escalate
+    # to PHASE_OUT (consider discontinuing) if a product has ALSO been
+    # SLOW_MOVING in each of the last 2 prior comparison_periods — i.e. slow
+    # for 3 consecutive monthly runs, not just this one.
+    # Still O(1) queries regardless of product count — no per-product lookups.
+    previous_periods = list(
+        ProductLifecycle.objects
+        .exclude(comparison_period=comparison_period)
+        .order_by('-calculated_date')
+        .values_list('comparison_period', flat=True)
+        .distinct()[:2]
+    )
+
+    slow_moving_streak_map = {}
+    if len(previous_periods) == 2:
+        streak_rows = (
+            ProductLifecycle.objects
+            .filter(comparison_period__in=previous_periods, status='SLOW_MOVING')
+            .values('product_id')
+            .annotate(streak_count=Count('id'))
+        )
+        slow_moving_streak_map = {
+            row['product_id']: row['streak_count'] for row in streak_rows
+        }
+
+    # ── Query 5c: Latest Inventory Health Score status per product ────────────
+    # DECLINING is a sales-TREND signal only. Whether it warrants a discount
+    # depends on the product's current inventory CONDITION — that's what
+    # InventoryHealthScore measures. Same Subquery pattern used in
+    # get_latest_lifecycle() below — ONE query regardless of product count,
+    # not N queries (one per product).
+    product_ids = [p.id for p in active_products]
+
+    latest_health_date_subquery = (
+        InventoryHealthScore.objects
+        .filter(product_id=OuterRef('product_id'))
+        .order_by('-calculated_at')
+        .values('calculated_at')[:1]
+    )
+
+    health_status_map = {
+        row['product_id']: row['status']
+        for row in (
+            InventoryHealthScore.objects
+            .filter(
+                product_id__in=product_ids,
+                calculated_at=Subquery(latest_health_date_subquery),
+            )
+            .values('product_id', 'status')
         )
     }
 
@@ -184,8 +326,12 @@ def run_lifecycle_calculation():
         # Less than 5 units in 60 days → product is effectively dead
         # Runs BEFORE velocity comparison — see file header note on priority
         elif slow_moving_qty < 5:
-            status         = 'SLOW_MOVING'
-            recommendation = 'DISCONTINUE'
+            status = 'SLOW_MOVING'
+            prior_slow_streak = slow_moving_streak_map.get(product.id, 0)
+            if len(previous_periods) == 2 and prior_slow_streak == 2:
+                recommendation = 'PHASE_OUT'
+            else:
+                recommendation = 'CLEARANCE'
 
         # ── Step 3: No historical data ─────────────────────────────────────────
         # Product has sales but nothing in days 31-120
@@ -201,11 +347,16 @@ def run_lifecycle_calculation():
             recommendation = 'RETAIN'
 
         # ── Step 5: Declining check ────────────────────────────────────────────
-        # Selling 15% LESS than historical → declining
-        # Automatically fed into F09 Discount Engine as candidate
+        # Selling 15% LESS than historical → declining (TREND signal only).
+        # Recommendation severity is scaled by the product's current
+        # Inventory Health Score — see _resolve_declining_recommendation().
+        # This does NOT calculate or apply a discount; F09 owns that decision
+        # entirely, independently, using PurchaseBatch expiry/stock/margin data.
         elif current_vel < historical_vel * 0.85:
             status         = 'DECLINING'
-            recommendation = 'DISCOUNT'
+            recommendation = _resolve_declining_recommendation(
+                health_status_map.get(product.id)
+            )
 
         # ── Step 6: Stable ────────────────────────────────────────────────────
         # Within ±15% of historical → stable
@@ -272,15 +423,19 @@ def get_latest_lifecycle(status_filter=None):
         )
 
     status_filter → optional string to filter by status
-        'DECLINING'   → used by F09 Discount Engine
+        'DECLINING'   → sales-trend signal (see note below)
         'SLOW_MOVING' → used by F07 Loss Analysis
         None          → returns all products
 
     Called by : Randika → GET /api/lifecycle/
                 Randika → GET /api/lifecycle/declining/
     Displays  : Lavanya → lifecycle report filter tabs
-    Feeds into: F09 → get_latest_lifecycle('DECLINING')
-                F07 → get_latest_lifecycle('SLOW_MOVING')
+
+    NOTE: F09 (calculate_discounts()) does NOT call this function — it was
+    documented as a consumer historically, but F09's actual implementation
+    reads PurchaseBatch/DiscountRule/SystemConfig directly and has no
+    dependency on ProductLifecycle. Left unchanged since other callers
+    (Randika's API views, Lavanya's dashboard filters) do rely on it.
 
     Database queries: 1 total regardless of product count
     """

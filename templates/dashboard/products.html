@@ -607,14 +607,14 @@ function formatCurrency(value) {
 function getAvailabilityBadgeClass(status) {
     const normalized = (status || '').toUpperCase();
     if (normalized === 'AVAILABLE') return 'bg-success';
-    if (normalized === 'LIMITED_STOCK') return 'bg-warning text-dark';
-    if (normalized === 'UNAVAILABLE') return 'bg-danger';
+    if (normalized === 'LOW STOCK') return 'bg-warning text-dark';
+    if (normalized === 'OUT OF STOCK') return 'bg-danger';
     return 'bg-secondary';
 }
 
-function showProductDetailModal(product, availability = {}) {
-    const statusText = (availability.status || 'UNKNOWN').replace('_', ' ');
-    const canOrder = availability.can_order === true ? 'Yes' : 'No';
+function showProductDetailModal(product, stockData = {}) {
+    const statusText = (stockData.stock_status || 'UNKNOWN').replace('_', ' ');
+    const canOrder = (stockData.total_current_stock ?? 0) > 0 ? 'Yes' : 'No';
 
     document.getElementById('detailProductName').textContent = product.product_name || '—';
     document.getElementById('detailSku').textContent = product.sku_code || '—';
@@ -628,7 +628,7 @@ function showProductDetailModal(product, availability = {}) {
 
     const badge = document.getElementById('detailAvailabilityBadge');
     badge.textContent = statusText;
-    badge.className = 'badge rounded-pill px-3 py-2 ' + getAvailabilityBadgeClass(availability.status);
+    badge.className = 'badge rounded-pill px-3 py-2 ' + getAvailabilityBadgeClass(stockData.stock_status);
 
     document.getElementById('productDetailLoading').style.display = 'none';
     document.getElementById('productDetailContent').style.display = 'block';
@@ -670,16 +670,16 @@ function hideProductDetailModal() {
 
 async function viewProductAvailability(id) {
     try {
-        const [productRes, availabilityRes] = await Promise.all([
+        const [productRes, stockRes] = await Promise.all([
             request(`/api/products/${id}/`),
-            request(`/api/products/${id}/availability/`)
+            request(`/api/inventory/stock/${id}/`)
         ]);
 
         if (!productRes.ok) throw new Error('Product details request failed');
 
         const product = await productRes.json();
-        const availability = availabilityRes.ok ? await availabilityRes.json() : {};
-        showProductDetailModal(product, availability);
+        const stockData = stockRes.ok ? await stockRes.json() : {};
+        showProductDetailModal(product, stockData);
     } catch (e) {
         const modal = document.getElementById('productDetailModal');
         document.getElementById('productDetailLoading').style.display = 'none';
