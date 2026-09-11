@@ -1,7 +1,7 @@
 import json
 
 from datetime import date, datetime, timedelta
-from django.db.models import Avg, Count
+from django.db.models import Avg, Count, Q
 from django.db import IntegrityError, transaction
 from core.authentication import LenientJWTAuthentication
 from .models import ChatbotLog, ProductRating, ProductRatingSummary
@@ -322,7 +322,11 @@ class OrderListCreateView(APIView):
 
         params = request.query_params
         orders = OnlineOrder.objects.select_related("customer").annotate(
-            item_count=Count("onlineorderitem")
+            item_count=Count("onlineorderitem"),
+            rating_average=Avg(
+                "productrating__rating",
+                filter=Q(productrating__is_active=True),
+            ),
         )
 
         order_status = params.get("status")
@@ -355,6 +359,7 @@ class OrderListCreateView(APIView):
                 "total_amount": order.total_amount,
                 "collection_deadline": order.collection_deadline,
                 "item_count": order.item_count,
+                "rating": order.rating_average,
             }
             for order in orders.order_by("-id")
         ])
@@ -675,6 +680,10 @@ class OrderDetailView(APIView):
             )
 
         items = OnlineOrderItem.objects.filter(order=order).select_related("product")
+        ratings = ProductRating.objects.filter(
+            order=order, is_active=True
+        ).values("product_id", "rating", "feedback_text", "created_at")
+        ratings_by_product = {rating["product_id"]: rating for rating in ratings}
         return Response({
             "id": order.id,
             "order_reference": order.order_reference,
@@ -691,10 +700,12 @@ class OrderDetailView(APIView):
             "total_amount": order.total_amount,
             "items": [
                 {
+                    "product_id": item.product_id,
                     "product_name": item.product.product_name,
                     "quantity": item.quantity,
                     "unit_price": item.unit_price,
                     "line_total": item.unit_price * item.quantity,
+                    "rating": ratings_by_product.get(item.product_id),
                 }
                 for item in items
             ],
@@ -756,6 +767,26 @@ class RatingCreateView(APIView):
         serializer.is_valid(raise_exception=True)
 
         product = serializer.validated_data["product"]
+        order = None
+        order_id = serializer.validated_data.get("order")
+        if order_id is not None:
+            try:
+                order = OnlineOrder.objects.get(id=order_id, customer=customer)
+            except OnlineOrder.DoesNotExist:
+                return Response(
+                    {"error": "Order not found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            if order.status != "COMPLETED":
+                return Response(
+                    {"error": "Only completed orders can be rated."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not OnlineOrderItem.objects.filter(order=order, product=product).exists():
+                return Response(
+                    {"error": "Product is not part of this order."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         is_verified = OnlineOrderItem.objects.filter(
             order__customer=customer,
@@ -767,6 +798,7 @@ class RatingCreateView(APIView):
             rating = ProductRating.objects.create(
                 product=product,
                 customer=customer,
+                order=order,
                 rating=serializer.validated_data["rating"],
                 feedback_text=serializer.validated_data.get("feedback_text", ""),
                 is_verified=is_verified,
@@ -781,6 +813,7 @@ class RatingCreateView(APIView):
             {
                 "message": "Rating submitted",
                 "rating_id": rating.id,
+                "order_id": rating.order_id,
                 "is_verified": rating.is_verified,
             },
             status=status.HTTP_201_CREATED,

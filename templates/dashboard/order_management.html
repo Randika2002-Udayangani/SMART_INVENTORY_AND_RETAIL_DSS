@@ -69,7 +69,7 @@
     <div class="order-table-wrap">
       <table class="table table-hover order-table">
         <thead class="table-light">
-          <tr><th>Reference</th><th>Customer</th><th>Pickup</th><th>Items</th><th>Total</th><th>Status</th><th>Deadline</th><th id="actionHeader">Action</th></tr>
+          <tr><th>Reference</th><th>Customer</th><th>Pickup</th><th>Items</th><th>Total</th><th>Status</th><th>Rating</th><th>Deadline</th><th id="actionHeader">Action</th></tr>
         </thead>
         <tbody id="orderBody"><tr><td colspan="8" class="text-center text-muted">Loading...</td></tr></tbody>
       </table>
@@ -131,7 +131,7 @@
 
   function renderRows(rows) {
     const body = document.getElementById('orderBody');
-    if (!rows.length) { body.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No orders found.</td></tr>'; document.getElementById('orderPagination').innerHTML = ''; return; }
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No orders found.</td></tr>'; document.getElementById('orderPagination').innerHTML = ''; return; }
 
     const totalPages = Math.max(1, Math.ceil(rows.length / orderPageSize));
     orderPage = Math.min(orderPage, totalPages);
@@ -145,6 +145,7 @@
         <td>${escapeHtml(order.item_count)}</td>
         <td>${money(order.total_amount)}</td>
         <td>${statusBadge(order.status)}</td>
+        <td>${order.rating == null ? '—' : `${Number(order.rating).toFixed(1)} / 5`}</td>
         <td>${displayDate(order.collection_deadline)}</td>
         <td>${renderActions(order)}</td>
       </tr>`).join('');
@@ -181,7 +182,7 @@
     try {
       const data = await apiFetch(`/api/orders/${params.toString() ? '?' + params : ''}`);
       paginateAndRender(Array.isArray(data) ? data : (data.results || []));
-    } catch (error) { document.getElementById('orderBody').innerHTML = '<tr><td colspan="8" class="text-center text-muted">Could not load orders.</td></tr>'; document.getElementById('orderPagination').innerHTML = ''; showError('Orders could not be loaded. Please try again.'); }
+    } catch (error) { document.getElementById('orderBody').innerHTML = '<tr><td colspan="9" class="text-center text-muted">Could not load orders.</td></tr>'; document.getElementById('orderPagination').innerHTML = ''; showError('Orders could not be loaded. Please try again.'); }
   }
 
   async function loadOverdue() {
@@ -230,7 +231,7 @@
           <div><div class="order-detail-label">Total</div><div class="order-detail-value">${money(order.total_amount)}</div></div>
         </div>
         <p class="small text-muted">${escapeHtml(order.notes || 'No notes')}</p>
-        <table class="table table-sm"><thead><tr><th>Product</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead><tbody>${order.items.map(item => `<tr><td>${escapeHtml(item.product_name)}</td><td>${escapeHtml(item.quantity)}</td><td>${money(item.unit_price)}</td><td>${money(item.line_total)}</td></tr>`).join('')}</tbody></table>`;
+        <table class="table table-sm"><thead><tr><th>Product</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>Rating</th></tr></thead><tbody>${order.items.map(item => `<tr><td>${escapeHtml(item.product_name)}</td><td>${escapeHtml(item.quantity)}</td><td>${money(item.unit_price)}</td><td>${money(item.line_total)}</td><td>${item.rating ? `${item.rating.rating}/5${item.rating.feedback_text ? `<br><small>${escapeHtml(item.rating.feedback_text)}</small>` : ''}` : '—'}</td></tr>`).join('')}</tbody></table>`;
       document.getElementById('detailModal').hidden = false;
     } catch (error) { showError('Order details could not be loaded.'); }
   }

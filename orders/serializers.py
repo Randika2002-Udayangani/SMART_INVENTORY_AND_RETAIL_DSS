@@ -196,6 +196,7 @@ class RatingCreateSerializer(serializers.Serializer):
     product = serializers.PrimaryKeyRelatedField(
         queryset=Product.objects.filter(is_active=True)
     )
+    order = serializers.IntegerField(required=False)
     rating = serializers.IntegerField(min_value=1, max_value=5)
     feedback_text = serializers.CharField(
         max_length=500, required=False, allow_blank=True
