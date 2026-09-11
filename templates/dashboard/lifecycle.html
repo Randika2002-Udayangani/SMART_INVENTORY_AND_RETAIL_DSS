@@ -94,9 +94,15 @@
   }
 
   function recPill(recommendation) {
+    // CLEARANCE / PHASE_OUT added: SLOW_MOVING no longer auto-recommends
+    // DISCONTINUE off a single period (see inventory/services/lifecycle.py).
+    // CLEARANCE = first/non-consecutive slow period, discount candidate.
+    // PHASE_OUT = SLOW_MOVING for 3 consecutive monthly runs — review to
+    // discontinue. DISCONTINUE kept in the map for any old/legacy rows.
     const map = {
       RETAIN: '#dcfce7;color:#16a34a', MONITOR: '#dbeafe;color:#1d4ed8',
-      DISCOUNT: '#fef9c3;color:#854d0e', DISCONTINUE: '#fee2e2;color:#dc2626'
+      DISCOUNT: '#fef9c3;color:#854d0e', CLEARANCE: '#fef9c3;color:#a16207',
+      PHASE_OUT: '#fed7aa;color:#c2410c', DISCONTINUE: '#fee2e2;color:#dc2626'
     };
     const safeRecommendation = String(recommendation ?? '—');
     return `<span class="pill" style="background:${map[safeRecommendation] || '#f3f4f6;color:#374151'}">${escapeHtml(safeRecommendation)}</span>`;

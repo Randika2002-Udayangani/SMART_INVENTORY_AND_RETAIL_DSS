@@ -12,7 +12,7 @@ from inventory.views import (
 
 from sales.views import ItemSalesListView
 from sales.views import profit_summary
-from analytics.views import slow_moving, sales_trend, category_performance, store_revenue, overview, products
+from analytics.views import slow_moving, sales_trend, category_performance, store_revenue, overview, products, product_analysis
 
 urlpatterns = [
     # ── F05 Profit & Analytics ────────────────────────────
@@ -44,4 +44,6 @@ urlpatterns = [
     # written+tested in profit_engine.py but unwired per API_Design_Document_v3.2 §26.3.
     path('analytics/overview/', overview, name='analytics-overview'),
     path('analytics/products/', products, name='analytics-products'),
+    path('analytics/products/', products, name='analytics-products'),
+    path('analytics/products/<int:product_id>/analysis/', product_analysis, name='analytics-product-analysis'),
 ]
