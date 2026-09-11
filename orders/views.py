@@ -965,12 +965,14 @@ class OrderMyOrdersView(APIView):
 
     def get(self, request):
         customer = request.user
-        orders = OnlineOrder.objects.filter(customer=customer).order_by("-id")
+        orders = OnlineOrder.objects.filter(customer=customer).prefetch_related(
+            "onlineorderitem_set__product"
+        ).order_by("-id")
 
         response = []
         for order in orders:
-            items = OnlineOrderItem.objects.filter(order=order)
             response.append({
+                "id": order.id,
                 "order_reference": order.order_reference,
                 "pickup_date": order.pickup_date,
                 "pickup_time_slot": order.pickup_time_slot,
@@ -979,11 +981,13 @@ class OrderMyOrdersView(APIView):
                 "total_amount": float(order.total_amount),
                 "items": [
                     {
+                        "product_id": item.product_id,
                         "product": item.product.product_name,
+                        "product_name": item.product.product_name,
                         "quantity": item.quantity,
                         "unit_price": float(item.unit_price),
                     }
-                    for item in items
+                    for item in order.onlineorderitem_set.all()
                 ],
             })
         return Response(response)

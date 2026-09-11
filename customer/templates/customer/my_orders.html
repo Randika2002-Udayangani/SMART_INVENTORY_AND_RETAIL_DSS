@@ -332,7 +332,7 @@
                             ${status}
                         </span>
 
-                        ${status === 'PENDING' ? `
+                        ${['PENDING', 'CONFIRMED', 'READY'].includes(status) ? `
                             <button onclick="cancelOrder(${orderId}, '${orderRef}')"
                                 style="margin-top:8px; width:100%; padding:6px;
                                 background:white; color:#c5221f; border:1.5px solid #c5221f;
@@ -340,8 +340,8 @@
                                 Cancel Order
                             </button>` : ''}
 
-                        ${status === 'COMPLETED' ? `
-                            <button onclick="openRatingModal(${o.product_id || orderId}, '${productName.replace(/'/g, '')}')"                                style="margin-top:8px; width:100%; padding:6px;
+                        ${status === 'COMPLETED' && o.product_id ? `
+                            <button onclick="openRatingModal(${o.product_id}, '${productName.replace(/'/g, '')}')"                                style="margin-top:8px; width:100%; padding:6px;
                                 background:#e8f0fe; color:#1a73e8; border:1.5px solid #1a73e8;
                                 border-radius:6px; cursor:pointer; font-size:0.82rem;">
                                 ⭐ Rate this order
@@ -367,13 +367,11 @@
 
         // Try real API
         try {
-            const res = await fetch(`/api/orders/${orderId}/status/`, {
-                method: 'PATCH',
+            const res = await fetch(`/api/orders/${orderId}/`, {
+                method: 'DELETE',
                 headers: {
-                    'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + token
-                },
-                body: JSON.stringify({ status: 'CANCELLED' })
+                }
             });
 
             if (res.ok) {
@@ -411,10 +409,10 @@
                         id:         o.id,
                         ref:        o.order_reference,
                         product:    o.items
-                            ? o.items.map(i => i.product_name).join(', ')
+                            ? o.items.map(i => i.product_name || i.product).join(', ')
                             : 'Order',
                         product_id: o.items && o.items.length > 0
-                            ? o.items[0].product
+                            ? (o.items[0].product_id || o.items[0].product)
                             : null,
                         qty:        o.items
                             ? o.items.reduce((s, i) => s + i.quantity, 0)
