@@ -145,8 +145,13 @@ class ProductLifecycle(models.Model):
     RECOMMENDATION_CHOICES = [
         ('RETAIN', 'Retain'),
         ('DISCOUNT', 'Discount'),
-        ('DISCONTINUE', 'Discontinue'),
+        ('CLEARANCE', 'Clearance'),
+        ('PHASE_OUT', 'Consider Discontinuing'),
+        ('DISCONTINUE', 'Discontinue'),  # kept for legacy records, no longer assigned
         ('MONITOR', 'Monitor'),
+        ('REVIEW_DISCOUNT', 'Review Discount'),    # DECLINING + WATCH health
+        ('DISCOUNT_REVIEW', 'Discount Review'),    # DECLINING + AT RISK health
+        ('IMMEDIATE_ACTION', 'Immediate Action'),  # DECLINING + CRITICAL health
     ]
     product = models.ForeignKey(
         Product, on_delete=models.CASCADE, db_column='product_id'
@@ -155,7 +160,7 @@ class ProductLifecycle(models.Model):
     sales_velocity = models.DecimalField(max_digits=10, decimal_places=2)
     comparison_period = models.CharField(max_length=10)
     recommendation = models.CharField(
-        max_length=15, choices=RECOMMENDATION_CHOICES
+        max_length=20, choices=RECOMMENDATION_CHOICES
     )
     calculated_date = models.DateField(auto_now_add=True)
 

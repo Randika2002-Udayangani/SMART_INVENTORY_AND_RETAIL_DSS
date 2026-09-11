@@ -28,6 +28,7 @@ from products.models import Product
 from users.audit import log_action
 from users.models import SystemConfig
 from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore, ReorderRecommendation
+from inventory.services.fefo import deduct_stock_fefo
 
 from .models import (
     UploadLog,
@@ -342,6 +343,37 @@ class ItemLedgerPDFUploadView(APIView):
                 )
 
                 inserted += 1
+
+                # ── FIX: stock was never actually deducted on sale ────────
+                # ItemSalesRecord existed but PurchaseBatch.remaining_quantity
+                # was never touched -- this endpoint has been silently NOT
+                # doing what Section 9 of the API doc documents ("Deducts
+                # stock via FEFO") since it was first built. See
+                # inventory/services/fefo.py for full root-cause notes.
+                # Does not fail the upload on shortfall -- the sale itself
+                # is real/authoritative data; an oversell here means the
+                # STOCK bookkeeping is behind (likely from historical sales
+                # recorded before this fix existed, not yet reconciled via
+                # reconcile_stock_fefo), not that the sale should be
+                # rejected. Surfaced as a warning instead.
+                sale_record = ItemSalesRecord.objects.filter(
+                    product=product, sale_date=sale_date
+                ).order_by('-id').first()
+
+                fefo_result = deduct_stock_fefo(
+                    product_id=product.id,
+                    quantity=qty,
+                    source='SALE_SYNC_ITEM_LEDGER',
+                    reference_id=sale_record.id if sale_record else None,
+                )
+                if fefo_result['shortfall'] > 0:
+                    errors.append(
+                        f'{sale_date}: sold {qty} but only '
+                        f'{fefo_result["deducted"]} could be deducted from '
+                        f'sellable batches (shortfall {fefo_result["shortfall"]}). '
+                        f'Stock bookkeeping for this product may need '
+                        f'reconciliation -- see reconcile_stock_fefo command.'
+                    )
 
             # ---------------------------------------------------------
             # Update Sync Date
@@ -1316,7 +1348,7 @@ def _pdf_response(filename, title, headers, rows, summary=None):
 @permission_classes([IsAuthenticated])
 def sales_report_export(request):
     """GET /api/reports/sales/?format=excel|pdf&date_from=&date_to="""
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1371,7 +1403,7 @@ def sales_report_export(request):
 @permission_classes([IsAuthenticated])
 def profit_report_export(request):
     """GET /api/reports/profit/?format=excel|pdf&date_from=&date_to="""
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1452,7 +1484,7 @@ def profit_report_export(request):
 @permission_classes([IsAuthenticated])
 def inventory_report_export(request):
     """GET /api/reports/inventory/?format=excel|pdf"""
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1522,7 +1554,7 @@ def inventory_report_export(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def health_score_report_export(request):
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1582,7 +1614,7 @@ def health_score_report_export(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def supplier_report_export(request):
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1627,7 +1659,7 @@ def supplier_report_export(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def lifecycle_report_export(request):
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1663,7 +1695,7 @@ def lifecycle_report_export(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def loss_report_export(request):
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1717,7 +1749,7 @@ def loss_report_export(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def reorder_report_export(request):
-    fmt = request.query_params.get('format', 'excel').lower()
+    fmt = request.query_params.get('file_format', 'excel').lower()
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
