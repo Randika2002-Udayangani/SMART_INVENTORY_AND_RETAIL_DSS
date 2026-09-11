@@ -1,4 +1,5 @@
 from rest_framework import generics, permissions, status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -68,6 +69,13 @@ class StoreZoneDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ─────────────────────────────────────────────
 class ProductListCreateView(generics.ListCreateAPIView):
     authentication_classes = [LenientJWTAuthentication]
+
+    class ProductPagination(PageNumberPagination):
+        page_size = 25
+        page_size_query_param = 'page_size'
+        max_page_size = 100
+
+    pagination_class = ProductPagination
 
     def get_queryset(self):
         queryset = Product.objects.filter(is_active=True)
