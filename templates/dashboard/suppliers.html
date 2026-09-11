@@ -6,6 +6,7 @@
 {% block extra_css %}
     <style>
         .page-header { position:sticky; top:0; z-index:1020; background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
+        .table thead th { position:sticky; top:var(--supplier-header-height, 80px); z-index:10; background:#f8f9fa; }
         .btn-primary { background:#2d6a4f; border:none; }
         .btn-primary:hover { background:#1b4332; }
         .card { border-radius:12px; border:1px solid #e2e8f0; }
@@ -26,7 +27,7 @@
 
 <div class="container-fluid px-4">
     <div class="d-flex justify-content-between mb-3">
-        <input type="text" id="supSearch" class="form-control form-control-sm" style="width:280px;" placeholder="Search supplier name..." onkeyup="renderSuppliers()">
+        <input type="text" id="supSearch" class="form-control form-control-sm" style="width:280px;" placeholder="Search supplier name..." oninput="supplierPage = 1; renderSuppliers()">
         <button class="btn btn-primary btn-sm" onclick="showAddForm()">+ Add Supplier</button>
     </div>
 
@@ -72,6 +73,7 @@
                 <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+        <div id="supPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
 </div>
 
@@ -93,7 +95,21 @@
 const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
 
+function setSupplierHeaderHeight() {
+    const header = document.querySelector('.page-header');
+    if (header) {
+        document.documentElement.style.setProperty('--supplier-header-height', `${header.offsetHeight}px`);
+    }
+}
+
+window.addEventListener('load', setSupplierHeaderHeight);
+window.addEventListener('resize', setSupplierHeaderHeight);
+setSupplierHeaderHeight();
+
 let allSuppliers = [];
+let canManageSuppliers = false;
+let supplierPage = 1;
+const supplierPageSize = 25;
 
 function extractArray(data) {
     if (Array.isArray(data)) return data;
@@ -107,6 +123,7 @@ async function loadSuppliers() {
         });
         const data = await res.json();
         allSuppliers = extractArray(data);
+        supplierPage = 1;
         renderSuppliers();
     } catch(e) {
         document.getElementById('supBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Could not load suppliers.</td></tr>';
@@ -119,9 +136,15 @@ function renderSuppliers() {
     const tbody = document.getElementById('supBody');
     if (rows.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No suppliers found.</td></tr>';
+        document.getElementById('supPagination').innerHTML = '';
         return;
     }
-    tbody.innerHTML = rows.map(s => `
+    const totalPages = Math.max(1, Math.ceil(rows.length / supplierPageSize));
+    supplierPage = Math.min(supplierPage, totalPages);
+    const startIndex = (supplierPage - 1) * supplierPageSize;
+    const endIndex = startIndex + supplierPageSize;
+    const pageRows = rows.slice(startIndex, endIndex);
+    tbody.innerHTML = pageRows.map(s => `
         <tr>
             <td style="font-weight:600">${s.name ?? s.supplier_name ?? '—'}</td>
             <td>${s.email ?? '—'}</td>
@@ -130,15 +153,30 @@ function renderSuppliers() {
             <td>${s.return_policy ?? '—'}</td>
                     <td>
                         <div class="d-flex gap-1 flex-wrap">
-                            <button class="btn btn-sm btn-outline-secondary" onclick='editSupplier(${JSON.stringify(s)})'>Edit</button>
+                            ${canManageSuppliers ? `<button class="btn btn-sm btn-outline-secondary" onclick="editSupplierById(${s.id ?? s.supplier_id})">Edit</button>` : ''}
                             <button class="btn btn-sm btn-outline-primary" onclick="showScorecard(${s.id ?? s.supplier_id})">Scorecard</button>
                             <button class="btn btn-sm btn-outline-info" onclick="showCostTrend(${s.id ?? s.supplier_id})">Cost trend</button>
                             <button class="btn btn-sm btn-outline-dark" onclick="showPurchaseHistory(${s.id ?? s.supplier_id})">Purchases</button>
-                            <button class="btn btn-sm btn-outline-danger" onclick="deleteSupplier(${s.id ?? s.supplier_id})">Delete</button>
+                            ${canManageSuppliers ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteSupplier(${s.id ?? s.supplier_id})">Delete</button>` : ''}
                         </div>
                     </td>
         </tr>
     `).join('');
+    document.getElementById('supPagination').innerHTML = rows.length > supplierPageSize ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeSupplierPage(-1)" ${supplierPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${supplierPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeSupplierPage(1)" ${supplierPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+}
+
+function changeSupplierPage(delta) {
+    supplierPage += delta;
+    renderSuppliers();
+    document.querySelector('.page-header')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function editSupplierById(id) {
+    const supplier = allSuppliers.find(item => String(item.id ?? item.supplier_id) === String(id));
+    if (supplier) editSupplier(supplier);
 }
 
 function showAddForm() {
@@ -192,16 +230,19 @@ function hideSupplierModal() {
 }
 
 async function deleteSupplier(id) {
-    if (!id || !confirm('Delete this supplier?')) return;
+    if (!id || !confirm('Permanently delete this supplier?')) return;
     try {
         const res = await fetch(`/api/suppliers/${id}/`, {
             method: 'DELETE',
             headers: { 'Authorization': 'Bearer ' + token }
         });
-        if (!res.ok) throw new Error('Delete failed');
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({}));
+            throw new Error(error.detail ?? error.error ?? `Delete failed (${res.status})`);
+        }
         loadSuppliers();
     } catch (e) {
-        alert('Could not delete supplier.');
+        alert(e.message || 'Could not delete supplier.');
     }
 }
 
@@ -262,7 +303,7 @@ async function showPurchaseHistory(id) {
 async function saveSupplier() {
     const id = document.getElementById('supId').value;
     const body = {
-        name: document.getElementById('supName').value,
+        supplier_name: document.getElementById('supName').value,
         email: document.getElementById('supEmail').value,
         contact_number: document.getElementById('supPhone').value,
         lead_time_days: Number(document.getElementById('supLeadTime').value),
@@ -270,7 +311,7 @@ async function saveSupplier() {
     };
     const msgBox = document.getElementById('supMsg');
 
-    if (!body.name || (!body.email && !body.contact_number) || !body.lead_time_days) {
+    if (!body.supplier_name || (!body.email && !body.contact_number) || !body.lead_time_days) {
         msgBox.innerHTML = '<div class="alert alert-warning py-2">Name, lead time, and at least one contact method (email or phone) are required.</div>';
         return;
     }
@@ -295,6 +336,11 @@ async function saveSupplier() {
         msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
     }
 }
+
+fetchCurrentUser().then(role => {
+    canManageSuppliers = ['ADMIN', 'MANAGER'].includes(String(role ?? '').toUpperCase());
+    renderSuppliers();
+});
 
 loadSuppliers();
 </script>
