@@ -509,7 +509,8 @@ class LossRecordView(APIView):
 
         data = queryset.values(
             'id', 'product', 'product__product_name', 'batch', 'loss_type',
-            'loss_quantity', 'loss_value', 'loss_date', 'notes'
+            'loss_quantity', 'loss_value', 'loss_date', 'notes',
+            'recorded_by', 'recorded_by__username'
         )
         data = [
             {**row, 'product_name': row.pop('product__product_name')}
@@ -1158,12 +1159,15 @@ IMPORTANT NOTE on GET vs POST:
 """
 
 
-RECOMMENDATION_MAP = {
+DEFAULT_RECOMMENDATION_MAP = {
     'NEW':          'MONITOR',
     'GROWING':      'RETAIN',
     'STABLE':       'RETAIN',
     'DECLINING':    'DISCOUNT',
-    'SLOW_MOVING':  'DISCONTINUE',
+    'SLOW_MOVING':  'CLEARANCE',  # fallback only — actual saved value on
+                                   # record.recommendation may be PHASE_OUT
+                                   # after 3 consecutive SLOW_MOVING runs.
+                                   # See inventory/services/lifecycle.py.
 }
 
 STATUS_ORDER = {
@@ -1190,7 +1194,7 @@ def lifecycle_analytics(request):
         product_name        str
         sku_code             str
         lifecycle_status     str  — NEW | GROWING | STABLE | DECLINING | SLOW_MOVING
-        recommendation        str  — RETAIN | MONITOR | DISCOUNT | DISCONTINUE
+        recommendation        str  — RETAIN | MONITOR | DISCOUNT | CLEARANCE | PHASE_OUT
         sales_velocity         float — avg units/day in the calculation period
         comparison_period      str  — YYYY-MM format
         calculated_date        str  — when this record was generated
@@ -1238,8 +1242,12 @@ def lifecycle_analytics(request):
     # ── Serialize ─────────────────────────────────────────────────────────────
     results = []
     for record in latest_records:
-        recommendation = RECOMMENDATION_MAP.get(
-            record.status, record.recommendation or 'MONITOR'
+        # PHASE_OUT vs CLEARANCE for SLOW_MOVING depends on multi-period
+        # streak history (see lifecycle.py) — cannot be derived from status
+        # alone. Trust the saved value; only fall back to the default map
+        # when the DB value is genuinely blank/null (a stale/legacy row).
+        recommendation = record.recommendation or DEFAULT_RECOMMENDATION_MAP.get(
+            record.status, 'MONITOR'
         )
 
         results.append({

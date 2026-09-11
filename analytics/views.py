@@ -18,7 +18,18 @@ from sales.services.profit_engine import (
 from sales.models import ItemSalesRecord
 from products.models import Product
 from core.utils import get_last_sync_date
-from django.db.models import Max
+from django.db.models import Max, Sum
+
+from django.db.models.functions import TruncMonth  
+from inventory.models import InventoryHealthScore, ProductLifecycle
+from inventory.services.reorder_logic import (
+    get_current_stock as _get_current_stock,
+    get_urgency as _get_urgency,
+    calc_suggested_qty as _calc_suggested_qty,
+    _get_supplier_lead_time,
+    SALES_LOOKBACK_DAYS,
+)
+from sales.services.profit_engine import product_monthly_trend as _product_monthly_trend
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -485,4 +496,114 @@ def products(request):
         'page': page,
         'page_size': page_size,
         'results': results,
+    })
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def product_analysis(request, product_id):
+    """
+    GET /api/analytics/products/<product_id>/analysis/?date_from=&date_to=&months=
+
+    Drill-down payload for "View Analysis" on the Product Performance
+    table: period P&L, stock/reorder position, latest lifecycle + health
+    score (already-calculated records — this does NOT recalculate them),
+    monthly trend, and a derived manager recommendation.
+    """
+    try:
+        product = Product.objects.select_related('brand', 'category').get(pk=product_id)
+    except Product.DoesNotExist:
+        return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        date_from, date_to = _parse_date_range(request)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        months = int(request.query_params.get('months', 6))
+    except (TypeError, ValueError):
+        return Response({'error': 'months must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # ── Period P&L for this product, same WAC method as calculate_sales_and_profit ──
+    agg = ItemSalesRecord.objects.filter(
+        product_id=product_id, sale_date__range=(date_from, date_to)
+    ).aggregate(total_qty=Sum('quantity_sold'), total_revenue=Sum('total_amount'))
+    units_sold = agg['total_qty'] or 0
+    revenue = agg['total_revenue'] or Decimal('0.00')
+    avg_cost = product.avg_cost_price or Decimal('0.00')
+    cost = units_sold * avg_cost
+    profit = revenue - cost
+    margin_pct = float(round(profit / revenue * 100, 2)) if revenue else 0.0
+
+    # ── Stock position — same 30-day lookback constant reorder_logic.py uses ──
+    current_stock = _get_current_stock(product_id)
+    since = date.today() - timedelta(days=SALES_LOOKBACK_DAYS)
+    recent_sold = ItemSalesRecord.objects.filter(
+        product_id=product_id, sale_date__gte=since
+    ).aggregate(total=Sum('quantity_sold'))['total'] or 0
+    avg_daily_sales = round(recent_sold / SALES_LOOKBACK_DAYS, 2)
+    days_of_stock = round(current_stock / avg_daily_sales, 1) if avg_daily_sales else None
+
+    reorder = None
+    if avg_daily_sales:
+        supplier_id, lead_time_days = _get_supplier_lead_time(product)
+        qty_data = _calc_suggested_qty(Decimal(str(avg_daily_sales)), current_stock, lead_time_days)
+        reorder = {
+            'avg_daily_sales': avg_daily_sales,
+            'days_of_stock': days_of_stock,
+            'lead_time_days': lead_time_days,
+            'supplier_id': supplier_id,
+            'safety_stock': qty_data['safety_stock'],
+            'suggested_quantity': qty_data['suggested_quantity'],
+            'urgency': _get_urgency(days_of_stock),
+        }
+
+    # ── Latest already-calculated lifecycle & health records (not recalculated here) ──
+    lc = ProductLifecycle.objects.filter(product=product).order_by('-calculated_date', '-id').first()
+    lifecycle = {
+        'status': lc.status, 'recommendation': lc.recommendation,
+        'sales_velocity': float(lc.sales_velocity), 'calculated_date': str(lc.calculated_date),
+    } if lc else None
+
+    hs = InventoryHealthScore.objects.filter(product=product).order_by('-calculated_date', '-id').first()
+    health = {
+        'overall_score': float(hs.overall_score), 'status': hs.status,
+        'recommended_action': hs.recommended_action, 'calculated_date': str(hs.calculated_date),
+    } if hs else None
+
+    # ── Derived recommendation — reorder urgency first, then lifecycle/health ──
+    if reorder and reorder['urgency'] in ('CRITICAL', 'HIGH'):
+        recommendation = {
+            'action': 'REORDER',
+            'reason': f"Sells ~{reorder['avg_daily_sales']} units/day, {reorder['days_of_stock']} days of stock "
+                      f"left against a {reorder['lead_time_days']}-day supplier lead time.",
+            'suggested_quantity': reorder['suggested_quantity'],
+        }
+    elif lifecycle and lifecycle['status'] == 'DECLINING':
+        recommendation = {'action': 'DISCOUNT', 'reason': 'Sales are declining versus the historical baseline.'}
+    elif health and health['status'] in ('AT RISK', 'CRITICAL'):
+        recommendation = {'action': 'REVIEW', 'reason': f"Health score is {health['status']} ({health['overall_score']}/100)."}
+    else:
+        recommendation = {'action': 'MONITOR', 'reason': 'No urgent stock, lifecycle or health signal right now.'}
+
+    return Response({
+        'product': {
+            'id': product.id, 'name': product.product_name, 'sku_code': product.sku_code,
+            'brand': product.brand.brand_name if product.brand else None,
+            'category': product.category.category_name if product.category else None,
+            'unit_price': float(product.unit_price), 'avg_cost_price': float(avg_cost),
+        },
+        'period': {'date_from': str(date_from), 'date_to': str(date_to)},
+        'summary': {
+            'current_stock': current_stock, 'units_sold': units_sold,
+            'revenue': float(revenue), 'cost': float(cost),
+            'profit': float(profit), 'margin_pct': margin_pct,
+        },
+        'reorder': reorder,
+        'lifecycle': lifecycle,
+        'health': health,
+        'monthly_sales': _product_monthly_trend(product_id, months=months),
+        'recommendation': recommendation,
     })
