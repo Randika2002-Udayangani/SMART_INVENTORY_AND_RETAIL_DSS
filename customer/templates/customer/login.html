@@ -138,10 +138,13 @@
             console.log('Login response:', data);
 
             if (res.ok) {
-                // Token is directly data.access (not nested)
                 sessionStorage.setItem('jwt', data.access);
                 sessionStorage.setItem('customerName', data.name);
-                window.location.href = '/customer/products/';
+
+                // If customer came from cart — go back to cart
+                const redirect = sessionStorage.getItem('redirectAfterLogin') || '/customer/products/';
+                sessionStorage.removeItem('redirectAfterLogin');
+                window.location.href = redirect;
             } else {
                 showError(data.error || 'Wrong email or password.');
             }

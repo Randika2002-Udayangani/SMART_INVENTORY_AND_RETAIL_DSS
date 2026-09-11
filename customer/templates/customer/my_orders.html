@@ -341,8 +341,7 @@
                             </button>` : ''}
 
                         ${status === 'COMPLETED' ? `
-                            <button onclick="openRatingModal(${orderId}, '${productName.replace(/'/g, '')}')"
-                                style="margin-top:8px; width:100%; padding:6px;
+                            <button onclick="openRatingModal(${o.product_id || orderId}, '${productName.replace(/'/g, '')}')"                                style="margin-top:8px; width:100%; padding:6px;
                                 background:#e8f0fe; color:#1a73e8; border:1.5px solid #1a73e8;
                                 border-radius:6px; cursor:pointer; font-size:0.82rem;">
                                 ⭐ Rate this order
@@ -390,28 +389,50 @@
     // ── Load orders ───────────────────────────────────────────────
     async function loadOrders() {
         showLoading();
-
         const token = sessionStorage.getItem('jwt');
 
         try {
-            const res = await fetch('/api/orders/list/', {
+            // Try real API first — gets live status from database
+            const res = await fetch('/api/orders/my-orders/', {
                 headers: { 'Authorization': 'Bearer ' + token }
             });
 
+            console.log('Orders API status:', res.status);
+
             if (res.ok) {
                 const data   = await res.json();
+                console.log('Orders data:', data);
+
                 const orders = Array.isArray(data) ? data : (data.results || []);
 
                 if (orders.length > 0) {
-                    renderOrders(orders);
+                    // Map real API fields to display format
+                    const mapped = orders.map(o => ({
+                        id:         o.id,
+                        ref:        o.order_reference,
+                        product:    o.items
+                            ? o.items.map(i => i.product_name).join(', ')
+                            : 'Order',
+                        product_id: o.items && o.items.length > 0
+                            ? o.items[0].product
+                            : null,
+                        qty:        o.items
+                            ? o.items.reduce((s, i) => s + i.quantity, 0)
+                            : 1,
+                        total:      `Rs ${parseFloat(o.total_amount || 0).toFixed(2)}`,
+                        date:       o.pickup_date,
+                        slot:       o.pickup_time_slot,
+                        status:     o.status
+                    }));
+                    renderOrders(mapped);
                     return;
                 }
             }
         } catch (err) {
-            console.log('API not ready, using sessionStorage');
+            console.log('API error:', err);
         }
 
-        // ── Always fallback to sessionStorage ──
+        // Fallback to sessionStorage
         const saved = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
         renderOrders(saved);
     }
@@ -497,9 +518,10 @@
                 closeRatingModal();
                 alert(`✅ Thank you for your rating!${data.is_verified ? ' (Verified purchase ✓)' : ''}`);
             } else {
-                alert(data.error || 'Could not submit rating. Please try again.');
-            }
-        } catch (err) {
+                console.error('Rating error:', data);
+                alert(data.error || JSON.stringify(data) || 'Could not submit rating. Please try again.');
+            } 
+       } catch (err) {
             console.error('Rating error:', err);
             alert('Connection error. Please try again.');
         }
