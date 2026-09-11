@@ -205,6 +205,13 @@
         body: JSON.stringify({ status: nextStatus })
       });
       await loadRecommendations();
+      // Marking as ORDERED creates a shared notification on the backend —
+      // refresh the sidebar badge immediately instead of waiting for the
+      // next page load / Notifications page visit. IGNORED doesn't create
+      // a notification, so no need to refresh the badge for that case.
+      if (nextStatus === 'ORDERED' && typeof refreshSidebarAlertBadge === 'function') {
+        refreshSidebarAlertBadge();
+      }
     } catch (error) {
       console.error('updateStatus failed:', error);
       showError('Recommendation status could not be updated.');

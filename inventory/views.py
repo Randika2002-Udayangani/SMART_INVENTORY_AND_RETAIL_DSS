@@ -6,6 +6,7 @@ from users.audit import log_action
 from django.db.models import Sum
 from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -1661,9 +1662,44 @@ class ReorderRecommendationDetailView(APIView):
             return Response({'error': 'status must be ORDERED or IGNORED'}, status=status.HTTP_400_BAD_REQUEST)
  
         old_value = {'status': rec.status}
-        rec.status = new_status
-        rec.actioned_by = request.user
-        rec.save()
+        previous_status = rec.status
+
+        if previous_status != 'ORDERED' and new_status == 'ORDERED':
+            urgency_to_priority = {
+                'CRITICAL': 'CRITICAL',
+                'HIGH': 'HIGH',
+                'MEDIUM': 'MEDIUM',
+                'NORMAL': 'MEDIUM',
+            }
+            if rec.urgency not in urgency_to_priority:
+                raise ValidationError(
+                    {
+                        'urgency': (
+                            f'No notification priority mapping for reorder urgency '
+                            f'{rec.urgency!r}'
+                        )
+                    }
+                )
+            rec.status = new_status
+            rec.actioned_by = request.user
+            rec.save()
+            Notification.objects.create(
+                user=None,
+                customer=None,
+                type='REORDER',
+                priority=urgency_to_priority[rec.urgency],
+                title=f'Reorder placed: {rec.product.product_name}',
+                message=(
+                    f'Reorder placed for {rec.product.product_name} by '
+                    f'{request.user.username} ({rec.suggested_quantity} units).'
+                ),
+                reference_table='reorder_recommendation',
+                reference_id=rec.id,
+            )
+        else:
+            rec.status = new_status
+            rec.actioned_by = request.user
+            rec.save()
  
         log_action(
             user=request.user, action='UPDATE', table_name='reorder_recommendation',
