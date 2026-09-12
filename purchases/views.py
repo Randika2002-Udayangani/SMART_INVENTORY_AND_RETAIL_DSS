@@ -18,7 +18,7 @@ from .serializers import (
 from suppliers.models import Supplier
 from products.models import Product
 from sales.models import UploadLog
-from django.db.models import Sum, F, DecimalField
+from django.db.models import Sum, F, DecimalField, Prefetch
 from django.db.models.functions import Coalesce
 
 
@@ -49,7 +49,22 @@ class PurchaseListCreateView(generics.ListCreateAPIView):
         ]
     }
     """
-    queryset = Purchase.objects.all().order_by('-purchase_date')
+    # Fix (Randika, performance): GET was doing ~1 + N + N + M + M queries
+    # (N purchases -> supplier lookup + batches lookup each; M batches ->
+    # product lookup + purchase-backref lookup each), because PurchaseSerializer
+    # nests batches/product/supplier without any select_related/prefetch_related.
+    # select_related('supplier') joins the supplier in the same query.
+    # prefetch_related(...) fetches ALL batches for ALL purchases in one extra
+    # query, with product and purchase already joined on that query too (the
+    # nested PurchaseBatchSerializer reads product_name and invoice_number via
+    # product.product_name / purchase.invoice_number, so both need to be
+    # pre-joined here to avoid re-querying per batch).
+    queryset = Purchase.objects.select_related('supplier').prefetch_related(
+        Prefetch(
+            'purchasebatch_set',
+            queryset=PurchaseBatch.objects.select_related('product', 'purchase'),
+        )
+    ).order_by('-purchase_date')
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -82,7 +97,14 @@ class PurchaseListCreateView(generics.ListCreateAPIView):
 # GET /api/purchases/<id>/  — Get one purchase with batches
 # ─────────────────────────────────────────────────────────────────
 class PurchaseDetailView(generics.RetrieveAPIView):
-    queryset = Purchase.objects.all()
+    # Same fix as PurchaseListCreateView above — one purchase can still have
+    # many batches, each needing product + purchase joined.
+    queryset = Purchase.objects.select_related('supplier').prefetch_related(
+        Prefetch(
+            'purchasebatch_set',
+            queryset=PurchaseBatch.objects.select_related('product', 'purchase'),
+        )
+    )
     serializer_class = PurchaseSerializer
 
 
