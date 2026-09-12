@@ -102,11 +102,22 @@
             console.log('Register response:', data);
 
             if (res.ok) {
-                // Token is directly data.access (not nested)
                 sessionStorage.setItem('jwt', data.access);
                 sessionStorage.setItem('customerName', data.name);
                 showSuccess('Account created! Redirecting...');
-                setTimeout(() => window.location.href = '/customer/products/', 1500);
+
+                // If customer came from cart — go back to cart
+                const cameFromCart = document.referrer.includes('/customer/cart/')
+                    || sessionStorage.getItem('redirectAfterLogin') === 'cart';
+
+                sessionStorage.removeItem('redirectAfterLogin');
+
+                setTimeout(() => {
+                    window.location.href = cameFromCart
+                        ? '/customer/cart/'
+                        : '/customer/products/';
+                }, 1500);
+            
             } else {
                 showError(data.error || 'Registration failed. Please try again.');
             }
