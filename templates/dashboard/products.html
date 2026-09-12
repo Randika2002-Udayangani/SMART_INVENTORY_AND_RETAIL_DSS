@@ -17,7 +17,7 @@
 <div class="topbar">
     <div>
         <h1>Product Management</h1>
-        <div class="sub">Samanala Super Mart — product catalogue, import, zone recommendations</div>
+        <div class="sub">Samanala Super Mart — product catalogue, import, brands &amp; categories</div>
     </div>
 </div>
 
@@ -28,7 +28,6 @@
     <ul class="nav nav-tabs mb-3 flex-wrap" id="prodTabs">
         <li class="nav-item"><button class="nav-link active" onclick="switchTab('list', this)">Product List</button></li>
         <li class="nav-item"><button class="nav-link" onclick="switchTab('import', this)">Import Excel</button></li>
-        <li class="nav-item"><button class="nav-link" onclick="switchTab('zones', this)">Zone Recommendations</button></li>
         <li class="nav-item"><button class="nav-link" onclick="switchTab('brands', this)">Brands</button></li>
         <li class="nav-item"><button class="nav-link" onclick="switchTab('categories', this)">Categories</button></li>
         <li class="nav-item"><button class="nav-link" onclick="switchTab('zones-crud', this)">Store Zones</button></li>
@@ -47,7 +46,7 @@
             </div>
             <div class="col-md-6">
                 <label class="form-label">SKU Code</label>
-                <input type="text" id="prodSku" class="form-control">
+                <input type="text" id="prodSku" class="form-control" placeholder="No SKU assigned">
             </div>
             <div class="col-md-6">
                 <label class="form-label">Unit Price</label>
@@ -95,6 +94,7 @@
                     <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+            <div id="prodPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         </div>
     </div>
        
@@ -108,23 +108,6 @@
             <input type="file" id="importFile" class="form-control mb-3" accept=".xlsx,.xls">
             <button class="btn btn-primary" onclick="submitImport()">Upload & Import</button>
             <div id="importMsg" class="mt-3"></div>
-        </div>
-    </div>
-
-    <!-- Zone Recommendations Tab -->
-    <div id="tab-zones" style="display:none;">
-        <div class="mb-3">
-            <button class="btn btn-primary" onclick="calculateZoneRecommendations()">Calculate Recommendations</button>
-        </div>
-        <div class="card p-4">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr><th>Product</th><th>Recommended Zone</th><th>Reason</th></tr>
-                </thead>
-                <tbody id="zonesBody">
-                    <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
-                </tbody>
-            </table>
         </div>
     </div>
 
@@ -251,6 +234,10 @@
 
                                 <div class="row g-3">
                                     <div class="col-md-6">
+                                        <div class="small text-muted">Product ID</div>
+                                        <div id="detailProductId" class="fw-semibold">—</div>
+                                    </div>
+                                    <div class="col-md-6">
                                         <div class="small text-muted">SKU</div>
                                         <div id="detailSku" class="fw-semibold">—</div>
                                     </div>
@@ -314,13 +301,12 @@ async function request(url, options = {}) {
 
 
 function switchTab(name, btn) {
-    ['list','import','zones','brands','categories','zones-crud'].forEach(t => {
+    ['list','import','brands','categories','zones-crud'].forEach(t => {
         const el = document.getElementById('tab-' + t);
         if (el) el.style.display = (t === name) ? 'block' : 'none';
     });
     document.querySelectorAll('#prodTabs .nav-link').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
-    if (name === 'zones') loadZones();
     if (name === 'brands') loadBrands();
     if (name === 'categories') loadCategoriesCrud();
     if (name === 'zones-crud') loadStoreZones();
@@ -431,6 +417,10 @@ async function loadBrandsForProductForm() {
     }
 }
 
+let allProducts = [];
+let prodPage = 1;
+const prodPageSize = 25;
+
 async function loadProducts() {
     const search = document.getElementById('prodSearch').value;
     const category = document.getElementById('prodCategory').value;
@@ -438,34 +428,59 @@ async function loadProducts() {
     if (search) url += `search=${encodeURIComponent(search)}&`;
     if (category) url += `category=${category}`;
 
+    document.getElementById('prodBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>';
+
     try {
         const res = await request(url);
         const data = await res.json();
-        const rows = extractArray(data);
-        const tbody = document.getElementById('prodBody');
-        if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No products found.</td></tr>';
-            return;
-        }
-        tbody.innerHTML = rows.map(p => `
-            <tr>
-                <td style="font-weight:600">${escapeHtml(p.product_name ?? '—')}</td>
-                <td>${escapeHtml(p.category_name ?? '—')}</td>
-                <td>${escapeHtml(p.brand_name ?? '—')}</td>
-                <td>${escapeHtml(p.sku_code ?? '—')}</td>
-                <td>Rs ${Number(p.unit_price ?? 0).toLocaleString()}</td>
-                <td>
-                    <div class="d-flex gap-2 flex-wrap">
-                        <button class="btn btn-sm btn-outline-secondary" onclick="openEditFormPayload('${encodePayload(p)}')">Edit</button>
-                        <button class="btn btn-sm btn-outline-primary" onclick='viewProductAvailability(${p.id})'>View</button>
-                        <button class="btn btn-sm btn-outline-warning" onclick='recalculateWAC(${p.id})'>WAC</button>
-                    </div>
-                </td>
-            </tr>
-        `).join('');
+        allProducts = extractArray(data);
+        prodPage = 1; // fresh data (new search/filter/reload) — back to page 1
+        renderProducts();
     } catch(e) {
         document.getElementById('prodBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Could not load products.</td></tr>';
     }
+}
+
+function renderProducts() {
+    const rows = allProducts;
+    const tbody = document.getElementById('prodBody');
+
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No products found.</td></tr>';
+        document.getElementById('prodPagination').innerHTML = '';
+        return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / prodPageSize));
+    prodPage = Math.min(prodPage, totalPages);
+    const pageRows = rows.slice((prodPage - 1) * prodPageSize, prodPage * prodPageSize);
+
+    tbody.innerHTML = pageRows.map(p => `
+        <tr>
+            <td style="font-weight:600">${escapeHtml(p.product_name ?? '—')}</td>
+            <td>${escapeHtml(p.category_name ?? '—')}</td>
+            <td>${escapeHtml(p.brand_name ?? '—')}</td>
+            <td>${escapeHtml(p.sku_code ?? '—')}</td>
+            <td>Rs ${Number(p.unit_price ?? 0).toLocaleString()}</td>
+            <td>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="openEditFormPayload('${encodePayload(p)}')">Edit</button>
+                    <button class="btn btn-sm btn-outline-primary" onclick='viewProductAvailability(${p.id})'>View</button>
+                    <button class="btn btn-sm btn-outline-warning" onclick='recalculateWAC(${p.id})'>WAC</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+    document.getElementById('prodPagination').innerHTML = rows.length > prodPageSize ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeProdPage(-1)" ${prodPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${prodPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeProdPage(1)" ${prodPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+}
+
+function changeProdPage(delta) {
+    prodPage += delta;
+    renderProducts();
 }
 
 async function reclassify() {
@@ -509,46 +524,6 @@ async function submitImport() {
         }
     } catch(e) {
         msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error during import.</div>';
-    }
-}
-
-async function loadZones() {
-    try {
-        const res = await request('/api/zones/recommendations/');
-        const data = await res.json();
-        const rows = extractArray(data);
-        const tbody = document.getElementById('zonesBody');
-        if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No zone recommendations available.</td></tr>';
-            return;
-        }
-        tbody.innerHTML = rows.map(z => `
-            <tr>
-                <td>${escapeHtml(z.product_name ?? '—')}</td>
-                <td>${escapeHtml(z.suggested_zone_name ?? '—')}</td>
-                <td>${escapeHtml(z.reason ?? '—')}</td>
-            </tr>
-        `).join('');
-    } catch(e) {
-        document.getElementById('zonesBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">Could not load zone data.</td></tr>';
-    }
-}
-
-async function calculateZoneRecommendations() {
-    if (!confirm('Recalculate zone recommendations now?')) return;
-    try {
-        const res = await request('/api/zones/recommendations/calculate/', {
-            method: 'POST',
-        });
-        if (res.ok) {
-            showProductMessage('Zone recommendations recalculated successfully.', 'success');
-            loadZones();
-        } else {
-            const err = await res.json();
-            showProductMessage('Calculation failed: ' + (err.message || err.error || 'Unknown error'));
-        }
-    } catch(e) {
-        showProductMessage('Network error during calculation: ' + e.message);
     }
 }
 
@@ -617,6 +592,7 @@ function showProductDetailModal(product, stockData = {}) {
     const canOrder = (stockData.total_current_stock ?? 0) > 0 ? 'Yes' : 'No';
 
     document.getElementById('detailProductName').textContent = product.product_name || '—';
+    document.getElementById('detailProductId').textContent = product.id ?? '—';
     document.getElementById('detailSku').textContent = product.sku_code || '—';
     document.getElementById('detailCategory').textContent = product.category_name || '—';
     document.getElementById('detailBrand').textContent = product.brand_name || '—';
@@ -686,6 +662,7 @@ async function viewProductAvailability(id) {
         document.getElementById('productDetailContent').style.display = 'block';
 
         document.getElementById('detailProductName').textContent = 'Unable to load';
+        document.getElementById('detailProductId').textContent = id ?? '—';
         document.getElementById('detailSku').textContent = '—';
         document.getElementById('detailCategory').textContent = '—';
         document.getElementById('detailBrand').textContent = '—';
@@ -736,9 +713,10 @@ async function recalculateWAC(id) {
 
 async function saveProduct() {
     const id = document.getElementById('prodId').value;
+    const skuInput = document.getElementById('prodSku').value.trim();
     const body = {
         product_name: document.getElementById('prodName').value,
-        sku_code: document.getElementById('prodSku').value,
+        sku_code: skuInput || null,
         unit_price: Number(document.getElementById('prodPrice').value),
         cost_price: Number(document.getElementById('prodCostPrice').value),
         category: Number(document.getElementById('prodCategoryId').value) || null,

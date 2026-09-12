@@ -128,6 +128,7 @@
 
     <div class="sb-sec">Decision Support</div>
     <a href="/dashboard/health-score/" class="{% block nav_health %}{% endblock %}"><i class="bi bi-heart-pulse"></i> Health Score</a>
+    <a href="/dashboard/zone-recommendations/" class="{% block nav_zone_recommendations %}{% endblock %}"><i class="bi bi-signpost-split"></i> Zone Recommendations</a>
     <a href="/dashboard/discount-engine/" class="{% block nav_discount %}{% endblock %}"><i class="bi bi-tag"></i> Discount Engine</a>
     <a href="/dashboard/reorder/" class="{% block nav_reorder %}{% endblock %}"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
     <a href="/dashboard/loss-analysis/" class="{% block nav_loss %}{% endblock %}"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
@@ -223,8 +224,17 @@
       throw new Error('Authentication expired');
     }
     if (!response.ok) {
-      let data = {};
-      try { data = await response.json(); } catch (e) {}
+      let data;
+      try {
+        const rawText = await response.text();
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch (e) {
+        // Body wasn't JSON — most often a Django debug/error page on a
+        // 500. Surfacing that as an empty {} hides a real server error
+        // behind what looks like an empty validation error, so keep the
+        // status visible instead.
+        data = { non_field_errors: [`Server returned ${response.status} ${response.statusText} (non-JSON response — check the Django console for the traceback).`] };
+      }
       const detail = data.error || data.message || (Array.isArray(data.errors) ? data.errors.join('; ') : '');
       const error = new Error(detail || `${response.status} ${response.statusText}`);
       error.status = response.status;

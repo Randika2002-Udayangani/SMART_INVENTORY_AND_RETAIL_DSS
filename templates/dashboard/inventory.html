@@ -113,13 +113,18 @@
     </div>
 
     <!-- Tabs -->
-    <ul class="nav nav-tabs mb-3" id="invTabs">
-        <li class="nav-item"><button class="nav-link active" onclick="switchTab('stock', this)">Stock Levels</button></li>
-        <li class="nav-item"><button class="nav-link" onclick="switchTab('low', this)">Low Stock</button></li>
-        <li class="nav-item"><button class="nav-link" onclick="switchTab('out', this)">Out of Stock</button></li>
-        <li class="nav-item"><button class="nav-link" onclick="switchTab('ledger', this)">Stock Ledger</button></li>
-        <li class="nav-item"><button class="nav-link" onclick="switchTab('adjust', this)">Manual Adjustment</button></li>
-    </ul>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <ul class="nav nav-tabs mb-0" id="invTabs">
+            <li class="nav-item"><button class="nav-link active" onclick="switchTab('stock', this)">Stock Levels</button></li>
+            <li class="nav-item"><button class="nav-link" onclick="switchTab('low', this)">Low Stock</button></li>
+            <li class="nav-item"><button class="nav-link" onclick="switchTab('out', this)">Out of Stock</button></li>
+            <li class="nav-item"><button class="nav-link" onclick="switchTab('ledger', this)">Stock Ledger</button></li>
+            <li class="nav-item"><button class="nav-link" onclick="switchTab('adjust', this)">Manual Adjustment</button></li>
+        </ul>
+        <a href="/dashboard/zone-recommendations/" class="btn btn-sm btn-outline-secondary">
+            Zone Recommendations <i class="bi bi-arrow-right"></i>
+        </a>
+    </div>
 
     <!-- Stock Levels Tab -->
     <div id="tab-stock">

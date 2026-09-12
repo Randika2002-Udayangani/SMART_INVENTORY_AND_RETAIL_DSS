@@ -11,11 +11,12 @@ from users.audit import log_action
 import pandas as pd
 from users.permissions import IsManagerOrAdmin
 
-from .models import Brand, Category, StoreZone, Product, ZoneRecommendation
+from .models import Brand, Category, StoreZone, Product, ZoneRecommendation, ProductZoneOverride, ZoneCalculationRun
 from .serializers import (
     BrandSerializer, CategorySerializer,
     StoreZoneSerializer, ProductSerializer, ProductPublicSerializer,
-    ZoneRecommendationSerializer
+    ZoneRecommendationSerializer, ZoneRecommendationStatusSerializer,
+    ProductZoneOverrideSerializer, ZoneCalculationRunSerializer
 )
 from sales.models import UploadLog
 
@@ -458,7 +459,7 @@ class RecalculateWACView(APIView):
             'batches_used'        : batches.count(),
         })
 
-        
+
 
 
 class ReclassifyProductsView(APIView):
@@ -503,7 +504,7 @@ class ReclassifyProductsView(APIView):
 class ZoneRecommendationCalculateView(APIView):
     """
     POST /api/zones/recommendations/calculate/
- 
+
     Manager triggers zone placement recalculation for all active
     products. Reads each product's latest InventoryHealthScore and
     writes ZoneRecommendation rows for products that should move —
@@ -511,18 +512,203 @@ class ZoneRecommendationCalculateView(APIView):
     rule and the StoreZone data-model limitation noted there (no
     zone "purpose" field, so this maps onto traffic_level only).
     """
-    permission_classes = [permissions.IsAuthenticated]
- 
+    permission_classes = [permissions.IsAuthenticated, IsManagerOrAdmin]
+
     def post(self, request):
         # Local import — same reasoning as RecalculateWACView above:
         # avoids any risk of a circular import between products and
         # inventory apps.
         from inventory.services.zone_recommendation import calculate_zone_recommendations
- 
+
         result = calculate_zone_recommendations()
- 
+
+        # Persisted so the page's "Last calculated" / KPI strip reflects
+        # the real last run for anyone loading the page, not just the
+        # browser session that clicked the button.
+        run = ZoneCalculationRun.objects.create(
+            products_evaluated=result.get('products_evaluated', 0),
+            recommendations_created=result.get('recommendations_created', 0),
+            skipped_no_health_score=result.get('skipped_no_health_score', 0),
+            skipped_no_current_zone=result.get('skipped_no_current_zone', 0),
+            skipped_duplicate=result.get('skipped_duplicate', 0),
+            categories_unmapped_count=len(
+                result.get('zone_assignment', {}).get('categories_unmapped', [])
+            ),
+        )
+
+        log_action(
+            user=request.user,
+            action='ZONE_RECALCULATE',
+            table_name='zone_recommendation',
+            record_id=None,
+            old_value=None,
+            new_value=result,
+            request=request,
+        )
+
         return Response({
             "message": "Zone recommendations recalculated",
+            "run_id": run.id,
+            "run_at": run.run_at,
             **result,
         })
 
+
+# ─────────────────────────────────────────────
+# Zone Calculation Run — last-run info for the page's KPI strip,
+# so a fresh page load (any browser, any user) shows the real last
+# run instead of only what happened in the triggering session.
+# ─────────────────────────────────────────────
+class ZoneCalculationRunLatestView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        run = ZoneCalculationRun.objects.order_by('-run_at').first()
+        if run is None:
+            return Response(None)
+        return Response(ZoneCalculationRunSerializer(run).data)
+
+# ─────────────────────────────────────────────
+# Zone Recommendation — status workflow (accept/reject/apply)
+# ─────────────────────────────────────────────
+class CanUpdateZoneRecommendationStatus(permissions.BasePermission):
+    """
+    Manager/Admin can set any status (accept/reject/apply). Staff can
+    only mark an already-ACCEPTED recommendation as APPLIED once it's
+    been physically moved on the floor — they can't accept, reject,
+    or touch a still-PENDING one.
+    """
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        if IsManagerOrAdmin().has_permission(request, view):
+            return True
+        return obj.status == 'ACCEPTED' and request.data.get('status') == 'APPLIED'
+
+
+class ZoneRecommendationStatusUpdateView(generics.UpdateAPIView):
+    """
+    PATCH /api/zones/recommendations/<pk>/status/
+    Body: {"status": "ACCEPTED" | "REJECTED" | "APPLIED"}
+
+    Manager decision workflow — a recommendation is calculated as PENDING,
+    then the manager accepts or rejects it, and later marks an accepted
+    one APPLIED once the product has actually been moved on the floor.
+    Only `status` is editable through this endpoint.
+    """
+    queryset = ZoneRecommendation.objects.all()
+    serializer_class = ZoneRecommendationStatusSerializer
+    permission_classes = [CanUpdateZoneRecommendationStatus]
+    http_method_names = ['patch']
+
+    def perform_update(self, serializer):
+        old_status = serializer.instance.status
+        recommendation = serializer.save(updated_by=self.request.user)
+        log_action(
+            user=self.request.user,
+            action='ZONE_STATUS_CHANGE',
+            table_name='zone_recommendation',
+            record_id=recommendation.id,
+            old_value={'status': old_status},
+            new_value={'status': recommendation.status, 'updated_by': self.request.user.username},
+            request=self.request,
+        )
+
+        # Shared notification — same pattern as ReorderRecommendationDetailView
+        # (orders.models.Notification, user=None/customer=None = visible to
+        # everyone). Only fires on an actual transition into the new status,
+        # so a repeated identical PATCH doesn't create a duplicate — same
+        # guard reorder uses (there it's `previous_status != 'ORDERED'`).
+        if old_status != recommendation.status:
+            from orders.models import Notification
+
+            product_name = recommendation.product.product_name
+            notif_copy = {
+                'ACCEPTED': (
+                    'MEDIUM',
+                    f'Zone recommendation accepted: {product_name}',
+                    f'{self.request.user.username} accepted the zone recommendation for '
+                    f'{product_name} — move to {recommendation.suggested_zone.zone_name}.',
+                ),
+                'REJECTED': (
+                    'LOW',
+                    f'Zone recommendation rejected: {product_name}',
+                    f'{self.request.user.username} rejected the zone recommendation for '
+                    f'{product_name}.',
+                ),
+                'APPLIED': (
+                    'MEDIUM',
+                    f'Zone recommendation applied: {product_name}',
+                    f'{self.request.user.username} applied the zone move for {product_name} — '
+                    f'moved from {recommendation.current_zone.zone_name} to '
+                    f'{recommendation.suggested_zone.zone_name}.',
+                ),
+            }.get(recommendation.status)
+
+            if notif_copy:
+                priority, title, message = notif_copy
+                Notification.objects.create(
+                    user=None,
+                    customer=None,
+                    type='ZONE_RECOMMENDATION',
+                    priority=priority,
+                    title=title,
+                    message=message,
+                    reference_table='zone_recommendation',
+                    reference_id=recommendation.id,
+                )
+
+
+# ─────────────────────────────────────────────
+# Category → Zone mapping (read-only view of what
+# assign_zones_from_groups() has already assigned)
+# ─────────────────────────────────────────────
+class CategoryZoneMappingView(APIView):
+    """
+    GET /api/zones/category-mapping/
+
+    Read-only summary of the current category→zone assignment, grouped
+    by zone, plus categories that still have no default_zone. Doesn't
+    recalculate anything — that only happens via the calculate endpoint,
+    which runs assign_zones_from_groups() as its first step.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        zones = StoreZone.objects.prefetch_related('category_set').all()
+        mapping = [
+            {
+                "zone_id": zone.id,
+                "zone_name": zone.zone_name,
+                "zone_type": zone.zone_type,
+                "category_count": zone.category_set.count(),
+                "categories": list(
+                    zone.category_set.values_list('category_name', flat=True)
+                ),
+            }
+            for zone in zones
+        ]
+        unmapped = list(
+            Category.objects.filter(default_zone__isnull=True)
+            .values_list('category_name', flat=True)
+        )
+        return Response({
+            "zones": mapping,
+            "categories_unmapped": unmapped,
+        })
+
+
+# ─────────────────────────────────────────────
+# Product Zone Override
+# ─────────────────────────────────────────────
+class ProductZoneOverrideListCreateView(generics.ListCreateAPIView):
+    queryset = ProductZoneOverride.objects.select_related('product', 'zone').order_by('-start_date')
+    serializer_class = ProductZoneOverrideSerializer
+    permission_classes = [permissions.IsAuthenticated, IsManagerOrAdmin]
+
+
+class ProductZoneOverrideDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = ProductZoneOverride.objects.select_related('product', 'zone')
+    serializer_class = ProductZoneOverrideSerializer
+    permission_classes = [permissions.IsAuthenticated, IsManagerOrAdmin]

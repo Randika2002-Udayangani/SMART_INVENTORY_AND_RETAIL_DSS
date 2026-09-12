@@ -12,7 +12,12 @@ urlpatterns = [
 
     # Store Zones
     path('zones/recommendations/calculate/', views.ZoneRecommendationCalculateView.as_view(), name='zone-recommendations-calculate'),
+    path('zones/recommendations/last-run/', views.ZoneCalculationRunLatestView.as_view(), name='zone-recommendations-last-run'),
+    path('zones/recommendations/<int:pk>/status/', views.ZoneRecommendationStatusUpdateView.as_view(), name='zone-recommendation-status'),
     path('zones/recommendations/', views.ZoneRecommendationListView.as_view(), name='zone-recommendations'),
+    path('zones/category-mapping/', views.CategoryZoneMappingView.as_view(), name='zone-category-mapping'),
+    path('zones/overrides/<int:pk>/', views.ProductZoneOverrideDetailView.as_view(), name='zone-override-detail'),
+    path('zones/overrides/', views.ProductZoneOverrideListCreateView.as_view(), name='zone-override-list'),
     path('zones/', views.StoreZoneListCreateView.as_view(), name='zone-list'),
     path('zones/<int:pk>/', views.StoreZoneDetailView.as_view(), name='zone-detail'),
 
