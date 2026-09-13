@@ -11,3 +11,7 @@ check_data_completeness.py
 seed_discount_config.py
 test_wac_chain.py
 dev_scripts/*_results.json
+reconcile_ledger_vs_batch.py
+scope_check_high_stock.py
+show_duplicate_lines_2products.py
+test09_stock_audit.py
