@@ -19,6 +19,13 @@
     box-shadow: 0 1px 0 var(--border);
   }
   .lifecycle-error { color: #b91c1c; }
+  .lifecycle-row { cursor: pointer; }
+  .lifecycle-row:hover { background-color: var(--card2); }
+  .history-summary { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; }
+  .history-summary .label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  .history-timeline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .history-arrow { color: var(--muted); }
+  .history-chart { position: relative; height: 240px; margin-bottom: 20px; }
 
   @media (max-width: 960px) {
     .lifecycle-table-wrap { overflow-x: auto; }
@@ -62,7 +69,24 @@
   </div>
 
   <div class="card p-4" id="tableSection" style="display:none;">
-    <h6 class="fw-bold mb-3">Product Lifecycle Status</h6>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h6 class="fw-bold mb-0">Product Lifecycle Status</h6>
+      <div class="d-flex flex-wrap gap-2">
+        <label class="visually-hidden" for="lifecycleSearch">Search by product name</label>
+        <input type="search" class="form-control form-control-sm" id="lifecycleSearch"
+               placeholder="Search product name" autocomplete="off">
+        <label class="visually-hidden" for="lifecycleRecommendation">Filter by recommendation</label>
+        <select class="form-select form-select-sm" id="lifecycleRecommendation">
+          <option value="">All recommendations</option>
+          <option value="RETAIN">RETAIN</option>
+          <option value="MONITOR">MONITOR</option>
+          <option value="DISCOUNT">DISCOUNT</option>
+          <option value="CLEARANCE">CLEARANCE</option>
+          <option value="PHASE_OUT">PHASE_OUT</option>
+          <option value="DISCONTINUE">DISCONTINUE</option>
+        </select>
+      </div>
+    </div>
     <div class="lifecycle-table-wrap">
       <table class="table table-hover lifecycle-table">
         <thead class="table-light">
@@ -72,6 +96,25 @@
       </table>
     </div>
     <div id="lifecyclePagination" class="d-flex justify-content-between align-items-center mt-3"></div>
+  </div>
+
+  <div class="card p-4 mt-4" id="historySection" style="display:none;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="fw-bold mb-0">Product Lifecycle History</h6>
+      <span class="text-muted small" id="historyProductName"></span>
+    </div>
+    <div id="historySummary" class="history-summary p-3 mb-3"></div>
+    <div class="history-chart">
+      <canvas id="historyVelocityChart" aria-label="Sales velocity over lifecycle history"></canvas>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead class="table-light">
+          <tr><th>Calculation Date</th><th>Comparison Period</th><th>Sales Velocity</th><th>Status</th><th>Recommendation</th></tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
   </div>
 {% endblock %}
 
@@ -120,31 +163,55 @@
 
   let allLifecycleResults = [];
   let lifecyclePage = 1;
-  const lifecyclePageSize = 25;
+  const lifecyclePageSize = 10;
+  let lifecycleSearchTimer;
 
-  async function loadLifecycle() {
+  function updateLifecycleKpis(summary) {
+    document.getElementById('countNew').innerText = summary.NEW ?? '0';
+    document.getElementById('countGrowing').innerText = summary.GROWING ?? '0';
+    document.getElementById('countStable').innerText = summary.STABLE ?? '0';
+    document.getElementById('countDeclining').innerText = summary.DECLINING ?? '0';
+    document.getElementById('countSlow').innerText = summary.SLOW_MOVING ?? '0';
+  }
+
+  async function loadLifecycle(resetPage = true, refreshKpis = false) {
     clearError();
     try {
-      const data = await apiFetch('/api/analytics/lifecycle/');
-      const summary = data.summary || {};
-      document.getElementById('countNew').innerText = summary.NEW ?? '0';
-      document.getElementById('countGrowing').innerText = summary.GROWING ?? '0';
-      document.getElementById('countStable').innerText = summary.STABLE ?? '0';
-      document.getElementById('countDeclining').innerText = summary.DECLINING ?? '0';
-      document.getElementById('countSlow').innerText = summary.SLOW_MOVING ?? '0';
+      const search = document.getElementById('lifecycleSearch').value.trim();
+      const recommendation = document.getElementById('lifecycleRecommendation').value;
+      const hasFilters = Boolean(search || recommendation);
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (recommendation) params.set('recommendation', recommendation);
+      const query = params.toString();
+      const data = await apiFetch(`/api/analytics/lifecycle/${query ? `?${query}` : ''}`);
+
+      if (!hasFilters) {
+        updateLifecycleKpis(data.summary || {});
+      } else if (refreshKpis) {
+        const totals = await apiFetch('/api/analytics/lifecycle/');
+        updateLifecycleKpis(totals.summary || {});
+      }
 
       allLifecycleResults = data.results ?? [];
       if (allLifecycleResults.length === 0) {
-        document.getElementById('emptyState').style.display = 'block';
-        document.getElementById('tableSection').style.display = 'none';
-        document.getElementById('emptyMsg').innerText = data.note || 'No lifecycle data yet. Click Calculate to run.';
+        if (hasFilters) {
+          document.getElementById('emptyState').style.display = 'none';
+          document.getElementById('tableSection').style.display = 'block';
+          document.getElementById('lifecycleBody').innerHTML = '<tr><td colspan="5" class="text-muted text-center py-4">No products match your search/filter.</td></tr>';
+        } else {
+          document.getElementById('emptyState').style.display = 'block';
+          document.getElementById('tableSection').style.display = 'none';
+          document.getElementById('emptyMsg').innerText = data.note || 'No lifecycle data yet. Click Calculate to run.';
+        }
         document.getElementById('lifecyclePagination').innerHTML = '';
+        lifecyclePage = 1;
         return;
       }
 
       document.getElementById('emptyState').style.display = 'none';
       document.getElementById('tableSection').style.display = 'block';
-      lifecyclePage = 1; // fresh data — back to page 1
+      if (resetPage) lifecyclePage = 1;
       renderLifecycleTable();
     } catch (error) {
       console.error('loadLifecycle failed:', error);
@@ -156,7 +223,7 @@
   }
 
   // Pagination — same pattern used elsewhere (Stock Levels in
-  // inventory.html, Purchases, Batches, Reorder, Notifications): 25
+  // inventory.html, Purchases, Batches, Reorder, Notifications): 10
   // rows/page, client-side slice, Previous / "Page X of Y" / Next.
   function renderLifecycleTable() {
     const rows = allLifecycleResults;
@@ -165,7 +232,7 @@
     const pageRows = rows.slice((lifecyclePage - 1) * lifecyclePageSize, lifecyclePage * lifecyclePageSize);
 
     document.getElementById('lifecycleBody').innerHTML = pageRows.map(result => `
-      <tr>
+      <tr class="lifecycle-row" onclick="loadLifecycleHistory(${Number(result.product_id)}, this)" title="View lifecycle history">
         <td>${escapeHtml(result.product_name)}</td>
         <td>${statusBadge(result.lifecycle_status ?? result.status)}</td>
         <td>${recPill(result.recommendation)}</td>
@@ -180,6 +247,82 @@
       <button class="btn btn-sm btn-outline-secondary" onclick="changeLifecyclePage(1)" ${lifecyclePage === totalPages ? 'disabled' : ''}>Next</button>` : '';
   }
 
+  async function loadLifecycleHistory(productId, row) {
+    clearError();
+    try {
+      const history = await apiFetch(`/api/analytics/lifecycle/${productId}/history/`);
+      const productName = row.querySelector('td').innerText;
+      const current = history[history.length - 1];
+      const previous = history.length > 1 ? history[history.length - 2] : null;
+      const statusColors = {
+        NEW: '#2563eb', GROWING: '#16a34a', STABLE: '#6b7280',
+        DECLINING: '#c2410c', SLOW_MOVING: '#dc2626'
+      };
+
+      document.getElementById('historyProductName').innerText = productName;
+      document.getElementById('historySummary').innerHTML = `
+        <div class="row g-3">
+          <div class="col-md-3"><div class="label">Current</div><div>${statusBadge(current?.status)}</div></div>
+          <div class="col-md-3"><div class="label">Previous</div><div>${statusBadge(previous?.status || '—')}</div></div>
+          <div class="col-md-3"><div class="label">Pattern</div><div class="history-timeline">${history.map((record, index) => `${index ? '<span class="history-arrow">&#8594;</span>' : ''}${statusBadge(record.status)}`).join('')}</div></div>
+          <div class="col-md-3"><div class="label">Recommendation</div><div>${recPill(current?.recommendation)}</div></div>
+        </div>`;
+      document.getElementById('historyBody').innerHTML = history.length ? history.map(record => `
+        <tr>
+          <td>${escapeHtml(record.calculated_date)}</td>
+          <td>${escapeHtml(record.comparison_period)}</td>
+          <td>${escapeHtml(record.sales_velocity)}</td>
+          <td>${statusBadge(record.status)}</td>
+          <td>${recPill(record.recommendation)}</td>
+        </tr>`).join('') : '<tr><td colspan="5" class="text-muted">No history found for this product.</td></tr>';
+      const chart = Chart.getChart('historyVelocityChart');
+      if (chart) chart.destroy();
+      if (history.length) {
+        new Chart(document.getElementById('historyVelocityChart'), {
+          type: 'line',
+          data: {
+            labels: history.map(record => record.calculated_date),
+            datasets: [{
+              label: 'Sales velocity',
+              data: history.map(record => Number(record.sales_velocity) || 0),
+              borderColor: '#2563eb',
+              backgroundColor: '#2563eb',
+              pointBackgroundColor: history.map(record => statusColors[record.status] || '#6b7280'),
+              pointBorderColor: '#ffffff',
+              pointBorderWidth: 2,
+              tension: 0.2,
+              fill: false
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { title: { display: true, text: 'Calculation date' } },
+              y: { beginAtZero: true, title: { display: true, text: 'Sales velocity' } }
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: context => {
+                    const record = history[context.dataIndex];
+                    return `${record.status}: ${record.sales_velocity ?? '—'}`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+      document.getElementById('historySection').style.display = 'block';
+      document.getElementById('historySection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      console.error('loadLifecycleHistory failed:', error);
+      showError('Product lifecycle history could not be loaded. Please try again.');
+    }
+  }
+
   function changeLifecyclePage(delta) {
     lifecyclePage += delta;
     renderLifecycleTable();
@@ -192,7 +335,7 @@
     clearError();
     try {
       await apiFetch('/api/lifecycle/calculate/', { method: 'POST' });
-      await loadLifecycle();
+      await loadLifecycle(true, true);
     } catch (error) {
       console.error('runCalculate failed:', error);
       showError('Lifecycle calculation failed. Please try again.');
@@ -201,6 +344,12 @@
       button.disabled = false;
     }
   }
+
+  document.getElementById('lifecycleSearch').addEventListener('input', () => {
+    clearTimeout(lifecycleSearchTimer);
+    lifecycleSearchTimer = setTimeout(() => loadLifecycle(), 300);
+  });
+  document.getElementById('lifecycleRecommendation').addEventListener('change', () => loadLifecycle());
 
   fetchCurrentUser();
   loadLifecycle();
