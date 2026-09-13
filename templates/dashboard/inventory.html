@@ -65,6 +65,17 @@
         padding: 1.25rem;
         background: var(--card, #fff);
 }
+        .upload-summary { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; }
+        .upload-item { display:flex; align-items:center; gap:10px; min-width:0; padding:12px 14px; border:1px solid var(--border); border-radius:10px; background:var(--card2); }
+        .upload-icon { display:grid; place-items:center; width:32px; height:32px; flex:0 0 32px; border-radius:8px; background:var(--card); color:var(--sidebar); }
+        .upload-info { min-width:0; }
+        .upload-type { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:700; color:var(--txt); }
+        .upload-date { margin-top:3px; font-size:10.5px; color:var(--muted); }
+        .upload-status { margin-left:auto; flex:0 0 auto; padding:4px 8px; border-radius:999px; font-size:10px; font-weight:700; letter-spacing:.03em; }
+        .upload-success { background:#dcfce7; color:#15803d; }
+        .upload-partial { background:#fef3c7; color:#a16207; }
+        .upload-empty { padding:14px; border:1px dashed var(--border); border-radius:10px; text-align:center; color:var(--muted); font-size:12px; }
+        @media (max-width:768px) { .upload-summary { grid-template-columns:1fr; } }
     </style>
 {% endblock %}
 
@@ -105,11 +116,16 @@
     </div>
 
     <div class="card p-3 mb-4">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-            <h6 class="fw-bold mb-0">Latest Uploads</h6>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h6 class="fw-bold mb-1">Latest Uploads</h6>
+                <div class="small text-muted">Most recent successful or partial data sync by source</div>
+            </div>
             <button class="btn btn-sm btn-outline-secondary" onclick="loadUploadSummary()">Refresh</button>
         </div>
-        <div id="uploadSummary" class="small text-muted">Loading upload status...</div>
+        <div id="uploadSummary" class="upload-summary" aria-live="polite">
+            <div class="upload-empty">Loading upload status...</div>
+        </div>
     </div>
 
     <!-- Tabs -->
@@ -154,7 +170,7 @@
     </div>
 
     <div id="tab-out" style="display:none;">
-       <div class="card p-4"><table class="table table-hover"><thead class="table-light"><tr><th>Product</th><th>Current Stock</th></tr></thead><tbody id="outBody"><tr><td colspan="3" class="text-center text-muted">Loading...</td></tr></tbody></table></div>
+        <div class="card p-4"><table class="table table-hover"><thead class="table-light"><tr><th>Product</th><th class="text-center">Current Stock</th></tr></thead><tbody id="outBody"><tr><td colspan="2" class="text-center text-muted">Loading...</td></tr></tbody></table></div>
     </div>
 
     <!-- Ledger Tab -->
@@ -312,9 +328,27 @@ async function loadUploadSummary() {
         if (!res.ok) throw new Error('Request failed');
         const data = await res.json();
         const uploads = data.uploads ?? [];
-        target.innerHTML = uploads.length ? uploads.map(u => `<span class="badge ${u.status === 'SUCCESS' ? 'bg-success' : 'bg-secondary'} me-2 mb-1">${u.upload_type}: ${u.status}${u.upload_date ? ` (${u.upload_date})` : ''}</span>`).join('') : 'No upload history found.';
+        if (!uploads.length) {
+            target.innerHTML = '<div class="upload-empty">No upload history found.</div>';
+            return;
+        }
+
+        target.innerHTML = uploads.map(u => {
+            const status = (u.status || 'PENDING').toUpperCase();
+            const statusClass = status === 'SUCCESS' ? 'upload-success' : 'upload-partial';
+            const date = u.upload_date ? new Date(u.upload_date).toLocaleString() : 'No upload yet';
+            const label = (u.upload_type || 'Unknown source').replaceAll('_', ' ');
+            return `<div class="upload-item">
+                <div class="upload-icon"><i class="bi bi-cloud-arrow-up"></i></div>
+                <div class="upload-info">
+                    <div class="upload-type">${label}</div>
+                    <div class="upload-date">${date}</div>
+                </div>
+                <span class="upload-status ${statusClass}">${status}</span>
+            </div>`;
+        }).join('');
     } catch (e) {
-        target.textContent = 'Could not load upload status.';
+        target.innerHTML = '<div class="upload-empty">Could not load upload status.</div>';
     }
 }
 
@@ -347,8 +381,8 @@ function renderStock() {
         return `
         <tr>
             <td style="font-weight:600">${p.product_name ?? p.name ?? '—'}</td>
-            <td>${p.category_name ?? '—'}</td>
-            <td>${p.brand_name ?? '—'}</td>
+            <td>${p.category_name || '—'}</td>
+            <td>${p.brand_name || 'UNBRANDED'}</td>
             
             <td>${current}</td>
             <td>${threshold}</td>
@@ -372,7 +406,7 @@ async function loadLowStock() {
 }
 
 async function loadOutOfStock() {
-    await loadAlertStock('/api/inventory/out-of-stock/', 'outBody', 'out_of_stock', rows => rows.map(p => `<tr><td>${p.product_name ?? '—'}</td><td>${p.sku_code ?? '—'}</td><td>${p.current_stock ?? 0}</td></tr>`).join(''), 3);
+    await loadAlertStock('/api/inventory/out-of-stock/', 'outBody', 'out_of_stock', rows => rows.map(p => `<tr><td>${p.product_name ?? '—'}</td><td class="text-center">${p.current_stock ?? 0}</td></tr>`).join(''), 2);
 }
 
 async function loadAlertStock(url, bodyId, key, renderRows, columns) {
@@ -386,6 +420,10 @@ async function loadAlertStock(url, bodyId, key, renderRows, columns) {
     }
 }
 
+let currentDetailProductId = null;
+let historyPage = 1;
+const historyPageSize = 10;
+
 async function viewDetail(productId) {
     const modal = document.getElementById('inventoryDetailModal');
     const body = document.getElementById('inventoryDetailBody');
@@ -395,14 +433,82 @@ async function viewDetail(productId) {
         const res = await request(`/api/inventory/stock/${productId}/`);
         const data = await res.json();
         const batches = data.batches ?? data.batch_breakdown ?? [];
-        body.innerHTML = `<h5>${data.product_name ?? '—'}</h5><p>Total stock: <strong>${data.current_stock ?? data.total_remaining ?? '—'}</strong></p><table class="table table-sm"><thead><tr><th>Batch</th><th>Remaining</th><th>Expiry</th><th>Status</th></tr></thead><tbody>${batches.map(b => `<tr><td>${b.batch_id ?? b.id ?? '—'}</td><td>${b.remaining_quantity ?? '—'}</td><td>${b.expiry_date ?? '—'}</td><td>${b.status ?? '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="text-muted">No active batches found.</td></tr>'}</tbody></table>`;
+
+        currentDetailProductId = productId;
+        historyPage = 1;
+
+        body.innerHTML = `
+            <h5>${data.product_name ?? '—'}</h5>
+            <p>Total stock: <strong>${data.current_stock ?? data.total_remaining ?? data.total_current_stock ?? '—'}</strong></p>
+            <table class="table table-sm">
+                <thead><tr><th>Batch</th><th>Remaining</th><th>Expiry</th><th>Status</th></tr></thead>
+                <tbody>${batches.map(b => `<tr><td>${b.batch_id ?? b.id ?? '—'}</td><td>${b.remaining_quantity ?? '—'}</td><td>${b.expiry_date ?? '—'}</td><td>${b.status ?? '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="text-muted">No active batches found.</td></tr>'}</tbody>
+            </table>
+            <hr>
+            <h6 class="fw-bold mb-2">Stock Movement History</h6>
+            <table class="table table-sm">
+                <thead><tr><th>Date</th><th>Type</th><th>Source</th><th>Qty Change</th><th>Balance After</th><th>Reason</th></tr></thead>
+                <tbody id="historyBody"><tr><td colspan="6" class="text-center text-muted">Loading...</td></tr></tbody>
+            </table>
+            <div id="historyPagination" class="d-flex justify-content-between align-items-center mt-2"></div>
+        `;
+
+        loadHistoryPage();
     } catch(e) {
         body.innerHTML = '<div class="text-danger">Could not load product detail.</div>';
     }
 }
 
+async function loadHistoryPage() {
+    const tbody = document.getElementById('historyBody');
+    const pagDiv = document.getElementById('historyPagination');
+    if (!tbody || !currentDetailProductId) return;
+
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>';
+
+    try {
+        const res = await request(
+            `/api/inventory/stock/${currentDetailProductId}/history/?page=${historyPage}&page_size=${historyPageSize}`
+        );
+        const data = await res.json();
+        const rows = data.results ?? [];
+
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No stock movement history found.</td></tr>';
+            pagDiv.innerHTML = '';
+            return;
+        }
+
+        tbody.innerHTML = rows.map(h => `
+            <tr>
+                <td>${h.transaction_date ?? '—'}</td>
+                <td><span class="badge bg-secondary">${h.movement_type ?? '—'}</span></td>
+                <td>${h.source ?? '—'}</td>
+                <td style="color:${(h.quantity_change ?? 0) < 0 ? '#dc2626' : '#16a34a'}">${h.quantity_change ?? '—'}</td>
+                <td>${h.balance_after ?? '—'}</td>
+                <td>${h.reason ?? '—'}</td>
+            </tr>
+        `).join('');
+
+        pagDiv.innerHTML = data.total_pages > 1 ? `
+            <button class="btn btn-sm btn-outline-secondary" onclick="changeHistoryPage(-1)" ${!data.has_previous ? 'disabled' : ''}>Previous</button>
+            <span class="text-muted small">Page ${data.page} of ${data.total_pages} — Next shows older entries</span>
+            <button class="btn btn-sm btn-outline-secondary" onclick="changeHistoryPage(1)" ${!data.has_next ? 'disabled' : ''}>Next</button>
+        ` : '';
+    } catch(e) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Could not load history.</td></tr>';
+        pagDiv.innerHTML = '';
+    }
+}
+
+function changeHistoryPage(delta) {
+    historyPage += delta;
+    loadHistoryPage();
+}
+
 function hideInventoryDetail() {
     document.getElementById('inventoryDetailModal').classList.remove('show');
+    currentDetailProductId = null;
 }
 
 async function loadLedger() {

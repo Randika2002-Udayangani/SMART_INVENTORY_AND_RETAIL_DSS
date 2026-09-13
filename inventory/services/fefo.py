@@ -40,7 +40,14 @@ from purchases.models import PurchaseBatch
 from inventory.models import StockLedger
 
 
-def deduct_stock_fefo(product_id, quantity, source, reference_id=None):
+def deduct_stock_fefo(
+    product_id,
+    quantity,
+    source,
+    reference_id=None,
+    transaction_type='SALE_SYNC',
+    batch_id=None,
+):
     """
     Deducts `quantity` units from a product's sellable batches in FEFO
     order. A single sale may span multiple batches if the earliest-
@@ -78,7 +85,7 @@ def deduct_stock_fefo(product_id, quantity, source, reference_id=None):
         # live upload running at the same time as the reconciliation
         # command) from both reading the same remaining_quantity and
         # double-deducting against it.
-        batches = list(
+        batch_query = (
             PurchaseBatch.objects
             .select_for_update()
             .filter(
@@ -86,8 +93,10 @@ def deduct_stock_fefo(product_id, quantity, source, reference_id=None):
                 status__in=['ACTIVE', 'PENDING_EXPIRY'],
                 remaining_quantity__gt=0,
             )
-            .order_by(F('expiry_date').asc(nulls_last=True), 'id')
         )
+        if batch_id is not None:
+            batch_query = batch_query.filter(pk=batch_id)
+        batches = list(batch_query.order_by(F('expiry_date').asc(nulls_last=True), 'id'))
 
         remaining_to_deduct = quantity
         batches_touched = []
@@ -111,7 +120,7 @@ def deduct_stock_fefo(product_id, quantity, source, reference_id=None):
                 StockLedger(
                     product_id=product_id,
                     batch=batch,
-                    transaction_type='SALE_SYNC',
+                    transaction_type=transaction_type,
                     source=source,
                     quantity_change=-take,
                     reference_id=reference_id,

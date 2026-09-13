@@ -18,6 +18,7 @@ from .serializers import (
 from suppliers.models import Supplier
 from products.models import Product
 from sales.models import UploadLog
+from orders.models import Notification
 from django.db.models import Sum, F, DecimalField, Prefetch
 from django.db.models.functions import Coalesce
 
@@ -647,18 +648,13 @@ class PurchaseInvoicePDFUploadView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # ── R1: supplier exact match, ABORT file if not found ─────────────
+            # ── R1: match the supplier or create it from the invoice header ──
+            supplier_created = False
             try:
                 supplier = Supplier.objects.get(supplier_name__iexact=supplier_name)
             except Supplier.DoesNotExist:
-                upload_log.status = 'FAILED'
-                upload_log.error_message = f'R1: Supplier "{supplier_name}" not found'
-                upload_log.save()
-                return Response(
-                    {'error': f'R1 violation: Supplier "{supplier_name}" not found. '
-                              f'Staff must create this supplier record first via POST /api/suppliers/'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                supplier = Supplier.objects.create(supplier_name=supplier_name)
+                supplier_created = True
             except Supplier.MultipleObjectsReturned:
                 upload_log.status = 'FAILED'
                 upload_log.error_message = f'Multiple suppliers matched "{supplier_name}"'
@@ -689,6 +685,7 @@ class PurchaseInvoicePDFUploadView(APIView):
             # ── Process line items ─────────────────────────────────────────────
             inserted = []
             auto_corrected = []
+            products_created = []
             flagged_for_review = []   # R7: product=NULL, batch still created
             skipped = []              # R4/R5: line dropped entirely
             warnings = []             # R6/R8: logged, doesn't block anything
@@ -746,6 +743,7 @@ class PurchaseInvoicePDFUploadView(APIView):
                     #     then R7 fallback (product=NULL, flagged) ────────────────
                     product = None
                     was_auto_corrected = False
+                    product_match_ambiguous = False
 
                     try:
                         product = Product.objects.get(product_name__iexact=product_name)
@@ -755,7 +753,36 @@ class PurchaseInvoicePDFUploadView(APIView):
                             product = resolved
                             was_auto_corrected = True
                     except Product.MultipleObjectsReturned:
-                        pass  # ambiguous -> falls through to R7 below
+                        product_match_ambiguous = True
+
+                    # Create a basic product when the invoice contains a new
+                    # item. Category and brand are intentionally left empty:
+                    # the invoice format does not provide reliable values for
+                    # either field and inventing them would corrupt master data.
+                    if product is None and not product_match_ambiguous and qty > 0 and cost_unit > 0:
+                        sku_code = (line['item_code'] or '').strip() or None
+                        if sku_code:
+                            sku_product = Product.objects.filter(
+                                sku_code__iexact=sku_code
+                            ).first()
+                            if sku_product is not None:
+                                product = sku_product
+
+                        if product is None:
+                            product = Product.objects.create(
+                                product_name=product_name,
+                                sku_code=sku_code,
+                                unit_price=sell_unit if sell_unit and sell_unit > 0 else cost_unit,
+                                cost_price=cost_unit,
+                                avg_cost_price=cost_unit,
+                                introduced_date=purchase_date,
+                                is_active=True,
+                            )
+                            products_created.append({
+                                'product_id': product.id,
+                                'product_name': product.product_name,
+                                'sku_code': product.sku_code,
+                            })
 
                     # ── R8: selling price differs from Product.unit_price ──────
                     if product is not None and sell_unit is not None:
@@ -765,6 +792,10 @@ class PurchaseInvoicePDFUploadView(APIView):
                                 'item_code': line['item_code'],
                                 'description': product_name,
                                 'rule': 'R8',
+                                'product_id': product.id,
+                                'invoice_number': bill_no,
+                                'invoice_price': str(sell_unit),
+                                'current_price': str(current_unit_price),
                                 'message': f'Invoice selling price {sell_unit} differs from '
                                            f'Product.unit_price {current_unit_price} - '
                                            f'NOT auto-updated, staff review needed',
@@ -792,8 +823,13 @@ class PurchaseInvoicePDFUploadView(APIView):
                     }
 
                     if product is None:
-                        # R7: product unmatched, batch created with product=NULL, flagged
-                        entry['reason'] = 'R7: product name unmatched - flagged for staff review'
+                        # Keep the defensive fallback for malformed/ambiguous
+                        # lines that cannot be safely assigned to a product.
+                        entry['reason'] = (
+                            'Multiple products matched this name - flagged for staff review'
+                            if product_match_ambiguous else
+                            'Product could not be resolved safely - flagged for staff review'
+                        )
                         flagged_for_review.append(entry)
                         continue
 
@@ -819,6 +855,12 @@ class PurchaseInvoicePDFUploadView(APIView):
 
             # ── Finalize UploadLog ──────────────────────────────────────────────
             log_notes = []
+            if supplier_created:
+                log_notes.append(f'CREATED supplier [{supplier.supplier_name}]')
+            for created in products_created:
+                log_notes.append(
+                    f"CREATED product [{created['product_name']}]"
+                )
             for s in skipped:
                 log_notes.append(f"SKIPPED [{s['item_code']}] {s['reason']}")
             for f in flagged_for_review:
@@ -826,17 +868,39 @@ class PurchaseInvoicePDFUploadView(APIView):
             for w in warnings:
                 log_notes.append(f"WARNING [{w['rule']}] [{w['item_code']}] {w['message']}")
 
-            if skipped or flagged_for_review or warnings:
+            # R6/R8 warnings are non-blocking. The purchase is successful;
+            # only skipped lines or unresolved products make the upload partial.
+            if skipped or flagged_for_review:
                 upload_log.status = 'PARTIAL'
             else:
                 upload_log.status = 'SUCCESS'
             upload_log.error_message = '\n'.join(log_notes)[:2000]
             upload_log.save()
 
+            for warning in warnings:
+                if warning.get('rule') != 'R8' or not warning.get('product_id'):
+                    continue
+                Notification.objects.create(
+                    user=None,
+                    customer=None,
+                    type='PRICE_REVIEW',
+                    priority='MEDIUM',
+                    title='Invoice price review required',
+                    message=(
+                        f"{warning['description']}: invoice selling price "
+                        f"Rs {warning['invoice_price']} differs from the current "
+                        f"product price Rs {warning['current_price']}. "
+                        f"Review and manually update the product price."
+                    ),
+                    reference_table='product',
+                    reference_id=warning['product_id'],
+                )
+
             return Response({
                 'message': 'Purchase invoice PDF upload complete',
                 'upload_log_id': upload_log.id,
                 'supplier': supplier.supplier_name,
+                'supplier_created': supplier_created,
                 'invoice_number': bill_no,
                 'purchase_date': str(purchase_date),
                 'purchase_id': purchase.id,
@@ -844,6 +908,8 @@ class PurchaseInvoicePDFUploadView(APIView):
                 'batches_created': len(inserted) + len(auto_corrected) + len(flagged_for_review),
                 'inserted_count': len(inserted),
                 'auto_corrected_count': len(auto_corrected),
+                'products_created_count': len(products_created),
+                'products_created': products_created,
                 'flagged_for_review_count': len(flagged_for_review),
                 'lines_skipped_count': len(skipped),
                 'warnings_count': len(warnings),

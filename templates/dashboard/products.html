@@ -436,6 +436,13 @@ async function loadProducts() {
         allProducts = extractArray(data);
         prodPage = 1; // fresh data (new search/filter/reload) — back to page 1
         renderProducts();
+        if (editProductId) {
+            const productToEdit = allProducts.find(product => String(product.id) === String(editProductId));
+            if (productToEdit) {
+                openEditForm(productToEdit);
+                history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
     } catch(e) {
         document.getElementById('prodBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Could not load products.</td></tr>';
     }
@@ -535,6 +542,8 @@ fetchCurrentUser().then(() => {
     loadBrandsForProductForm();
     loadProducts();
 });
+
+const editProductId = new URLSearchParams(window.location.search).get('edit');
 
 function openAddForm() {
     document.getElementById('prodFormTitle').innerText = 'Add Product';
