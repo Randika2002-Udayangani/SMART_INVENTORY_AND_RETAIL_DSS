@@ -145,7 +145,7 @@
         <td>${escapeHtml(order.item_count)}</td>
         <td>${money(order.total_amount)}</td>
         <td>${statusBadge(order.status)}</td>
-        <td>${order.rating == null ? '—' : `${Number(order.rating).toFixed(1)} / 5`}</td>
+        <td>${order.rating_count ? `Rated (${Number(order.rating).toFixed(1)} / 5)` : 'Not rated'}</td>
         <td>${displayDate(order.collection_deadline)}</td>
         <td>${renderActions(order)}</td>
       </tr>`).join('');

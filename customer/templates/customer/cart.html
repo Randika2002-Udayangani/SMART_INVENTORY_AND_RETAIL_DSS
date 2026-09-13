@@ -487,6 +487,9 @@
             console.log('Response status:', res.status);
 
             if (res.status === 401) {
+                // Do not let the login page treat an expired token as a valid session.
+                sessionStorage.removeItem('jwt');
+                sessionStorage.setItem('redirectAfterLogin', '/customer/cart/');
                 window.location.href = '/customer/login/';
                 return;
             }
@@ -522,8 +525,10 @@
 
         } catch (err) {
             console.error('Order failed:', err);
-            refNum = 'ORD-2026-' +
-                String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+            alert('Could not connect to the order service. Please try again.');
+            btn.disabled = false;
+            btn.textContent = `Place Order — Rs ${total.toFixed(2)}`;
+            return;
         }
 
         // Save to My Orders
@@ -544,10 +549,8 @@
         // Clear cart
         sessionStorage.removeItem('cart');
 
-        // Show success
-        document.getElementById('cartContent').style.display   = 'none';
-        document.getElementById('successScreen').style.display = 'block';
-        document.getElementById('referenceNumber').textContent  = refNum;
+        // Show the newly created order immediately.
+        window.location.href = '/customer/my-orders/';
     }
 
     function logout() {
