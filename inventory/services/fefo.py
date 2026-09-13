@@ -40,7 +40,13 @@ from purchases.models import PurchaseBatch
 from inventory.models import StockLedger
 
 
-def deduct_stock_fefo(product_id, quantity, source, reference_id=None):
+def deduct_stock_fefo(
+    product_id,
+    quantity,
+    source,
+    reference_id=None,
+    transaction_type='SALE_SYNC',
+):
     """
     Deducts `quantity` units from a product's sellable batches in FEFO
     order. A single sale may span multiple batches if the earliest-
@@ -111,7 +117,7 @@ def deduct_stock_fefo(product_id, quantity, source, reference_id=None):
                 StockLedger(
                     product_id=product_id,
                     batch=batch,
-                    transaction_type='SALE_SYNC',
+                    transaction_type=transaction_type,
                     source=source,
                     quantity_change=-take,
                     reference_id=reference_id,

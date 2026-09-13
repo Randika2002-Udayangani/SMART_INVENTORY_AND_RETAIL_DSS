@@ -127,6 +127,7 @@
                     </tbody>
                 </table>
             </div>
+            <div id="criticalPagination" class="d-flex justify-content-between align-items-center mt-2"></div>
         </div>
     </div>
     <div class="col-lg-6">
@@ -220,6 +221,9 @@ let currentFilter = 'ALL';
 let currentSearch = '';
 let hsPage = 1;
 const hsPageSize = 25;
+let criticalData = [];
+let criticalPage = 1;
+const criticalPageSize = 20;
 
 function statusBadge(s) {
     const map = {
@@ -410,18 +414,44 @@ function escapeHtmlHs(value) {
 // not a client-side filter of the already-loaded general list ──────────────
 async function loadCritical() {
     const tbody = document.getElementById('criticalBody');
+    const pagination = document.getElementById('criticalPagination');
     try {
-        const rows = await apiFetch('/api/health-scores/critical/');
-        tbody.innerHTML = rows.length ? rows.map(r => `
+        criticalData = await apiFetch('/api/health-scores/critical/');
+        criticalPage = 1;
+        renderCriticalPage();
+    } catch (e) {
+        criticalData = [];
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Could not load critical products.</td></tr>';
+        pagination.innerHTML = '';
+    }
+}
+
+function renderCriticalPage() {
+    const tbody = document.getElementById('criticalBody');
+    const pagination = document.getElementById('criticalPagination');
+    const totalPages = Math.max(1, Math.ceil(criticalData.length / criticalPageSize));
+    criticalPage = Math.min(criticalPage, totalPages);
+    const start = (criticalPage - 1) * criticalPageSize;
+    const rows = criticalData.slice(start, start + criticalPageSize);
+
+    tbody.innerHTML = rows.length ? rows.map(r => `
             <tr>
                 <td>${r.product__product_name ?? '—'}</td>
                 <td><strong style="color:#dc2626;">${numberCell(r.overall_score)}</strong></td>
                 <td><em style="color:#64748b;font-size:12px;">${r.recommended_action ?? '—'}</em></td>
             </tr>
         `).join('') : '<tr><td colspan="3" class="text-center text-muted">No critical products right now.</td></tr>';
-    } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Could not load critical products.</td></tr>';
-    }
+
+    pagination.innerHTML = criticalData.length > criticalPageSize ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeCriticalPage(-1)" ${criticalPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${criticalPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeCriticalPage(1)" ${criticalPage === totalPages ? 'disabled' : ''}>Next</button>
+    ` : '';
+}
+
+function changeCriticalPage(delta) {
+    criticalPage += delta;
+    renderCriticalPage();
 }
 
 async function refreshCritical() {

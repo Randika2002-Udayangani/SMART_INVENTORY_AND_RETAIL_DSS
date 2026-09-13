@@ -5,6 +5,8 @@ urlpatterns = [
     # ── Stock snapshot ───────────────────────────────────
     path('inventory/stock/', views.StockSnapshotView.as_view(), name='stock-snapshot'),
     path('inventory/stock/<int:product_id>/', views.ProductStockDetailView.as_view(), name='product-stock-detail'),
+    path('inventory/stock/<int:product_id>/history/', views.ProductStockHistoryView.as_view(), name='inventory-stock-history'),
+    path('stock/<int:product_id>/history/', views.ProductStockHistoryView.as_view(), name='stock-history'),
     path('inventory/sync-date/', views.SyncDateView.as_view(), name='inventory-sync-date'),
     path('inventory/last-uploads-by-type/', views.LastUploadsByTypeView.as_view(), name='last-uploads-by-type'),
 

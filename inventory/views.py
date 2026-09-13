@@ -28,6 +28,7 @@ from .serializers import (
 )
 from sales.models import ItemSalesRecord
 from inventory.services.reorder_logic import get_urgency
+from inventory.services.fefo import deduct_stock_fefo
 
 
 from inventory.services.reorder_logic import check_reorder_needs
@@ -51,12 +52,12 @@ from core.utils import get_last_sync_date, get_latest_sync_uploads
 class StockSnapshotView(APIView):
     def get(self, request):
         last_sync = get_last_sync_date()
-        products  = Product.objects.filter(is_active=True)
+        products  = Product.objects.filter(is_active=True).select_related('category', 'brand')
         result    = []
 
         for product in products:
             current_stock = PurchaseBatch.objects.filter(
-                product=product, status__in=['ACTIVE', 'PENDING_EXPIRY']
+                product=product, status='ACTIVE'
             ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
 
             reorder = product.reorder_threshold or 0
@@ -70,6 +71,8 @@ class StockSnapshotView(APIView):
             result.append({
                 'product_id'       : product.id,
                 'product_name'     : product.product_name,
+                'category_name'    : product.category.category_name if product.category else '—',
+                'brand_name'       : product.brand.brand_name if product.brand else 'UNBRANDED',
                 'sku_code'         : product.sku_code,
                 'current_stock'    : current_stock,
                 'reorder_threshold': reorder,
@@ -95,33 +98,20 @@ TRANSACTION_TYPE_LABELS = {
     'INITIAL_IMPORT': 'Initial Import',
 }
 
+SOURCE_REASON_LABELS = {
+    'DAMAGE_LOSS': 'Damage recorded',
+    'EXPIRY_AUTO_DETECT': 'Expiry loss recorded',
+    'MANUAL_ADJUSTMENT': 'Manual stock adjustment',
+}
 
-def _build_stock_history(product, limit=STOCK_LEDGER_HISTORY_LIMIT):
+
+def _compute_stock_ledger_chronological(product):
     """
-    Builds Stock Movement History for the Product Details modal, from the
-    EXISTING StockLedger table only -- no new model, no duplicate stock
-    logic. Uses the real transaction_type/quantity_change/source/
-    reference_id values exactly as stored; no new transaction types are
-    introduced.
-
-    StockLedger has no 'reason' field. 'reason' only exists on the
-    separate StockAdjustment model, which has no direct FK back to the
-    StockLedger row it was created alongside -- safely joining them would
-    require guessing by timestamp/quantity match. Per spec, an
-    unavailable field must be shown as '—', not fabricated. Every row's
-    reason is therefore always '—'.
-
-    Running balance is computed chronologically (oldest -> newest) BEFORE
-    reversing for newest-first display -- computing it in display order
-    would produce silently wrong balances.
-
-    IMPORTANT: this ledger-computed balance will legitimately NOT match
-    total_current_stock for products whose historical sales predate the
-    FEFO stock-deduction fix (F04) -- those old sales never wrote a
-    StockLedger entry, so the ledger under-counts real depletion until
-    reconcile_stock_fefo has been run for real. This is a genuine,
-    already-diagnosed data-state fact, not a bug in this endpoint. It is
-    surfaced via the returned latest_ledger_balance rather than hidden.
+    Returns the FULL chronological (oldest -> newest) ledger history for a
+    product, with running balance computed correctly in chronological order.
+    This must always run in full before any pagination/reversal happens --
+    computing running balance on a sliced/paginated subset would silently
+    produce wrong balances for every page after the first.
     """
     entries = list(
         StockLedger.objects
@@ -144,17 +134,83 @@ def _build_stock_history(product, limit=STOCK_LEDGER_HISTORY_LIMIT):
             'reference_id': e['reference_id'],
             'quantity_change': e['quantity_change'],
             'balance_after': running_balance,
-            'reason': '—',  # see docstring -- not safely derivable
+            'reason': SOURCE_REASON_LABELS.get(e['source'], '—'),
         })
 
+    return chronological
+
+
+def _build_stock_history(product, limit=STOCK_LEDGER_HISTORY_LIMIT):
+    """
+    Kept for ProductStockDetailView's inline preview (first page only,
+    newest-first) so that view's existing response shape doesn't change.
+    Full pagination lives in ProductStockHistoryView below.
+    """
+    chronological = _compute_stock_ledger_chronological(product)
     latest_balance = chronological[-1]['balance_after'] if chronological else 0
-
-    # Reverse for newest-first display ONLY after the running balance is
-    # computed chronologically.
     display_order = list(reversed(chronological))[:limit]
-
     return display_order, latest_balance
 
+
+class ProductStockHistoryView(APIView):
+    """
+    GET /api/inventory/stock/<product_id>/history/?page=1&page_size=10
+
+    Paginated stock movement history, newest-first. Each call to "Next"
+    from the frontend increments `page` to reveal older entries.
+
+    Response:
+        product_id     int
+        page           int   — 1-indexed
+        page_size      int
+        total_count    int   — total ledger entries for this product
+        total_pages    int
+        has_next       bool
+        has_previous   bool
+        results        list  — same shape as ProductStockDetailView.stock_history rows
+    """
+
+    def get(self, request, product_id):
+        try:
+            product = Product.objects.get(pk=product_id)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            page = max(1, int(request.query_params.get('page', 1)))
+        except (TypeError, ValueError):
+            return Response({'error': 'page must be an integer'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            page_size = int(request.query_params.get('page_size', 10))
+        except (TypeError, ValueError):
+            return Response({'error': 'page_size must be an integer'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        page_size = max(1, min(page_size, 100))  # sane ceiling
+
+        chronological = _compute_stock_ledger_chronological(product)
+        newest_first = list(reversed(chronological))
+
+        total_count = len(newest_first)
+        total_pages = max(1, -(-total_count // page_size))  # ceil div
+        page = min(page, total_pages)
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_rows = newest_first[start:end]
+
+        return Response({
+            'product_id': product.id,
+            'page': page,
+            'page_size': page_size,
+            'total_count': total_count,
+            'total_pages': total_pages,
+            'has_next': end < total_count,
+            'has_previous': page > 1,
+            'results': page_rows,
+        })
 
 class ProductStockDetailView(APIView):
     def get(self, request, product_id):
@@ -165,7 +221,7 @@ class ProductStockDetailView(APIView):
                             status=status.HTTP_404_NOT_FOUND)
 
         batches     = PurchaseBatch.objects.filter(
-            product=product, status__in=['ACTIVE', 'PENDING_EXPIRY']
+            product=product, status='ACTIVE'
         ).order_by('expiry_date')
         total_stock = batches.aggregate(
             total=Sum('remaining_quantity'))['total'] or 0
@@ -192,6 +248,8 @@ class ProductStockDetailView(APIView):
         return Response({
             'product_id'         : product.id,
             'product_name'       : product.product_name,
+            'category_name'      : product.category.category_name if product.category else '—',
+            'brand_name'         : product.brand.brand_name if product.brand else 'UNBRANDED',
             'sku_code'           : product.sku_code,
             'avg_cost_price'     : str(product.avg_cost_price),
             'total_current_stock': total_stock,
@@ -469,7 +527,7 @@ class OutOfStockView(APIView):
 
         for product in products:
             current = PurchaseBatch.objects.filter(
-                product=product, status__in=['ACTIVE', 'PENDING_EXPIRY']
+                product=product, status='ACTIVE'
             ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
 
             if current == 0:
@@ -655,6 +713,29 @@ class LossRecordView(APIView):
             notes         = notes,
         )
 
+        # FIX (stock audit, 2026-09): damage losses were previously
+        # recorded in LossRecord but never actually reduced stock --
+        # PurchaseBatch.remaining_quantity stayed untouched, so a
+        # product could show plenty of "available" stock while a chunk
+        # of it had already been recorded as damaged and thrown away.
+        # Follows the SAME convention EXPIRY_AUTO_DETECT already uses
+        # (MANUAL_ADJUSTMENT transaction_type, distinguished by source)
+        # rather than inventing a new transaction_type. Manually-
+        # recorded EXPIRY through this same endpoint has an identical
+        # gap -- intentionally NOT changed here since it wasn't asked
+        # for; flagging it as a known follow-up alongside this fix.
+        stock_deduction_shortfall = None
+        if loss_type == 'DAMAGE':
+            fefo_result = deduct_stock_fefo(
+                product_id=product.id,
+                quantity=quantity,
+                source='DAMAGE_LOSS',
+                reference_id=record.id,
+                transaction_type='MANUAL_ADJUSTMENT',
+            )
+            if fefo_result['shortfall'] > 0:
+                stock_deduction_shortfall = fefo_result['shortfall']
+
         log_action(
             user=request.user, action='CREATE', table_name='loss_record',
             record_id=record.id, old_value=None,
@@ -667,14 +748,23 @@ class LossRecordView(APIView):
             request=request,
         )
 
-        return Response({
+        response_data = {
             'message'      : 'Loss recorded successfully',
             'loss_id'      : record.id,
             'product'      : product.product_name,
             'loss_type'    : loss_type,
             'loss_quantity': quantity,
             'loss_value'   : str(loss_value),
-        }, status=status.HTTP_201_CREATED)
+        }
+        if stock_deduction_shortfall is not None:
+            response_data['warning'] = (
+                f'Loss recorded, but only {quantity - stock_deduction_shortfall} '
+                f'of {quantity} units could be deducted from sellable stock '
+                f'(shortfall {stock_deduction_shortfall}). This product\'s '
+                f'stock may already be understated -- worth a manual check.'
+            )
+
+        return Response(response_data, status=status.HTTP_201_CREATED)
 
 
 class LossSummaryView(APIView):
@@ -758,7 +848,19 @@ class LossAutoDetectView(APIView):
                 quantity_change  = -batch.remaining_quantity,
             )
 
+            # FIX (stock audit, 2026-09): this previously only flipped
+            # status to EXPIRED without zeroing remaining_quantity. The
+            # ledger entry above correctly nets the batch's contribution
+            # to zero in any ledger-based total, and status filtering
+            # correctly excludes it from batch-based totals -- so the
+            # aggregate "current stock" number was coincidentally still
+            # right either way. But the batch record itself was left
+            # showing a stale, wrong remaining_quantity, which is a real
+            # data-integrity problem for anything that inspects batches
+            # directly (e.g. an audit report, or code written later that
+            # assumes remaining_quantity=0 means "actually depleted").
             batch.status = 'EXPIRED'
+            batch.remaining_quantity = 0
             batch.save()
             created += 1
 

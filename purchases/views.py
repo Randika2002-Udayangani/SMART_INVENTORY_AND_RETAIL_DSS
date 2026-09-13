@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.db import transaction
 from datetime import timedelta
 
-from .models import Purchase, PurchaseBatch
+from .models import Purchase, PurchaseBatch, SupplierReturn, StockLedger
 from users.audit import log_action
 from .serializers import (
     PurchaseSerializer, PurchaseCreateSerializer, PurchaseBatchSerializer

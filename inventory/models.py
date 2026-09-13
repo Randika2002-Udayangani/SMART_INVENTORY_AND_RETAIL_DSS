@@ -17,6 +17,7 @@ class StockLedger(models.Model):
         ('SALE_SYNC', 'Sale Sync'),
         ('MANUAL_ADJUSTMENT', 'Manual Adjustment'),
         ('INITIAL_IMPORT', 'Initial Import'),
+        ('SUPPLIER_RETURN', 'Supplier Return'),
     ]
     product = models.ForeignKey(
         Product, on_delete=models.PROTECT, db_column='product_id'
