@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 
 # Create your models here.
 
@@ -85,6 +86,12 @@ class Product(models.Model):
 
 
 class ZoneRecommendation(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('ACCEPTED', 'Accepted'),
+        ('REJECTED', 'Rejected'),
+        ('APPLIED', 'Applied'),
+    ]
     product = models.ForeignKey(
         Product, on_delete=models.CASCADE, db_column='product_id'
     )
@@ -99,6 +106,13 @@ class ZoneRecommendation(models.Model):
     reason = models.CharField(max_length=255, blank=True)
     performance_score = models.DecimalField(
         max_digits=5, decimal_places=2, null=True, blank=True
+    )
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default='PENDING'
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='+'
     )
     recommendation_date = models.DateField(auto_now_add=True)
 
@@ -119,3 +133,23 @@ class ProductZoneOverride(models.Model):
 
     class Meta:
         db_table = 'product_zone_override'
+
+
+class ZoneCalculationRun(models.Model):
+    """
+    One row per "Calculate Recommendations" click. Exists purely so the
+    Store Zone Recommendations page can show real last-run info (KPI
+    counts, last-calculated timestamp) to *anyone* loading the page —
+    not just within the browser session that triggered the calculation.
+    """
+    run_at = models.DateTimeField(auto_now_add=True)
+    products_evaluated = models.IntegerField(default=0)
+    recommendations_created = models.IntegerField(default=0)
+    skipped_no_health_score = models.IntegerField(default=0)
+    skipped_no_current_zone = models.IntegerField(default=0)
+    skipped_duplicate = models.IntegerField(default=0)
+    categories_unmapped_count = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = 'zone_calculation_run'
+        ordering = ['-run_at']

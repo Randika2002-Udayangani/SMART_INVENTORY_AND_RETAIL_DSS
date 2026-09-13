@@ -1,0 +1,668 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Store Zone Recommendations — Smart Inventory DSS{% endblock %}
+{% block nav_zone_recommendations %}active{% endblock %}
+{% block extra_css %}
+    <style>
+        .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
+        .btn-primary { background:var(--sidebar); border:none; }
+        .btn-primary:hover { background:#0a2b2c; }
+        .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
+        .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
+        .nav-tabs .nav-link { color:var(--txt); }
+
+        .kpi-strip { display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-bottom:18px; }
+        .kpi-card { border-radius:12px; border:1px solid var(--border); background:var(--card); padding:16px 18px; }
+        .kpi-card .val { font-size:24px; font-weight:700; }
+        .kpi-card .lbl { font-size:11.5px; color:var(--muted); margin-top:2px; }
+        .kpi-card.warn .val { color:var(--amber); }
+        .kpi-card.risk .val { color:var(--red); }
+
+        .zone-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin-bottom:18px; }
+        .zone-tile { border-radius:12px; border:1px solid var(--border); background:var(--card); padding:16px 18px; }
+        .zone-tile .name { font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--sidebar); }
+        .zone-tile .count { font-size:20px; font-weight:700; margin-top:8px; }
+        .zone-tile .sub { font-size:11.5px; color:var(--muted); }
+
+        .status-pill { font-size:10.5px; font-weight:700; padding:2px 9px; border-radius:20px; text-transform:uppercase; letter-spacing:.03em; }
+        .status-PENDING { background:rgba(245,158,11,0.15); color:var(--amber); }
+        .status-ACCEPTED { background:rgba(52,209,122,0.15); color:var(--green2); }
+        .status-REJECTED { background:rgba(239,68,68,0.15); color:var(--red); }
+        .status-APPLIED { background:rgba(139,92,246,0.15); color:var(--purple); }
+
+        .score-bar-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+        .score-bar-row .lbl { width:110px; font-size:12px; color:var(--muted); flex-shrink:0; }
+        .score-bar-track { flex:1; height:8px; border-radius:5px; background:var(--card2); overflow:hidden; }
+        .score-bar-fill { height:100%; border-radius:5px; background:var(--sidebar); }
+        .score-bar-row .num { width:44px; text-align:right; font-size:12px; font-weight:600; flex-shrink:0; }
+
+        .unmapped-banner { background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); color:#92620a; border-radius:8px; padding:10px 14px; font-size:13px; }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="topbar">
+    <div>
+        <h1>Store Zone Recommendations</h1>
+        <div class="sub">AI-assisted placement recommendations based on sales velocity, margin and expiry risk.</div>
+    </div>
+    <div class="text-end">
+        <div class="sub mb-2" id="lastCalculated">Last calculated: —</div>
+        <button class="btn btn-primary btn-sm" onclick="calculateRecommendations()" id="calcBtn">Calculate Recommendations</button>
+    </div>
+</div>
+
+<div id="pageMsg" class="alert d-none" role="status" aria-live="polite"></div>
+
+<div class="container-fluid px-4">
+
+    <!-- KPI strip -->
+    <div class="kpi-strip">
+        <div class="kpi-card"><div class="val" id="kpiEvaluated">—</div><div class="lbl">Products Checked</div></div>
+        <div class="kpi-card warn"><div class="val" id="kpiHighPriority">—</div><div class="lbl">High Priority</div></div>
+        <div class="kpi-card risk"><div class="val" id="kpiNearExpiry">—</div><div class="lbl">Near Expiry</div></div>
+        <div class="kpi-card warn"><div class="val" id="kpiUnmapped">—</div><div class="lbl">Unmapped Categories</div></div>
+    </div>
+
+    <ul class="nav nav-tabs mb-3 flex-wrap" id="zoneTabs">
+        <li class="nav-item"><button class="nav-link active" onclick="switchZoneTab('recommendations', this)">Recommendations</button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchZoneTab('zone-overview', this)">Zone Overview</button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchZoneTab('category-mapping', this)">Category Mapping</button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchZoneTab('product-override', this)">Product Override</button></li>
+    </ul>
+
+    <!-- Recommendations tab -->
+    <div id="tab-recommendations">
+        <div class="card p-4 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold mb-0">Recommendations</h6>
+                <div class="d-flex gap-2">
+                    <input type="text" id="productSearch" class="form-control form-control-sm" style="width:220px;" placeholder="Search product or category..." oninput="filterRecommendations()">
+                    <select id="statusFilter" class="form-select form-select-sm" style="width:180px;" onchange="filterRecommendations()">
+                        <option value="">All statuses</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="ACCEPTED">Accepted</option>
+                        <option value="REJECTED">Rejected</option>
+                        <option value="APPLIED">Applied</option>
+                    </select>
+                </div>
+            </div>
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Product</th><th>Category</th><th>Current Zone</th>
+                        <th>Recommended Zone</th><th>Trigger</th><th>Score</th>
+                        <th>Status</th><th></th>
+                    </tr>
+                </thead>
+                <tbody id="recBody">
+                    <tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>
+                </tbody>
+            </table>
+            <div id="recPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
+        </div>
+    </div>
+
+    <!-- Zone Overview tab -->
+    <div id="tab-zone-overview" style="display:none;">
+        <h6 class="fw-bold mb-3">Store Zone Overview</h6>
+        <div class="zone-grid" id="zoneOverviewGrid">
+            <div class="text-muted small">Loading zones...</div>
+        </div>
+    </div>
+
+    <!-- Category Zone Mapping tab -->
+    <div id="tab-category-mapping" style="display:none;">
+        <div class="card p-4 mb-4">
+            <h6 class="fw-bold mb-3">Category Zone Mapping</h6>
+            <div id="mappingList"></div>
+            <div id="unmappedBanner" class="unmapped-banner mt-3 d-none"></div>
+        </div>
+    </div>
+
+    <!-- Product Zone Override tab -->
+    <div id="tab-product-override" style="display:none;">
+        <div class="card p-4 mb-4" style="max-width:560px;">
+            <h6 class="fw-bold mb-3">Product Zone Override</h6>
+            <div class="sub mb-3" style="font-size:12px; color:var(--muted);">
+                Places a specific product in a zone temporarily, without changing its category's default placement.
+            </div>
+            <div class="row g-3">
+                <div class="col-12">
+                    <label class="form-label">Product</label>
+                    <input type="text" id="ovProductSearch" class="form-control" list="ovProductOptions" placeholder="Search product name...">
+                    <input type="hidden" id="ovProduct">
+                    <datalist id="ovProductOptions"></datalist>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Zone</label>
+                    <select id="ovZone" class="form-select"><option value="">Select zone</option></select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Start Date</label>
+                    <input type="date" id="ovStart" class="form-control">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">End Date</label>
+                    <input type="date" id="ovEnd" class="form-control">
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Reason</label>
+                    <input type="text" id="ovReason" class="form-control" placeholder="e.g. Promotional campaign">
+                </div>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-primary" onclick="saveOverride()">Save Override</button>
+            </div>
+            <div id="ovMsg" class="mt-3"></div>
+        </div>
+
+        <!-- Existing overrides — this list is what actually answers
+             "where can I see a saved override": there was previously no
+             view of this at all after clicking Save. -->
+        <div class="card p-4 mb-4" style="max-width:720px;">
+            <h6 class="fw-bold mb-3">Active &amp; Upcoming Overrides</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead>
+                        <tr style="background:var(--card2);"><th>Product</th><th>Zone</th><th>Start</th><th>End</th><th>Reason</th></tr>
+                    </thead>
+                    <tbody id="ovListBody">
+                        <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Recommendation detail modal -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold" id="detailProductName">—</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex justify-content-between mb-3">
+            <div><div class="small text-muted">Current placement</div><div class="fw-semibold" id="detailCurrentZone">—</div></div>
+            <div><div class="small text-muted">Recommended placement</div><div class="fw-semibold" id="detailSuggestedZone">—</div></div>
+        </div>
+        <div class="small text-muted mb-1">Why?</div>
+        <div class="mb-3" id="detailReason">—</div>
+        <div id="detailScores"></div>
+      </div>
+      <div class="modal-footer" id="detailActions"></div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+function isManagerOrAdmin() {
+    return ['ADMIN', 'MANAGER'].includes((window.currentUserRole || '').toUpperCase());
+}
+
+async function request(url, options = {}) {
+    try {
+        const data = await apiFetch(url, options);
+        return { ok: true, json: async () => data };
+    } catch (error) {
+        return { ok: false, status: error.status ?? 500, json: async () => error.data ?? { error: error.message } };
+    }
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function extractArray(data) {
+    if (Array.isArray(data)) return data;
+    return data.results ?? [];
+}
+
+function showMsg(message, type = 'danger') {
+    const box = document.getElementById('pageMsg');
+    box.className = `alert alert-${type}`;
+    box.textContent = message;
+    setTimeout(() => box.classList.add('d-none'), 4000);
+}
+
+// Tracks which secondary tabs have already been fetched at least once,
+// so switching tabs back and forth doesn't re-fetch every time.
+const zoneTabLoaded = { 'zone-overview': false, 'category-mapping': false, 'product-override': false };
+
+function switchZoneTab(name, btn) {
+    ['recommendations', 'zone-overview', 'category-mapping', 'product-override'].forEach(t => {
+        const el = document.getElementById('tab-' + t);
+        if (el) el.style.display = (t === name) ? 'block' : 'none';
+    });
+    document.querySelectorAll('#zoneTabs .nav-link').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+
+    if (name === 'zone-overview' && !zoneTabLoaded['zone-overview']) {
+        zoneTabLoaded['zone-overview'] = true;
+        loadZoneOverview();
+    }
+    if (name === 'category-mapping' && !zoneTabLoaded['category-mapping']) {
+        zoneTabLoaded['category-mapping'] = true;
+        loadCategoryMapping();
+    }
+    if (name === 'product-override' && !zoneTabLoaded['product-override'] && isManagerOrAdmin()) {
+        zoneTabLoaded['product-override'] = true;
+        loadOverrideFormOptions();
+        loadOverridesList();
+    }
+}
+
+let allRecommendations = [];
+let recommendationsCache = [];
+let recPage = 1;
+const recPageSize = 25;
+
+async function loadRecommendations() {
+    const tbody = document.getElementById('recBody');
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>';
+    try {
+        const res = await request('/api/zones/recommendations/');
+        const data = await res.json();
+        allRecommendations = extractArray(data);
+        recPage = 1; // fresh data — back to page 1
+        renderRecommendations();
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Could not load recommendations.</td></tr>';
+    }
+}
+
+// Bound to the search box and status filter — a changed filter is a new
+// result set, so always jump back to page 1 rather than staying on
+// whatever page number happened to be showing before.
+function filterRecommendations() {
+    recPage = 1;
+    renderRecommendations();
+}
+
+function renderRecommendations() {
+    const tbody = document.getElementById('recBody');
+    let rows = allRecommendations;
+
+    const statusFilter = document.getElementById('statusFilter').value;
+    if (statusFilter) rows = rows.filter(r => r.status === statusFilter);
+
+    const search = document.getElementById('productSearch').value.trim().toLowerCase();
+    if (search) {
+        rows = rows.filter(r =>
+            (r.product_name || '').toLowerCase().includes(search) ||
+            (r.category_name || '').toLowerCase().includes(search)
+        );
+    }
+
+    recommendationsCache = rows;
+
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No recommendations match this filter.</td></tr>';
+        document.getElementById('recPagination').innerHTML = '';
+        updateKpis(rows);
+        return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / recPageSize));
+    recPage = Math.min(recPage, totalPages);
+    const pageRows = rows.slice((recPage - 1) * recPageSize, recPage * recPageSize);
+
+    tbody.innerHTML = pageRows.map(r => `
+        <tr>
+            <td>${escapeHtml(r.product_name)}</td>
+            <td>${escapeHtml(r.category_name ?? '—')}</td>
+            <td>${escapeHtml(r.current_zone_name)}</td>
+            <td>${escapeHtml(r.suggested_zone_name)}</td>
+            <td class="small">${escapeHtml(triggerLabel(r.reason))}</td>
+            <td>${r.performance_score != null ? Math.round(r.performance_score) : '—'}</td>
+            <td><span class="status-pill status-${r.status}">${r.status}</span></td>
+            <td><button class="btn btn-outline-secondary btn-sm" onclick="openDetail(${r.id})">View Analysis</button></td>
+        </tr>
+    `).join('');
+
+    document.getElementById('recPagination').innerHTML = rows.length > recPageSize ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeRecPage(-1)" ${recPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${recPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeRecPage(1)" ${recPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+
+    // KPIs reflect the full filtered set, not just the visible page.
+    updateKpis(rows);
+}
+
+function changeRecPage(delta) {
+    recPage += delta;
+    renderRecommendations();
+}
+
+function triggerLabel(reason) {
+    if (!reason) return '—';
+    // Reason strings are pre-formatted by the backend, e.g.
+    // "High velocity (94.0) + high margin (82.0) — recommend ..."
+    // Show just the trigger part, before the em-dash explanation.
+    return reason.split('—')[0].trim();
+}
+
+function updateKpis(rows) {
+    document.getElementById('kpiHighPriority').textContent =
+        rows.filter(r => r.performance_score != null && r.performance_score >= 70).length;
+    document.getElementById('kpiNearExpiry').textContent =
+        rows.filter(r => /expiry/i.test(r.reason || '')).length;
+}
+
+async function loadLastRun() {
+    try {
+        const res = await request('/api/zones/recommendations/last-run/');
+        const run = await res.json();
+        if (!run) return; // no calculation has ever been run yet
+        document.getElementById('kpiEvaluated').textContent = run.products_evaluated;
+        document.getElementById('kpiUnmapped').textContent = run.categories_unmapped_count;
+        document.getElementById('lastCalculated').textContent =
+            'Last calculated: ' + new Date(run.run_at).toLocaleString();
+    } catch (e) {
+        // leave placeholders as-is — not worth surfacing an error for this
+    }
+}
+
+async function calculateRecommendations() {
+    if (!confirm('Recalculate zone recommendations now? This evaluates all active products against their latest health scores.')) return;
+    const btn = document.getElementById('calcBtn');
+    btn.disabled = true;
+    btn.textContent = 'Calculating...';
+    try {
+        const res = await request('/api/zones/recommendations/calculate/', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            document.getElementById('kpiEvaluated').textContent = data.products_evaluated ?? '—';
+            document.getElementById('lastCalculated').textContent =
+                'Last calculated: ' + new Date(data.run_at).toLocaleString();
+            const unmapped = data.zone_assignment?.categories_unmapped ?? [];
+            document.getElementById('kpiUnmapped').textContent = unmapped.length;
+            showMsg(
+                `Calculation complete — ${data.recommendations_created} new recommendation(s), ` +
+                `${data.skipped_duplicate ?? 0} already pending, ${data.skipped_no_health_score} skipped (no health score).`,
+                'success'
+            );
+            loadRecommendations();
+            loadZoneOverview();
+            loadCategoryMapping();
+            zoneTabLoaded['zone-overview'] = true;
+            zoneTabLoaded['category-mapping'] = true;
+        } else {
+            showMsg('Calculation failed: ' + (data.error || data.message || 'Unknown error'));
+        }
+    } catch (e) {
+        showMsg('Network error during calculation: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Calculate Recommendations';
+    }
+}
+
+function openDetail(id) {
+    const r = recommendationsCache.find(x => x.id === id);
+    if (!r) return;
+    document.getElementById('detailProductName').textContent = r.product_name;
+    document.getElementById('detailCurrentZone').textContent = r.current_zone_name;
+    document.getElementById('detailSuggestedZone').textContent = r.suggested_zone_name;
+    document.getElementById('detailReason').textContent = r.reason || '—';
+
+    const actorLabel = { PENDING: null, ACCEPTED: 'Accepted by', REJECTED: 'Rejected by', APPLIED: 'Applied by' }[r.status];
+    const existing = document.getElementById('detailActorLine');
+    if (existing) existing.remove();
+    if (actorLabel) {
+        const line = document.createElement('div');
+        line.id = 'detailActorLine';
+        line.className = 'small text-muted mb-3';
+        line.textContent = `${actorLabel}: ${r.updated_by_username || 'unknown'}`;
+        document.getElementById('detailReason').insertAdjacentElement('afterend', line);
+    }
+
+    const scoresBox = document.getElementById('detailScores');
+    if (r.health_scores) {
+        const s = r.health_scores;
+        scoresBox.innerHTML = ['velocity_score','margin_score','expiry_risk_score','overall_score']
+            .map(key => {
+                const label = {velocity_score:'Velocity', margin_score:'Margin', expiry_risk_score:'Expiry risk', overall_score:'Overall health'}[key];
+                const val = s[key] != null ? Math.round(s[key]) : 0;
+                return `<div class="score-bar-row">
+                    <div class="lbl">${label}</div>
+                    <div class="score-bar-track"><div class="score-bar-fill" style="width:${val}%"></div></div>
+                    <div class="num">${val}/100</div>
+                </div>`;
+            }).join('');
+    } else {
+        scoresBox.innerHTML = '<div class="text-muted small">No health score breakdown available for this product.</div>';
+    }
+
+    const actions = document.getElementById('detailActions');
+    if (r.status === 'PENDING') {
+        if (isManagerOrAdmin()) {
+            actions.innerHTML = `
+                <button class="btn btn-outline-danger btn-sm" onclick="setStatus(${r.id}, 'REJECTED')">Reject</button>
+                <button class="btn btn-primary btn-sm" onclick="setStatus(${r.id}, 'ACCEPTED')">Accept Recommendation</button>`;
+        } else {
+            actions.innerHTML = `<span class="text-muted small">Awaiting a manager's decision.</span>`;
+        }
+    } else if (r.status === 'ACCEPTED') {
+        actions.innerHTML = `<button class="btn btn-primary btn-sm" onclick="setStatus(${r.id}, 'APPLIED')">Mark as Applied</button>`;
+    } else {
+        actions.innerHTML = `<span class="status-pill status-${r.status}">${r.status}</span>`;
+    }
+
+    new bootstrap.Modal(document.getElementById('detailModal')).show();
+}
+
+async function setStatus(id, status) {
+    try {
+        const res = await request(`/api/zones/recommendations/${id}/status/`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status }),
+        });
+        if (res.ok) {
+            showMsg(`Recommendation ${status.toLowerCase()}.`, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('detailModal'))?.hide();
+            loadRecommendations();
+            // Every transition here (accept/reject/apply) creates a shared
+            // notification on the backend — refresh the sidebar badge
+            // immediately, same as reorder.html does after ORDERED.
+            if (typeof refreshSidebarAlertBadge === 'function') {
+                refreshSidebarAlertBadge();
+            }
+        } else {
+            const err = await res.json();
+            showMsg('Update failed: ' + (err.error || err.message || 'Unknown error'));
+        }
+    } catch (e) {
+        showMsg('Network error: ' + e.message);
+    }
+}
+
+async function loadZoneOverview() {
+    const grid = document.getElementById('zoneOverviewGrid');
+    try {
+        const [zonesRes, recsRes] = await Promise.all([
+            request('/api/zones/'),
+            request('/api/zones/recommendations/'),
+        ]);
+        const zones = extractArray(await zonesRes.json());
+        // No filter backend on this endpoint, so filter PENDING client-side
+        const recs = extractArray(await recsRes.json()).filter(r => r.status === 'PENDING');
+
+        grid.innerHTML = zones.map(z => {
+            const pendingForZone = recs.filter(r => r.suggested_zone === z.id).length;
+            return `
+                <div class="zone-tile">
+                    <div class="name">${escapeHtml(z.zone_name)}</div>
+                    <div class="count">${pendingForZone} pending</div>
+                    <div class="sub">${escapeHtml(z.traffic_level)} traffic</div>
+                </div>`;
+        }).join('') || '<div class="text-muted small">No zones configured yet.</div>';
+    } catch (e) {
+        grid.innerHTML = '<div class="text-muted small">Could not load zone overview.</div>';
+    }
+}
+
+async function loadCategoryMapping() {
+    try {
+        const res = await request('/api/zones/category-mapping/');
+        const data = await res.json();
+        const list = document.getElementById('mappingList');
+        list.innerHTML = (data.zones || []).map(z => `
+            <div class="d-flex justify-content-between border-bottom py-2">
+                <span>${escapeHtml(z.zone_name)}</span>
+                <span class="text-muted">${z.category_count} categor${z.category_count === 1 ? 'y' : 'ies'}</span>
+            </div>
+        `).join('') || '<div class="text-muted small">No zones mapped yet.</div>';
+
+        const banner = document.getElementById('unmappedBanner');
+        const unmapped = data.categories_unmapped || [];
+        if (unmapped.length > 0) {
+            banner.classList.remove('d-none');
+            banner.innerHTML = `⚠ ${unmapped.length} categor${unmapped.length === 1 ? 'y is' : 'ies are'} unmapped: ${escapeHtml(unmapped.join(', '))}`;
+        } else {
+            banner.classList.add('d-none');
+        }
+    } catch (e) {
+        document.getElementById('mappingList').innerHTML = '<div class="text-muted small">Could not load category mapping.</div>';
+    }
+}
+
+// Maps the exact product name shown in the search box to its real product
+// id — same pattern as the New Purchase form in purchases.html, since the
+// override payload needs to POST product_id, not a name.
+let ovProductLookup = {};
+
+async function loadOverrideFormOptions() {
+    try {
+        const [prodRes, zoneRes] = await Promise.all([
+            request('/api/products/'),
+            request('/api/zones/'),
+        ]);
+        const products = extractArray(await prodRes.json());
+        const zones = extractArray(await zoneRes.json());
+
+        ovProductLookup = {};
+        document.getElementById('ovProductOptions').innerHTML = products.map(p => {
+            ovProductLookup[p.product_name] = p.id;
+            return `<option value="${escapeHtml(p.product_name)}"></option>`;
+        }).join('');
+
+        document.getElementById('ovZone').innerHTML =
+            '<option value="">Select zone</option>' +
+            zones.map(z => `<option value="${z.id}">${escapeHtml(z.zone_name)}</option>`).join('');
+    } catch (e) {
+        showMsg('Could not load products/zones for override form.');
+    }
+}
+
+// Resolves the typed product name to its id as the user types, and flags
+// text that doesn't match any real product with a red border.
+document.getElementById('ovProductSearch').addEventListener('input', (e) => {
+    const matchedId = ovProductLookup[e.target.value];
+    document.getElementById('ovProduct').value = matchedId ?? '';
+    e.target.classList.toggle('is-invalid', e.target.value.length > 0 && matchedId === undefined);
+});
+
+// NEEDS BACKEND CONFIRMATION: this assumes GET /api/zones/overrides/ (same
+// URL as the POST below) returns the list of existing overrides, following
+// the same ListCreateAPIView pattern used elsewhere in this codebase
+// (e.g. Purchases/Batches). Field names below (product_name, zone_name,
+// start_date, end_date, reason) are guessed from naming conventions used
+// everywhere else in this file — verify against the real response and
+// adjust the field names below if they differ.
+async function loadOverridesList() {
+    const tbody = document.getElementById('ovListBody');
+    try {
+        const res = await request('/api/zones/overrides/');
+        const data = await res.json();
+        const rows = extractArray(data);
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No overrides recorded.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(o => `
+            <tr>
+                <td>${escapeHtml(o.product_name ?? o.product ?? '—')}</td>
+                <td>${escapeHtml(o.zone_name ?? o.zone ?? '—')}</td>
+                <td>${escapeHtml(o.start_date ?? '—')}</td>
+                <td>${escapeHtml(o.end_date ?? 'Open-ended')}</td>
+                <td>${escapeHtml(o.reason ?? '—')}</td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Could not load overrides.</td></tr>';
+    }
+}
+
+async function saveOverride() {
+    const payload = {
+        product: document.getElementById('ovProduct').value,
+        zone: document.getElementById('ovZone').value,
+        start_date: document.getElementById('ovStart').value,
+        end_date: document.getElementById('ovEnd').value || null,
+        reason: document.getElementById('ovReason').value,
+    };
+    const msgBox = document.getElementById('ovMsg');
+    if (!payload.product || !payload.zone || !payload.start_date) {
+        msgBox.innerHTML = '<div class="alert alert-danger py-2">Product, zone and start date are required.</div>';
+        return;
+    }
+    try {
+        const res = await request('/api/zones/overrides/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+            msgBox.innerHTML = '<div class="alert alert-success py-2">Override saved.</div>';
+            document.getElementById('ovProductSearch').value = '';
+            document.getElementById('ovProduct').value = '';
+            document.getElementById('ovZone').value = '';
+            document.getElementById('ovStart').value = '';
+            document.getElementById('ovEnd').value = '';
+            document.getElementById('ovReason').value = '';
+            loadOverridesList();
+        } else {
+            const err = await res.json();
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">${escapeHtml(JSON.stringify(err))}</div>`;
+        }
+    } catch (e) {
+        msgBox.innerHTML = `<div class="alert alert-danger py-2">Network error: ${e.message}</div>`;
+    }
+}
+
+fetchCurrentUser().then(() => {
+    if (!isManagerOrAdmin()) {
+        document.getElementById('calcBtn').style.display = 'none';
+        const overrideCard = document.getElementById('ovProduct').closest('.card');
+        if (overrideCard) {
+            overrideCard.innerHTML = '<div class="text-muted small">Zone overrides and recalculation are restricted to managers and admins.</div>';
+        }
+        // Fix: the Overrides list is a separate card from the form above,
+        // so it wasn't covered by the restriction message — it was left
+        // showing a "Loading..." row that never resolves for staff, since
+        // loadOverridesList() only ever runs for managers/admins (and the
+        // backend's GET on this endpoint is manager/admin-only too, so it
+        // would 403 even if we did fetch it here).
+        const overridesListCard = document.getElementById('ovListBody').closest('.card');
+        if (overridesListCard) {
+            overridesListCard.innerHTML = '<div class="text-muted small">Zone overrides are restricted to managers and admins.</div>';
+        }
+    }
+    // Recommendations is the default open tab, so load it immediately.
+    // Zone Overview / Category Mapping / Product Override load lazily —
+    // see switchZoneTab() — the same pattern products.html uses for its
+    // Brands/Categories/Store Zones tabs.
+    loadRecommendations();
+    loadLastRun();
+});
+</script>
+{% endblock %}
