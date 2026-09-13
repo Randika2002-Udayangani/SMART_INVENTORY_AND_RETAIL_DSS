@@ -48,6 +48,9 @@ def suppliers(request):
 def products(request):
     return render(request, 'dashboard/products.html')
 
+def zone_recommendations(request):
+    return render(request, 'dashboard/zone_recommendations.html')
+
 def system_config(request):
     return render(request, 'dashboard/system_config.html')
 

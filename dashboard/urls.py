@@ -18,6 +18,7 @@ urlpatterns = [
     path('purchases/detail/<int:pk>/', views.purchase_detail, name='purchase_detail'),
     path('suppliers/', views.suppliers, name='suppliers'),
     path('products/', views.products, name='products'),
+    path('zone-recommendations/', views.zone_recommendations, name='zone_recommendations'),
     path('system-config/', views.system_config, name='system_config'),
     path('audit-log/', views.audit_log, name='audit_log'),
     path('users/', views.user_management, name='user_management'),

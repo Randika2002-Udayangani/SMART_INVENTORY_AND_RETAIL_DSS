@@ -125,23 +125,115 @@ class ProductSerializer(serializers.ModelSerializer):
             'brand', 'brand_name',
         ]
 
+    def to_internal_value(self, data):
+        # sku_code is unique=True + null=True + blank=True on the model.
+        # Most products have no SKU. If a client sends "" (a blank text
+        # input, not an explicit null), the auto-generated UniqueValidator
+        # still checks "" for uniqueness — and every other blank-SKU
+        # product also has "", so the second save collides and raises an
+        # IntegrityError (500) instead of a clean validation error.
+        # Normalizing "" -> None here runs before that validator, and
+        # multiple NULLs are allowed by the DB unique constraint.
+        if hasattr(data, 'copy'):
+            data = data.copy()
+        if data.get('sku_code', None) == '':
+            data['sku_code'] = None
+        return super().to_internal_value(data)
+
 # ============================================================
 # APPEND to the bottom of products/serializers.py
 # ============================================================
 
-from .models import ZoneRecommendation
+from .models import ZoneRecommendation, ProductZoneOverride, ZoneCalculationRun
 
 
 class ZoneRecommendationSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.product_name', read_only=True)
+    # allow_null/default — same reasoning as ProductSerializer.category_name:
+    # a product can have no category assigned, and this must not 500.
+    category_name = serializers.CharField(
+        source='product.category.category_name',
+        read_only=True, allow_null=True, default=None
+    )
     current_zone_name = serializers.CharField(source='current_zone.zone_name', read_only=True)
     suggested_zone_name = serializers.CharField(source='suggested_zone.zone_name', read_only=True)
+    health_scores = serializers.SerializerMethodField()
+    updated_by_username = serializers.CharField(
+        source='updated_by.username', read_only=True, allow_null=True, default=None
+    )
 
     class Meta:
         model = ZoneRecommendation
         fields = [
-            'id', 'product', 'product_name',
+            'id', 'product', 'product_name', 'category_name',
             'current_zone', 'current_zone_name',
             'suggested_zone', 'suggested_zone_name',
-            'reason', 'performance_score', 'recommendation_date',
+            'reason', 'performance_score', 'status', 'recommendation_date',
+            'health_scores', 'updated_by_username',
+        ]
+
+    def get_health_scores(self, obj):
+        # Local import — same reasoning as the ZoneRecommendationCalculateView
+        # and RecalculateWACView above: avoids a circular import between the
+        # products and inventory apps.
+        from inventory.models import InventoryHealthScore
+
+        score = (
+            InventoryHealthScore.objects
+            .filter(product_id=obj.product_id)
+            .order_by('-calculated_date', '-calculated_at')
+            .first()
+        )
+        if score is None:
+            return None
+        return {
+            'velocity_score': score.velocity_score,
+            'margin_score': score.margin_score,
+            'expiry_risk_score': score.expiry_risk_score,
+            'overall_score': score.overall_score,
+        }
+
+
+class ZoneRecommendationStatusSerializer(serializers.ModelSerializer):
+    """Used only by the accept/reject/apply action endpoint — status is the
+    single field a manager is allowed to change on a recommendation."""
+
+    class Meta:
+        model = ZoneRecommendation
+        fields = ['id', 'status']
+
+    def validate_status(self, value):
+        valid = dict(ZoneRecommendation.STATUS_CHOICES)
+        if value not in valid:
+            raise serializers.ValidationError(f"status must be one of {list(valid)}")
+        return value
+
+
+class ProductZoneOverrideSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='product.product_name', read_only=True)
+    zone_name = serializers.CharField(source='zone.zone_name', read_only=True)
+
+    class Meta:
+        model = ProductZoneOverride
+        fields = [
+            'id', 'product', 'product_name',
+            'zone', 'zone_name',
+            'start_date', 'end_date', 'reason',
+        ]
+
+    def validate(self, data):
+        start = data.get('start_date', getattr(self.instance, 'start_date', None))
+        end = data.get('end_date', getattr(self.instance, 'end_date', None))
+        if end and start and end < start:
+            raise serializers.ValidationError("end_date cannot be before start_date")
+        return data
+
+
+class ZoneCalculationRunSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ZoneCalculationRun
+        fields = [
+            'id', 'run_at', 'products_evaluated', 'recommendations_created',
+            'skipped_no_health_score', 'skipped_no_current_zone',
+            'skipped_duplicate', 'categories_unmapped_count',
         ]

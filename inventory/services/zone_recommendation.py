@@ -102,6 +102,7 @@ def calculate_zone_recommendations():
             'recommendations_created': int,
             'skipped_no_health_score': int,
             'skipped_no_current_zone': int,
+            'skipped_duplicate': int,  # already had an identical PENDING row
         }
     """
     zone_assignment = assign_zones_from_groups()
@@ -124,6 +125,7 @@ def calculate_zone_recommendations():
     created = 0
     skipped_no_score = 0
     skipped_no_current_zone = 0
+    skipped_duplicate = 0
     evaluated = 0
     new_recommendations = []
 
@@ -177,6 +179,21 @@ def calculate_zone_recommendations():
         if suggested_zone is None or suggested_zone.id == current_zone.id:
             continue
 
+        # Idempotency guard — a manager clicking "Calculate Recommendations"
+        # more than once shouldn't insert duplicate rows for a product that
+        # already has an unresolved recommendation for this exact move.
+        # Rows the manager has already acted on (ACCEPTED/REJECTED/APPLIED)
+        # don't block a fresh recommendation, since those are resolved.
+        already_pending = ZoneRecommendation.objects.filter(
+            product=product,
+            current_zone=current_zone,
+            suggested_zone=suggested_zone,
+            status='PENDING',
+        ).exists()
+        if already_pending:
+            skipped_duplicate += 1
+            continue
+
         new_recommendations.append(
             ZoneRecommendation(
                 product=product,
@@ -197,4 +214,5 @@ def calculate_zone_recommendations():
         "recommendations_created": created,
         "skipped_no_health_score": skipped_no_score,
         "skipped_no_current_zone": skipped_no_current_zone,
+        "skipped_duplicate": skipped_duplicate,
     }
