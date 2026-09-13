@@ -121,6 +121,10 @@ class ZoneRecommendation(models.Model):
 
 
 class ProductZoneOverride(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('APPLIED', 'Applied'),
+    ]
     product = models.ForeignKey(
         Product, on_delete=models.CASCADE, db_column='product_id'
     )
@@ -130,6 +134,15 @@ class ProductZoneOverride(models.Model):
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
     reason = models.CharField(max_length=255, blank=True)
+    # Added: manager-creates / staff-applies workflow, same shape as
+    # ZoneRecommendation.status/updated_by above.
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default='PENDING'
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='+'
+    )
 
     class Meta:
         db_table = 'product_zone_override'
