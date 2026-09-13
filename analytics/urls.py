@@ -5,6 +5,7 @@ from inventory.views import (
     CategoryHealthScoreView,
     LifecycleListView,
     LifecycleDecliningView,
+    LifecycleProductHistoryView,
     LossSummaryView,
     lifecycle_analytics,
     HealthScoreSummaryView,
@@ -20,6 +21,7 @@ urlpatterns = [
 
     # ── F06 Lifecycle ─────────────────────────────────────
     path('analytics/lifecycle/', lifecycle_analytics, name='analytics-lifecycle'),
+    path('analytics/lifecycle/<int:product_id>/history/', LifecycleProductHistoryView.as_view(), name='analytics-lifecycle-history'),
     path('analytics/lifecycle/declining/', LifecycleDecliningView.as_view(), name='analytics-lifecycle-declining'),
 
     # ── F07 Loss Summary ──────────────────────────────────
