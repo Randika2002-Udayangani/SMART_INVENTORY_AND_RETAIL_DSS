@@ -212,6 +212,9 @@ class ZoneRecommendationStatusSerializer(serializers.ModelSerializer):
 class ProductZoneOverrideSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.product_name', read_only=True)
     zone_name = serializers.CharField(source='zone.zone_name', read_only=True)
+    updated_by_username = serializers.CharField(
+        source='updated_by.username', read_only=True, allow_null=True, default=None
+    )
 
     class Meta:
         model = ProductZoneOverride
@@ -219,6 +222,7 @@ class ProductZoneOverrideSerializer(serializers.ModelSerializer):
             'id', 'product', 'product_name',
             'zone', 'zone_name',
             'start_date', 'end_date', 'reason',
+            'status', 'updated_by_username',
         ]
 
     def validate(self, data):
@@ -227,6 +231,21 @@ class ProductZoneOverrideSerializer(serializers.ModelSerializer):
         if end and start and end < start:
             raise serializers.ValidationError("end_date cannot be before start_date")
         return data
+
+
+class ProductZoneOverrideStatusSerializer(serializers.ModelSerializer):
+    """Used only by the Apply action endpoint — status is the single field
+    a staff member (or manager) is allowed to change on an override."""
+
+    class Meta:
+        model = ProductZoneOverride
+        fields = ['id', 'status']
+
+    def validate_status(self, value):
+        valid = dict(ProductZoneOverride.STATUS_CHOICES)
+        if value not in valid:
+            raise serializers.ValidationError(f"status must be one of {list(valid)}")
+        return value
 
 
 class ZoneCalculationRunSerializer(serializers.ModelSerializer):
