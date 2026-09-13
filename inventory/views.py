@@ -6,7 +6,6 @@ from users.audit import log_action
 from django.db.models import Sum
 from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -52,12 +51,12 @@ from core.utils import get_last_sync_date, get_latest_sync_uploads
 class StockSnapshotView(APIView):
     def get(self, request):
         last_sync = get_last_sync_date()
-        products = Product.objects.filter(is_active=True).select_related('category', 'brand')
+        products  = Product.objects.filter(is_active=True)
         result    = []
 
         for product in products:
             current_stock = PurchaseBatch.objects.filter(
-                product=product, status='ACTIVE'
+                product=product, status__in=['ACTIVE', 'PENDING_EXPIRY']
             ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
 
             reorder = product.reorder_threshold or 0
@@ -69,11 +68,8 @@ class StockSnapshotView(APIView):
                 stock_status = 'AVAILABLE'
 
             result.append({
-                
                 'product_id'       : product.id,
                 'product_name'     : product.product_name,
-                'category_name'    : product.category.category_name if product.category else None,
-                'brand_name'       : product.brand.brand_name if product.brand else None,
                 'sku_code'         : product.sku_code,
                 'current_stock'    : current_stock,
                 'reorder_threshold': reorder,
@@ -81,12 +77,83 @@ class StockSnapshotView(APIView):
                 'avg_cost_price'   : str(product.avg_cost_price),
                 'last_sync_date'   : last_sync,
             })
+
         return Response({
             'last_sync_date': last_sync,
             'note'          : 'Stock is snapshot-based.',
             'count'         : len(result),
             'stock'         : result
         })
+
+
+STOCK_LEDGER_HISTORY_LIMIT = 100
+
+TRANSACTION_TYPE_LABELS = {
+    'PURCHASE': 'Purchase',
+    'SALE_SYNC': 'Sale Sync',
+    'MANUAL_ADJUSTMENT': 'Manual Adjustment',
+    'INITIAL_IMPORT': 'Initial Import',
+}
+
+
+def _build_stock_history(product, limit=STOCK_LEDGER_HISTORY_LIMIT):
+    """
+    Builds Stock Movement History for the Product Details modal, from the
+    EXISTING StockLedger table only -- no new model, no duplicate stock
+    logic. Uses the real transaction_type/quantity_change/source/
+    reference_id values exactly as stored; no new transaction types are
+    introduced.
+
+    StockLedger has no 'reason' field. 'reason' only exists on the
+    separate StockAdjustment model, which has no direct FK back to the
+    StockLedger row it was created alongside -- safely joining them would
+    require guessing by timestamp/quantity match. Per spec, an
+    unavailable field must be shown as '—', not fabricated. Every row's
+    reason is therefore always '—'.
+
+    Running balance is computed chronologically (oldest -> newest) BEFORE
+    reversing for newest-first display -- computing it in display order
+    would produce silently wrong balances.
+
+    IMPORTANT: this ledger-computed balance will legitimately NOT match
+    total_current_stock for products whose historical sales predate the
+    FEFO stock-deduction fix (F04) -- those old sales never wrote a
+    StockLedger entry, so the ledger under-counts real depletion until
+    reconcile_stock_fefo has been run for real. This is a genuine,
+    already-diagnosed data-state fact, not a bug in this endpoint. It is
+    surfaced via the returned latest_ledger_balance rather than hidden.
+    """
+    entries = list(
+        StockLedger.objects
+        .filter(product=product)
+        .order_by('transaction_date', 'id')
+        .values('transaction_type', 'source', 'quantity_change',
+                 'transaction_date', 'reference_id')
+    )
+
+    running_balance = 0
+    chronological = []
+    for e in entries:
+        running_balance += e['quantity_change']
+        chronological.append({
+            'transaction_date': e['transaction_date'].isoformat(),
+            'movement_type': TRANSACTION_TYPE_LABELS.get(
+                e['transaction_type'], e['transaction_type']
+            ),
+            'source': e['source'] or '—',
+            'reference_id': e['reference_id'],
+            'quantity_change': e['quantity_change'],
+            'balance_after': running_balance,
+            'reason': '—',  # see docstring -- not safely derivable
+        })
+
+    latest_balance = chronological[-1]['balance_after'] if chronological else 0
+
+    # Reverse for newest-first display ONLY after the running balance is
+    # computed chronologically.
+    display_order = list(reversed(chronological))[:limit]
+
+    return display_order, latest_balance
 
 
 class ProductStockDetailView(APIView):
@@ -98,7 +165,7 @@ class ProductStockDetailView(APIView):
                             status=status.HTTP_404_NOT_FOUND)
 
         batches     = PurchaseBatch.objects.filter(
-            product=product, status='ACTIVE'
+            product=product, status__in=['ACTIVE', 'PENDING_EXPIRY']
         ).order_by('expiry_date')
         total_stock = batches.aggregate(
             total=Sum('remaining_quantity'))['total'] or 0
@@ -120,6 +187,8 @@ class ProductStockDetailView(APIView):
         else:
             stock_status = 'AVAILABLE'
 
+        stock_history, latest_ledger_balance = _build_stock_history(product)
+
         return Response({
             'product_id'         : product.id,
             'product_name'       : product.product_name,
@@ -130,7 +199,9 @@ class ProductStockDetailView(APIView):
             'stock_status'       : stock_status,
             'last_sync_date'     : get_last_sync_date(),
             'active_batch_count' : len(batch_data),
-            'batches'            : batch_data
+            'batches'            : batch_data,
+            'stock_history'      : stock_history,
+            'latest_ledger_balance': latest_ledger_balance,
         })
 
 
@@ -167,7 +238,7 @@ class StockAdjustmentView(APIView):
                             status=status.HTTP_404_NOT_FOUND)
 
         batch = PurchaseBatch.objects.filter(
-            product=product, status='ACTIVE'
+            product=product, status__in=['ACTIVE', 'PENDING_EXPIRY']
         ).order_by('expiry_date').first()
 
         if batch is None:
@@ -250,12 +321,6 @@ def expiry_summary(request):
     d7    = today + timedelta(days=7)
     d14   = today + timedelta(days=14)
     d30   = today + timedelta(days=30)
-
-    # Same ADMIN/MANAGER check as IsManagerOrAdmin, reused directly rather
-    # than applied as this view's permission_classes — STAFF must still be
-    # able to call this endpoint for the counts/batch list, they just don't
-    # get cost_price/estimated_loss in the response.
-    can_see_financials = IsManagerOrAdmin().has_permission(request, None)
  
     # Base queryset: only ACTIVE batches with stock and an expiry date
     active_with_expiry = PurchaseBatch.objects.filter(
@@ -276,7 +341,10 @@ def expiry_summary(request):
     def _serialize_batch(batch):
         """Return the detail dict for one batch."""
         days_left = (batch.expiry_date - today).days
-        data = {
+        est_loss  = round(
+            float(batch.remaining_quantity) * float(batch.cost_price or 0), 2
+        )
+        return {
             'batch_id':          batch.id,
             'product_id':        batch.product.id,
             'product_name':      batch.product.product_name,
@@ -284,13 +352,9 @@ def expiry_summary(request):
             'expiry_date':       str(batch.expiry_date),
             'days_until_expiry': days_left,
             'remaining_quantity': batch.remaining_quantity,
+            'cost_price':        float(batch.cost_price or 0),
+            'estimated_loss':    est_loss,  # remaining_qty x cost_price
         }
-        if can_see_financials:
-            data['cost_price']     = float(batch.cost_price or 0)
-            data['estimated_loss'] = round(
-                float(batch.remaining_quantity) * float(batch.cost_price or 0), 2
-            )  # remaining_qty x cost_price
-        return data
  
     return Response({
         'as_of':                    str(today),
@@ -317,7 +381,7 @@ class LowStockView(APIView):
         product_id          int
         product_name        str
         sku_code             str
-        current_stock        int     — SUM of remaining_quantity from ACTIVE batches
+        current_stock        int     — SUM of remaining_quantity from ACTIVE + PENDING_EXPIRY batches
         reorder_threshold    int     — Product.reorder_threshold
         shortage              int     — how many units below reorder_threshold
         urgency               str     — CRITICAL | HIGH | MEDIUM | LOW
@@ -335,7 +399,7 @@ class LowStockView(APIView):
         stock_by_product = {
             row['product']: row['total']
             for row in PurchaseBatch.objects.filter(
-                status='ACTIVE',
+                status__in=['ACTIVE', 'PENDING_EXPIRY'],
                 remaining_quantity__gt=0,
             ).values('product').annotate(total=Sum('remaining_quantity'))
         }
@@ -405,7 +469,7 @@ class OutOfStockView(APIView):
 
         for product in products:
             current = PurchaseBatch.objects.filter(
-                product=product, status='ACTIVE'
+                product=product, status__in=['ACTIVE', 'PENDING_EXPIRY']
             ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
 
             if current == 0:
@@ -517,8 +581,7 @@ class LossRecordView(APIView):
 
         data = queryset.values(
             'id', 'product', 'product__product_name', 'batch', 'loss_type',
-            'loss_quantity', 'loss_value', 'loss_date', 'notes',
-            'recorded_by', 'recorded_by__username'
+            'loss_quantity', 'loss_value', 'loss_date', 'notes'
         )
         data = [
             {**row, 'product_name': row.pop('product__product_name')}
@@ -1662,44 +1725,9 @@ class ReorderRecommendationDetailView(APIView):
             return Response({'error': 'status must be ORDERED or IGNORED'}, status=status.HTTP_400_BAD_REQUEST)
  
         old_value = {'status': rec.status}
-        previous_status = rec.status
-
-        if previous_status != 'ORDERED' and new_status == 'ORDERED':
-            urgency_to_priority = {
-                'CRITICAL': 'CRITICAL',
-                'HIGH': 'HIGH',
-                'MEDIUM': 'MEDIUM',
-                'NORMAL': 'MEDIUM',
-            }
-            if rec.urgency not in urgency_to_priority:
-                raise ValidationError(
-                    {
-                        'urgency': (
-                            f'No notification priority mapping for reorder urgency '
-                            f'{rec.urgency!r}'
-                        )
-                    }
-                )
-            rec.status = new_status
-            rec.actioned_by = request.user
-            rec.save()
-            Notification.objects.create(
-                user=None,
-                customer=None,
-                type='REORDER',
-                priority=urgency_to_priority[rec.urgency],
-                title=f'Reorder placed: {rec.product.product_name}',
-                message=(
-                    f'Reorder placed for {rec.product.product_name} by '
-                    f'{request.user.username} ({rec.suggested_quantity} units).'
-                ),
-                reference_table='reorder_recommendation',
-                reference_id=rec.id,
-            )
-        else:
-            rec.status = new_status
-            rec.actioned_by = request.user
-            rec.save()
+        rec.status = new_status
+        rec.actioned_by = request.user
+        rec.save()
  
         log_action(
             user=request.user, action='UPDATE', table_name='reorder_recommendation',

@@ -417,6 +417,27 @@ def _serialize_product_row(r):
     }
 
 
+def _declining_reason(lifecycle, health):
+    """
+    Builds the manager-facing explanation text for a DECLINING product.
+
+    IMPORTANT: this only assembles a sentence — it does NOT decide the
+    action. lifecycle['recommendation'] already reflects the health-tiered
+    logic from sales/services/lifecycle.py's
+    _resolve_declining_recommendation() (MONITOR / REVIEW_DISCOUNT /
+    DISCOUNT_REVIEW / IMMEDIATE_ACTION). Re-deriving the action here
+    from lifecycle['status'] alone was the original bug — a healthy but
+    declining product showed a "DISCOUNT" banner. Don't reintroduce that.
+    """
+    base = (
+        f"Sales are declining versus the historical baseline "
+        f"(velocity {lifecycle['sales_velocity']}/day)."
+    )
+    if health:
+        return f"{base} Inventory health is {health['status']} ({health['overall_score']}/100)."
+    return f"{base} No inventory health score has been calculated for this product yet."
+
+
 @api_view(['GET'])
 @permission_classes([IsManagerOrAdmin])
 def products(request):
@@ -574,6 +595,13 @@ def product_analysis(request, product_id):
     } if hs else None
 
     # ── Derived recommendation — reorder urgency first, then lifecycle/health ──
+    # NOTE: lifecycle['recommendation'] is already health-aware as of the F06
+    # lifecycle-service fix (DECLINING is scaled by InventoryHealthScore into
+    # MONITOR / REVIEW_DISCOUNT / DISCOUNT_REVIEW / IMMEDIATE_ACTION — see
+    # sales/services/lifecycle.py's _resolve_declining_recommendation()).
+    # This view must NOT re-derive its own DECLINING → DISCOUNT rule on top
+    # of that — doing so silently duplicated the exact bug the lifecycle
+    # service fixed, producing a contradictory "HEALTHY + DISCOUNT" banner.
     if reorder and reorder['urgency'] in ('CRITICAL', 'HIGH'):
         recommendation = {
             'action': 'REORDER',
@@ -582,7 +610,10 @@ def product_analysis(request, product_id):
             'suggested_quantity': reorder['suggested_quantity'],
         }
     elif lifecycle and lifecycle['status'] == 'DECLINING':
-        recommendation = {'action': 'DISCOUNT', 'reason': 'Sales are declining versus the historical baseline.'}
+        recommendation = {
+            'action': lifecycle['recommendation'],
+            'reason': _declining_reason(lifecycle, health),
+        }
     elif health and health['status'] in ('AT RISK', 'CRITICAL'):
         recommendation = {'action': 'REVIEW', 'reason': f"Health score is {health['status']} ({health['overall_score']}/100)."}
     else:

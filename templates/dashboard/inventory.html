@@ -15,56 +15,8 @@
         .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
         .nav-tabs .nav-link { color:var(--txt); }
         .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
-        .detail-modal {
-        display: none;
-        position: fixed;
-        inset: 0;
-        z-index: 1060;
-        background: rgba(15,23,42,.45);
-        padding: 5vh 1rem;
-        overflow-y: auto;
-        overflow-x: hidden;
-}
-
-        .detail-modal.show {
-        display: flex;
-        align-items: flex-start;
-        justify-content: center;
-}
-
-        .detail-modal .modal-dialog {
-        position: relative;
-        width: 100%;
-        max-width: 900px;
-        margin: 0 auto;
-        z-index: 1061;
-}
-
-        .detail-modal .modal-content {
-        position: relative;
-        width: 100%;
-        background: var(--card, #fff);
-        border: 1px solid var(--border, #dee2e6);
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 10px 30px rgba(0,0,0,.2);
-}
-
-        .detail-modal .modal-header {
-        position: relative;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 1rem 1.25rem;
-        background: var(--card, #fff);
-        border-bottom: 1px solid var(--border, #dee2e6);
-}
-
-        .detail-modal .modal-body {
-        position: relative;
-        padding: 1.25rem;
-        background: var(--card, #fff);
-}
+        .detail-modal { display:none; position:fixed; inset:0; z-index:1060; background:rgba(15,23,42,.45); padding:5vh 1rem; overflow:auto; }
+        .detail-modal.show { display:block; }
     </style>
 {% endblock %}
 
@@ -390,9 +342,69 @@ async function viewDetail(productId) {
         const res = await request(`/api/inventory/stock/${productId}/`);
         const data = await res.json();
         const batches = data.batches ?? data.batch_breakdown ?? [];
-        body.innerHTML = `<h5>${data.product_name ?? '—'}</h5><p>Total stock: <strong>${data.current_stock ?? data.total_remaining ?? '—'}</strong></p><table class="table table-sm"><thead><tr><th>Batch</th><th>Remaining</th><th>Expiry</th><th>Status</th></tr></thead><tbody>${batches.map(b => `<tr><td>${b.batch_id ?? b.id ?? '—'}</td><td>${b.remaining_quantity ?? '—'}</td><td>${b.expiry_date ?? '—'}</td><td>${b.status ?? '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="text-muted">No active batches found.</td></tr>'}</tbody></table>`;
+        const history = data.stock_history ?? [];
+        const currentStock = data.total_current_stock ?? data.current_stock ?? 0;
+        const ledgerBalance = data.latest_ledger_balance;
+        const reconciles = (ledgerBalance === undefined || ledgerBalance === null || ledgerBalance === currentStock);
+
+        const summaryHtml = `
+            <h5>${data.product_name ?? '—'}</h5>
+            <p class="mb-1">Current Stock: <strong>${currentStock}</strong></p>
+            <p class="mb-1">Stock Status: ${stockBadge(currentStock, data.reorder_threshold)}</p>
+            <p class="mb-3">Reorder Threshold: ${data.reorder_threshold ?? '—'}</p>
+        `;
+
+        const batchesHtml = `
+            <h6 class="fw-bold mt-3">Active Batches</h6>
+            <table class="table table-sm">
+                <thead><tr><th>Batch</th><th>Remaining</th><th>Expiry</th><th>Status</th></tr></thead>
+                <tbody>${
+                    batches.length
+                        ? batches.map(b => `<tr><td>${b.batch_id ?? b.id ?? '—'}</td><td>${b.remaining_quantity ?? '—'}</td><td>${b.expiry_date ?? '—'}</td><td>${b.status ?? '—'}</td></tr>`).join('')
+                        : '<tr><td colspan="4" class="text-muted">No active batches available.</td></tr>'
+                }</tbody>
+            </table>
+        `;
+
+        // Reconciliation note shown honestly, not hidden -- per spec, a
+        // ledger/stock mismatch reflects a real, already-diagnosed data
+        // state (unlogged historical sales pre-dating the FEFO fix), not
+        // something to silently paper over.
+        const reconcileNote = !reconciles ? `
+            <div class="alert alert-warning py-2 small mb-2">
+                Latest ledger balance (${ledgerBalance}) does not match current stock (${currentStock}).
+                This reflects a known data gap (historical sales recorded before stock deduction was
+                wired into the sales pipeline), not a display error.
+            </div>` : '';
+
+        const historyHtml = `
+            <h6 class="fw-bold mt-3">Stock Movement History</h6>
+            ${reconcileNote}
+            <div style="max-height:280px; overflow:auto;">
+            <table class="table table-sm table-hover">
+                <thead style="position:sticky; top:0; background:#fff;">
+                    <tr><th>Date &amp; Time</th><th>Movement Type</th><th>Source / Reference</th><th class="text-end">Change</th><th class="text-end">Balance</th><th>Reason</th></tr>
+                </thead>
+                <tbody>${
+                    history.length
+                        ? history.map(h => `
+                            <tr>
+                                <td>${new Date(h.transaction_date).toLocaleString()}</td>
+                                <td><span class="badge bg-secondary">${h.movement_type}</span></td>
+                                <td>${h.source}${h.reference_id ? ' | ' + h.reference_id : ''}</td>
+                                <td class="text-end" style="color:${h.quantity_change < 0 ? '#dc2626' : '#16a34a'}">${h.quantity_change > 0 ? '+' : ''}${h.quantity_change}</td>
+                                <td class="text-end">${h.balance_after}</td>
+                                <td>${h.reason}</td>
+                            </tr>`).join('')
+                        : '<tr><td colspan="6" class="text-center text-muted">No stock movement history is available for this product.</td></tr>'
+                }</tbody>
+            </table>
+            </div>
+        `;
+
+        body.innerHTML = summaryHtml + batchesHtml + historyHtml;
     } catch(e) {
-        body.innerHTML = '<div class="text-danger">Could not load product detail.</div>';
+        body.innerHTML = '<div class="text-danger">Unable to load product details. Please try again.</div>';
     }
 }
 
@@ -461,7 +473,6 @@ async function submitAdjustment() {
     }
 }
 
-fetchCurrentUser();
 loadStock();
 loadUploadSummary();
 </script>
