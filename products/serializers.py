@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 # products/serializers.py
 from rest_framework import serializers
 from .models import Brand, Category, StoreZone, Product
@@ -61,6 +63,9 @@ class CategorySerializer(serializers.ModelSerializer):
 # until staff assigns a category.
 # ─────────────────────────────────────────────
 class ProductPublicSerializer(serializers.ModelSerializer):
+    expiry_date = serializers.DateField(
+        source='earliest_expiry', read_only=True, allow_null=True
+    )
     category_name = serializers.CharField(
         source='category.category_name',
         read_only=True,
@@ -73,6 +78,7 @@ class ProductPublicSerializer(serializers.ModelSerializer):
         allow_null=True,
         default=None    # returns null instead of crashing for unbranked products
     )
+    is_near_expiry = serializers.SerializerMethodField()
 
     class Meta:
         model  = Product
@@ -82,10 +88,18 @@ class ProductPublicSerializer(serializers.ModelSerializer):
             'reorder_threshold', 'introduced_date', 'is_active',
             'category', 'category_name',
             'brand', 'brand_name',
+            'expiry_date',
+            'is_near_expiry',
             # cost_price    — excluded: internal supplier cost
             # avg_cost_price — excluded: internal WAC used for profit calc
         ]
 
+    def get_is_near_expiry(self, obj):
+        expiry_date = getattr(obj, 'earliest_expiry', None)
+        return bool(
+            expiry_date
+            and date.today() <= expiry_date <= date.today() + timedelta(days=30)
+        )
 
 # ─────────────────────────────────────────────
 # Product — STAFF serializer
@@ -102,6 +116,9 @@ class ProductPublicSerializer(serializers.ModelSerializer):
 # verification after each batch delivery.
 # ─────────────────────────────────────────────
 class ProductSerializer(serializers.ModelSerializer):
+    expiry_date = serializers.DateField(
+        source='earliest_expiry', read_only=True, allow_null=True
+    )
     category_name = serializers.CharField(
         source='category.category_name',
         read_only=True,
@@ -114,6 +131,7 @@ class ProductSerializer(serializers.ModelSerializer):
         allow_null=True,
         default=None
     )
+    is_near_expiry = serializers.SerializerMethodField()
 
     class Meta:
         model  = Product
@@ -123,7 +141,16 @@ class ProductSerializer(serializers.ModelSerializer):
             'reorder_threshold', 'introduced_date', 'is_active',
             'category', 'category_name',
             'brand', 'brand_name',
+            'expiry_date',
+            'is_near_expiry',
         ]
+
+    def get_is_near_expiry(self, obj):
+        expiry_date = getattr(obj, 'earliest_expiry', None)
+        return bool(
+            expiry_date
+            and date.today() <= expiry_date <= date.today() + timedelta(days=30)
+        )
 
     def to_internal_value(self, data):
         # sku_code is unique=True + null=True + blank=True on the model.

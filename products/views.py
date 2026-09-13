@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import render
 from django.utils import timezone
-from django.db.models import Sum
+from django.db.models import Min, Q, Sum
 from purchases.models import PurchaseBatch
 from core.authentication import LenientJWTAuthentication
 from users.audit import log_action
@@ -79,7 +79,15 @@ class ProductListCreateView(generics.ListCreateAPIView):
     pagination_class = ProductPagination
 
     def get_queryset(self):
-        queryset = Product.objects.filter(is_active=True)
+        queryset = Product.objects.filter(is_active=True).annotate(
+            earliest_expiry=Min(
+                'purchasebatch__expiry_date',
+                filter=Q(
+                    purchasebatch__status__in=['ACTIVE', 'PENDING_EXPIRY'],
+                    purchasebatch__remaining_quantity__gt=0,
+                ),
+            ),
+        )
         category = self.request.query_params.get('category')
         brand    = self.request.query_params.get('brand')
         search   = self.request.query_params.get('search')
@@ -89,7 +97,7 @@ class ProductListCreateView(generics.ListCreateAPIView):
             queryset = queryset.filter(brand__id=brand)
         if search:
             queryset = queryset.filter(product_name__icontains=search)
-        return queryset
+        return queryset.order_by('id')
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -156,7 +164,15 @@ class ProductAvailabilityView(APIView):
 
 
 class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Product.objects.all()
+    queryset = Product.objects.all().annotate(
+        earliest_expiry=Min(
+            'purchasebatch__expiry_date',
+            filter=Q(
+                purchasebatch__status__in=['ACTIVE', 'PENDING_EXPIRY'],
+                purchasebatch__remaining_quantity__gt=0,
+            ),
+        ),
+    )
     authentication_classes = [LenientJWTAuthentication]
 
     def get_serializer_class(self):

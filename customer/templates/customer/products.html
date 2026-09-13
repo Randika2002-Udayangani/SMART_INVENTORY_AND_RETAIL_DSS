@@ -131,6 +131,11 @@
             font-weight: 700; color: #222; font-size: 0.92rem;
             margin-bottom: 8px; line-height: 1.3;
         }
+        .near-expiry-tag {
+            display: inline-block; margin-bottom: 8px; padding: 4px 8px;
+            border-radius: 999px; background: #fff3cd; color: #856404;
+            font-size: 0.72rem; font-weight: 700;
+        }
         .product-card .pprice {
             color: #1a73e8; font-weight: 700; font-size: 1rem;
             margin-bottom: 10px;
@@ -298,7 +303,7 @@
         'Biscuits':         '🍪',
         'Cakes & Bakery':   '🎂',
         'Chocolate':        '🍫',
-        'Condiments':       '🧴',
+        'Condiments':       '🫙',
         'Cooking Oils':     '🫒',
         'Deodorant':        '🌸',
         'Dishwashing':      '🧽',
@@ -381,9 +386,22 @@
     // ── Load all products ────────────────────────────────────────
     async function loadAllProducts() {
         try {
-            const res      = await fetch('/api/products/');
-            const data     = await res.json();
-            allProducts    = Array.isArray(data) ? data : (data.results || []);
+            allProducts = [];
+            let page = 1;
+            let totalCount = null;
+
+            do {
+                const res = await fetch(`/api/products/?page=${page}&page_size=100`);
+                if (!res.ok) throw new Error(`Products request failed: ${res.status}`);
+
+                const data = await res.json();
+                const pageProducts = Array.isArray(data) ? data : (data.results || []);
+                allProducts.push(...pageProducts);
+                totalCount = Array.isArray(data) ? allProducts.length : data.count;
+                page += 1;
+
+                if (Array.isArray(data) || !pageProducts.length) break;
+            } while (allProducts.length < totalCount);
 
             // Group by category
             grouped = {};
@@ -463,6 +481,7 @@
             <div class="product-grid">
                 ${pageProds.map(p => `
                     <div class="product-card" onclick="openProductModal(${p.id})">
+                        ${p.is_near_expiry ? '<span class="near-expiry-tag">Near expiry</span>' : ''}
                         <div class="pname">${p.product_name}</div>
                         <div class="pprice">Rs ${parseFloat(p.unit_price).toFixed(2)}</div>
                         <button class="add-btn"
@@ -498,6 +517,7 @@
             `Rs ${parseFloat(p.unit_price).toFixed(2)}`;
 
         document.getElementById('modalInfoRows').innerHTML = `
+            ${p.is_near_expiry ? '<div class="near-expiry-tag">Near expiry</div>' : ''}
             ${p.sku_code ? `
             <div class="modal-info-row">
                 <span class="label">SKU</span>
@@ -510,6 +530,10 @@
             <div class="modal-info-row">
                 <span class="label">Brand</span>
                 <span class="value">${p.brand_name || p.brand || 'N/A'}</span>
+            </div>
+            <div class="modal-info-row">
+                <span class="label">Expiry date</span>
+                <span class="value">${p.expiry_date || 'N/A'}</span>
             </div>
             <div class="modal-info-row">
                 <span class="label">Availability</span>
@@ -569,6 +593,7 @@
                 <div class="product-grid">
                     ${results.slice(0, 24).map(p => `
                         <div class="product-card" onclick="openProductModal(${p.id})">
+                            ${p.is_near_expiry ? '<span class="near-expiry-tag">Near expiry</span>' : ''}
                             <div class="pname">${p.product_name}</div>
                             <div class="pprice">Rs ${parseFloat(p.unit_price).toFixed(2)}</div>
                             <button class="add-btn"
