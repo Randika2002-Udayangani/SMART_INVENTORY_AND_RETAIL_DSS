@@ -1,7 +1,7 @@
 import json
 
 from datetime import date, datetime, timedelta
-from django.db.models import Avg, Count
+from django.db.models import Avg, Count, OuterRef, Prefetch, Q, Subquery
 from django.db import IntegrityError, transaction
 from core.authentication import LenientJWTAuthentication
 from .models import ChatbotLog, ProductRating, ProductRatingSummary
@@ -20,7 +20,9 @@ from users.audit import log_action
 from products.models import Product
 
 from inventory.services.stock import get_available_stock
+from inventory.services.fefo import deduct_stock_fefo
 from inventory.models import StockLedger
+from purchases.models import PurchaseBatch
 
 from .models import Customer, OnlineOrder, OnlineOrderItem
 from .tokens import get_tokens_for_customer
@@ -315,14 +317,17 @@ class OrderListCreateView(APIView):
         staff_authentication = LenientJWTAuthentication()
         staff_credentials = staff_authentication.authenticate(request)
         if staff_credentials is None:
-            return Response(
-                {"detail": "Authentication credentials were not provided."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            return Response({"detail": "Authentication credentials were not provided."}, status=status.HTTP_401_UNAUTHORIZED)
 
         params = request.query_params
         orders = OnlineOrder.objects.select_related("customer").annotate(
-            item_count=Count("onlineorderitem")
+            item_count=Count("onlineorderitem", distinct=True),
+            rating_count=Count(
+                "productrating",
+                filter=Q(productrating__is_active=True),
+                distinct=True,
+            ),
+            rating_average=Avg("productrating__rating", filter=Q(productrating__is_active=True)),
         )
 
         order_status = params.get("status")
@@ -338,7 +343,6 @@ class OrderListCreateView(APIView):
 
         search = params.get("search")
         if search:
-            from django.db.models import Q
             orders = orders.filter(
                 Q(order_reference__icontains=search)
                 | Q(customer__name__icontains=search)
@@ -355,6 +359,8 @@ class OrderListCreateView(APIView):
                 "total_amount": order.total_amount,
                 "collection_deadline": order.collection_deadline,
                 "item_count": order.item_count,
+                "rating_count": order.rating_count,
+                "rating": order.rating_average,
             }
             for order in orders.order_by("-id")
         ])
@@ -431,46 +437,52 @@ class OrderListCreateView(APIView):
         # ---- Pass 2: everything passed validation — create atomically ----
         collection_deadline = pickup_date + timedelta(days=2)
 
-        with transaction.atomic():
-            order_reference = (
-                f"ORD-2026-"
-                f"{str(OnlineOrder.objects.count() + 1).zfill(5)}"
-            )
-
-            order = OnlineOrder.objects.create(
-                customer=customer,
-                pickup_date=pickup_date,
-                pickup_time_slot=time_slot,
-                order_reference=order_reference,
-                status="PENDING",
-                collection_deadline=collection_deadline,
-                notes=notes,
-            )
-
-            total = 0
-
-            for product, quantity in validated_items:
-                price = product.unit_price
-
-                OnlineOrderItem.objects.create(
-                    order=order,
-                    product=product,
-                    quantity=quantity,
-                    unit_price=price
+        try:
+            with transaction.atomic():
+                order_reference = (
+                    f"ORD-2026-"
+                    f"{str(OnlineOrder.objects.count() + 1).zfill(5)}"
                 )
 
-                StockLedger.objects.create(
-                    product=product,
-                    transaction_type="SALE_SYNC",
-                    source="ONLINE_ORDER",
-                    quantity_change=-quantity,
-                    reference_id=order.id
+                order = OnlineOrder.objects.create(
+                    customer=customer,
+                    pickup_date=pickup_date,
+                    pickup_time_slot=time_slot,
+                    order_reference=order_reference,
+                    status="PENDING",
+                    collection_deadline=collection_deadline,
+                    notes=notes,
                 )
 
-                total += price * quantity
+                total = 0
 
-            order.total_amount = total
-            order.save()
+                for product, quantity in validated_items:
+                    deduction = deduct_stock_fefo(
+                        product.id,
+                        quantity,
+                        source="ONLINE_ORDER",
+                        reference_id=order.id,
+                    )
+                    if deduction["shortfall"]:
+                        raise ValueError(
+                            f"Insufficient stock for {product.product_name}"
+                        )
+
+                    OnlineOrderItem.objects.create(
+                        order=order,
+                        product=product,
+                        quantity=quantity,
+                        unit_price=product.unit_price,
+                    )
+                    total += product.unit_price * quantity
+
+                order.total_amount = total
+                order.save(update_fields=["total_amount"])
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(
             {
@@ -660,7 +672,6 @@ class OrderStatusUpdateView(APIView):
     def put(self, request, pk):
         return self.patch(request, pk)
 
-
 class OrderDetailView(APIView):
     authentication_classes = [LenientJWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -675,6 +686,10 @@ class OrderDetailView(APIView):
             )
 
         items = OnlineOrderItem.objects.filter(order=order).select_related("product")
+        ratings = ProductRating.objects.filter(
+            order=order, is_active=True
+        ).values("product_id", "rating", "feedback_text", "created_at")
+        ratings_by_product = {rating["product_id"]: rating for rating in ratings}
         return Response({
             "id": order.id,
             "order_reference": order.order_reference,
@@ -691,10 +706,12 @@ class OrderDetailView(APIView):
             "total_amount": order.total_amount,
             "items": [
                 {
+                    "product_id": item.product_id,
                     "product_name": item.product.product_name,
                     "quantity": item.quantity,
                     "unit_price": item.unit_price,
                     "line_total": item.unit_price * item.quantity,
+                    "rating": ratings_by_product.get(item.product_id),
                 }
                 for item in items
             ],
@@ -756,6 +773,34 @@ class RatingCreateView(APIView):
         serializer.is_valid(raise_exception=True)
 
         product = serializer.validated_data["product"]
+        order = None
+        order_id = serializer.validated_data.get("order")
+        if order_id is not None:
+            try:
+                order = OnlineOrder.objects.get(id=order_id, customer=customer)
+            except OnlineOrder.DoesNotExist:
+                return Response(
+                    {"error": "Order not found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            if order.status != "COMPLETED":
+                return Response(
+                    {"error": "Only completed orders can be rated."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if ProductRating.objects.filter(
+                customer=customer,
+                order=order,
+            ).exists():
+                return Response(
+                    {"error": "You have already rated this order."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not OnlineOrderItem.objects.filter(order=order, product=product).exists():
+                return Response(
+                    {"error": "Product is not part of this order."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         is_verified = OnlineOrderItem.objects.filter(
             order__customer=customer,
@@ -767,6 +812,7 @@ class RatingCreateView(APIView):
             rating = ProductRating.objects.create(
                 product=product,
                 customer=customer,
+                order=order,
                 rating=serializer.validated_data["rating"],
                 feedback_text=serializer.validated_data.get("feedback_text", ""),
                 is_verified=is_verified,
@@ -781,6 +827,7 @@ class RatingCreateView(APIView):
             {
                 "message": "Rating submitted",
                 "rating_id": rating.id,
+                "order_id": rating.order_id,
                 "is_verified": rating.is_verified,
             },
             status=status.HTTP_201_CREATED,
@@ -945,15 +992,83 @@ def _release_order_stock(order, reason):
     descriptive `source` so it's traceable in
     GET /api/inventory/ledger/.
     """
-    items = OnlineOrderItem.objects.filter(order=order)
-    for item in items:
-        StockLedger.objects.create(
-            product=item.product,
-            transaction_type="MANUAL_ADJUSTMENT",
-            source=reason,
-            quantity_change=item.quantity,
-            reference_id=order.id,
+    with transaction.atomic():
+        deductions = list(
+            StockLedger.objects.select_for_update().filter(
+                reference_id=order.id,
+                source="ONLINE_ORDER",
+                quantity_change__lt=0,
+            )
         )
+
+        restored_product_ids = set()
+        for deduction in deductions:
+            quantity = abs(deduction.quantity_change)
+            batch = (
+                PurchaseBatch.objects.select_for_update()
+                .filter(id=deduction.batch_id)
+                .first()
+                if deduction.batch_id
+                else None
+            )
+
+            if batch is None:
+                # Older orders predate batch-linked FEFO ledger rows.
+                batch = (
+                    PurchaseBatch.objects.select_for_update()
+                    .filter(
+                        product_id=deduction.product_id,
+                        status__in=["ACTIVE", "PENDING_EXPIRY", "DEPLETED"],
+                    )
+                    .order_by("expiry_date", "id")
+                    .first()
+                )
+
+            if batch is None:
+                continue
+
+            batch.remaining_quantity += quantity
+            if batch.status == "DEPLETED":
+                batch.status = "ACTIVE"
+            batch.save(update_fields=["remaining_quantity", "status"])
+            restored_product_ids.add(deduction.product_id)
+
+            StockLedger.objects.create(
+                product_id=deduction.product_id,
+                batch=batch,
+                transaction_type="MANUAL_ADJUSTMENT",
+                source=reason,
+                quantity_change=quantity,
+                reference_id=order.id,
+            )
+
+        # Compatibility for legacy orders that have no order-linked ledger row.
+        for item in OnlineOrderItem.objects.filter(order=order):
+            if item.product_id in restored_product_ids:
+                continue
+            batch = (
+                PurchaseBatch.objects.select_for_update()
+                .filter(
+                    product_id=item.product_id,
+                    status__in=["ACTIVE", "PENDING_EXPIRY", "DEPLETED"],
+                )
+                .order_by("expiry_date", "id")
+                .first()
+            )
+            if batch is None:
+                continue
+            batch.remaining_quantity += item.quantity
+            if batch.status == "DEPLETED":
+                batch.status = "ACTIVE"
+            batch.save(update_fields=["remaining_quantity", "status"])
+            StockLedger.objects.create(
+                product_id=item.product_id,
+                batch=batch,
+                transaction_type="MANUAL_ADJUSTMENT",
+                source=reason,
+                quantity_change=item.quantity,
+                reference_id=order.id,
+            )
 
 
 class OrderMyOrdersView(APIView):
@@ -965,25 +1080,46 @@ class OrderMyOrdersView(APIView):
 
     def get(self, request):
         customer = request.user
-        orders = OnlineOrder.objects.filter(customer=customer).order_by("-id")
+        ratings = ProductRating.objects.filter(
+            customer=customer,
+            is_active=True,
+        )
+        orders = OnlineOrder.objects.filter(customer=customer).prefetch_related(
+            "onlineorderitem_set__product",
+            Prefetch("productrating_set", queryset=ratings, to_attr="customer_ratings"),
+        ).order_by("-id")
 
         response = []
         for order in orders:
-            items = OnlineOrderItem.objects.filter(order=order)
+            ratings_by_product = {
+                rating.product_id: {
+                    "rating": rating.rating,
+                    "feedback_text": rating.feedback_text,
+                }
+                for rating in order.customer_ratings
+            }
             response.append({
+                "id": order.id,
                 "order_reference": order.order_reference,
                 "pickup_date": order.pickup_date,
                 "pickup_time_slot": order.pickup_time_slot,
+                "collection_deadline": (
+                    order.collection_deadline
+                    or order.pickup_date + timedelta(days=2)
+                ),
                 "status": order.status,
                 "payment_status": order.payment_status,
                 "total_amount": float(order.total_amount),
                 "items": [
                     {
+                        "product_id": item.product_id,
                         "product": item.product.product_name,
+                        "product_name": item.product.product_name,
                         "quantity": item.quantity,
                         "unit_price": float(item.unit_price),
+                        "rating": ratings_by_product.get(item.product_id),
                     }
-                    for item in items
+                    for item in order.onlineorderitem_set.all()
                 ],
             })
         return Response(response)
