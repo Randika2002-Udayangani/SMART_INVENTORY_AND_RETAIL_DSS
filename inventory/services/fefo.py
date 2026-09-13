@@ -46,6 +46,7 @@ def deduct_stock_fefo(
     source,
     reference_id=None,
     transaction_type='SALE_SYNC',
+    batch_id=None,
 ):
     """
     Deducts `quantity` units from a product's sellable batches in FEFO
@@ -84,7 +85,7 @@ def deduct_stock_fefo(
         # live upload running at the same time as the reconciliation
         # command) from both reading the same remaining_quantity and
         # double-deducting against it.
-        batches = list(
+        batch_query = (
             PurchaseBatch.objects
             .select_for_update()
             .filter(
@@ -92,8 +93,10 @@ def deduct_stock_fefo(
                 status__in=['ACTIVE', 'PENDING_EXPIRY'],
                 remaining_quantity__gt=0,
             )
-            .order_by(F('expiry_date').asc(nulls_last=True), 'id')
         )
+        if batch_id is not None:
+            batch_query = batch_query.filter(pk=batch_id)
+        batches = list(batch_query.order_by(F('expiry_date').asc(nulls_last=True), 'id'))
 
         remaining_to_deduct = quantity
         batches_touched = []

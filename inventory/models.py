@@ -83,6 +83,7 @@ class SupplierReturn(models.Model):
     product = models.ForeignKey(
         Product, on_delete=models.PROTECT, db_column='product_id'
     )
+    return_bill_no = models.CharField(max_length=50, null=True, blank=True)
     return_date = models.DateField()
     quantity_returned = models.IntegerField()
     return_value = models.DecimalField(max_digits=12, decimal_places=2, default=0)

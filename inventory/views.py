@@ -1,14 +1,20 @@
 from datetime import date, timedelta  
+import csv
+import io
+import re
+from datetime import datetime
 from users.permissions import IsManagerOrAdmin  
 from decimal import Decimal
 from users.audit import log_action
 
+from django.db import transaction
 from django.db.models import Sum
 from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
 
 from products.models import Product
 from purchases.models import PurchaseBatch
@@ -27,6 +33,7 @@ from .serializers import (
     ReorderRecommendationSerializer,
 )
 from sales.models import ItemSalesRecord
+from sales.models import UploadLog
 from inventory.services.reorder_logic import get_urgency
 from inventory.services.fefo import deduct_stock_fefo
 
@@ -605,6 +612,12 @@ class LifecycleProductHistoryView(APIView):
         queryset = ProductLifecycle.objects.filter(
             product=product
         ).order_by('calculated_date', 'id')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        if date_from:
+            queryset = queryset.filter(calculated_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(calculated_date__lte=date_to)
         data = queryset.values(
             'id', 'product', 'status', 'recommendation',
             'sales_velocity', 'comparison_period', 'calculated_date'
@@ -895,7 +908,7 @@ class SupplierReturnView(APIView):
 
         data = queryset.values(
             'id', 'supplier', 'product', 'batch',
-            'return_date', 'quantity_returned', 'return_value',
+            'return_bill_no', 'return_date', 'quantity_returned', 'return_value',
             'return_reason', 'recovery_type', 'status', 'notes'
         )
         return Response(list(data))
@@ -971,6 +984,188 @@ class SupplierReturnView(APIView):
             'return_value'     : str(return_value),
             'status'           : 'PENDING',
         }, status=status.HTTP_201_CREATED)
+
+
+_RETURN_ANCHOR_STORE = 'Samanala Super Mart'
+_RETURN_ANCHOR_DOC_TYPE = 'SUPPLY RETURN'
+_RETURN_DATE_PATTERN = re.compile(r'^\d{1,2}-\w{3}-\d{4}$')
+_RETURN_ITEM_LINE_PATTERN = re.compile(
+    r'^(\d{3,6})\s+(.+?)\s+'
+    r'([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+'
+    r'([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})$'
+)
+_RETURN_SKIP_KEYWORDS = ('Net Total', 'Item Description', 'No Qty', 'Page')
+
+
+def _parse_return_header(lines):
+    try:
+        anchor_idx = lines.index(_RETURN_ANCHOR_STORE)
+    except ValueError:
+        return None, None, None, None
+    if anchor_idx + 1 >= len(lines) or _RETURN_ANCHOR_DOC_TYPE not in lines[anchor_idx + 1]:
+        return None, None, None, None
+
+    values = []
+    index = anchor_idx - 1
+    while index >= 0 and len(values) < 4:
+        line = lines[index].strip()
+        if line.lower().startswith('page '):
+            index -= 1
+            continue
+        if line in ('Bill No :', 'Date :', 'Customer :', 'Inv No :'):
+            break
+        values.insert(0, line)
+        index -= 1
+
+    bill_no = values[0] if len(values) > 0 else None
+    date_value = values[1] if len(values) > 1 else None
+    supplier_name = values[2] if len(values) > 2 else None
+    invoice_number = values[3] if len(values) > 3 else None
+    return_date = None
+    if date_value and _RETURN_DATE_PATTERN.match(date_value):
+        try:
+            return_date = datetime.strptime(date_value, '%d-%b-%Y').date()
+        except ValueError:
+            pass
+    return bill_no, return_date, supplier_name, invoice_number
+
+
+def _parse_return_items(lines, start_index):
+    items = []
+    index = start_index
+    while index < len(lines):
+        line = lines[index].strip()
+        if not line or any(keyword in line for keyword in _RETURN_SKIP_KEYWORDS):
+            index += 1
+            continue
+        match = _RETURN_ITEM_LINE_PATTERN.match(line)
+        if not match and re.match(r'^\d{3,6}\s', line) and index + 1 < len(lines):
+            match = _RETURN_ITEM_LINE_PATTERN.match(line + ' ' + lines[index + 1].strip())
+            if match:
+                index += 1
+        if match:
+            item_code, description, qty, cost_unit, _cost_total, _sell_qty, sell_unit, _sell_total = match.groups()
+            items.append({
+                'item_code': item_code,
+                'description': description.strip(),
+                'qty': Decimal(qty.replace(',', '')),
+                'cost_unit': Decimal(cost_unit.replace(',', '')),
+                'sell_unit': Decimal(sell_unit.replace(',', '')),
+            })
+        index += 1
+    return items
+
+
+class SupplierReturnUploadView(APIView):
+    """Upload the Samanala Super Mart SUPPLY RETURN PDF format."""
+
+    permission_classes = [IsManagerOrAdmin]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response({'error': 'No return PDF uploaded.'}, status=400)
+        if not uploaded_file.name.lower().endswith('.pdf'):
+            return Response({'error': 'Supplier return file must be a PDF.'}, status=400)
+
+        upload_log = UploadLog.objects.create(
+            file_name=uploaded_file.name,
+            upload_type='SUPPLIER_RETURN',
+            status='PARTIAL',
+            error_message='',
+            uploaded_by=request.user.id,
+        )
+        try:
+            import pdfplumber
+            lines = []
+            with pdfplumber.open(io.BytesIO(uploaded_file.read())) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text() or ''
+                    lines.extend(line.strip() for line in text.split('\n') if line.strip())
+
+            bill_no, return_date, supplier_name, invoice_number = _parse_return_header(lines)
+            if not bill_no or not supplier_name or not return_date:
+                raise ValueError('Could not extract a valid return bill number, date, and supplier from the PDF header.')
+            if return_date > date.today():
+                raise ValueError('Return date cannot be in the future.')
+
+            supplier = Supplier.objects.get(supplier_name__iexact=supplier_name)
+            if SupplierReturn.objects.filter(supplier=supplier, return_bill_no=bill_no).exists():
+                return Response({'error': f'Return bill {bill_no} has already been processed.'}, status=409)
+
+            start_index = next((i + 1 for i, line in enumerate(lines) if line.startswith('Item Description') or line.startswith('No Unit')), 0)
+            items = _parse_return_items(lines, start_index)
+            if not items:
+                raise ValueError('No return item lines could be parsed from the PDF.')
+
+            processed = []
+            flagged = []
+            with transaction.atomic():
+                for item in items:
+                    matches = Product.objects.filter(product_name__iexact=item['description'])
+                    if matches.count() != 1:
+                        flagged.append({'description': item['description'], 'reason': 'Product not uniquely matched; stock was not modified.'})
+                        continue
+                    product = matches.first()
+                    batch = PurchaseBatch.objects.filter(
+                        product=product, status='ACTIVE', remaining_quantity__gt=0
+                    ).order_by('-id').first()
+                    quantity = int(item['qty'])
+                    if not batch or quantity <= 0 or quantity > batch.remaining_quantity:
+                        flagged.append({'description': item['description'], 'reason': 'No ACTIVE batch or return quantity exceeds available batch stock.'})
+                        continue
+
+                    deduction = deduct_stock_fefo(
+                        product_id=product.id,
+                        quantity=quantity,
+                        source='SUPPLIER_RETURN_PDF',
+                        transaction_type='SUPPLIER_RETURN',
+                        batch_id=batch.id,
+                    )
+                    if deduction['shortfall']:
+                        flagged.append({'description': item['description'], 'reason': 'Stock deduction shortfall; stock was not accepted.'})
+                        continue
+
+                    touched_batch = PurchaseBatch.objects.get(pk=batch.id)
+                    ret = SupplierReturn.objects.create(
+                        supplier=supplier,
+                        batch=touched_batch,
+                        product=product,
+                        return_bill_no=bill_no,
+                        return_date=return_date,
+                        quantity_returned=quantity,
+                        return_value=item['cost_unit'] * quantity,
+                        status='CONFIRMED',
+                        notes=f'Imported from {uploaded_file.name}' + (f' / invoice {invoice_number}' if invoice_number else ''),
+                        recorded_by=request.user,
+                    )
+                    processed.append({'return_id': ret.id, 'product': product.product_name, 'batch_id': batch.id, 'quantity_returned': quantity})
+
+            upload_log.status = 'SUCCESS' if not flagged else 'PARTIAL'
+            upload_log.error_message = '\n'.join(f"{item['description']}: {item['reason']}" for item in flagged)[:2000]
+            upload_log.save(update_fields=['status', 'error_message'])
+            return Response({
+                'message': 'Supplier return PDF upload complete',
+                'upload_log_id': upload_log.id,
+                'return_bill_no': bill_no,
+                'supplier': supplier.supplier_name,
+                'return_date': str(return_date),
+                'processed_count': len(processed),
+                'flagged_count': len(flagged),
+                'processed': processed,
+                'flagged': flagged,
+            }, status=201)
+        except Supplier.DoesNotExist:
+            upload_log.status = 'FAILED'
+            upload_log.error_message = f'Supplier "{supplier_name}" was not found.'
+            upload_log.save(update_fields=['status', 'error_message'])
+            return Response({'error': upload_log.error_message}, status=400)
+        except Exception as exc:
+            upload_log.status = 'FAILED'
+            upload_log.error_message = str(exc)[:2000]
+            upload_log.save(update_fields=['status', 'error_message'])
+            return Response({'error': str(exc)}, status=400)
 
 
 class SupplierReturnStatusView(APIView):

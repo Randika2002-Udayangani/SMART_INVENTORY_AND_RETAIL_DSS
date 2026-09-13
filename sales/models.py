@@ -9,6 +9,7 @@ class UploadLog(models.Model):
         ('ITEM_MASTER', 'Item Master Excel'),
         ('EXPORT', 'Report Export'),
         ('SUPPLIER_INVOICE', 'Supplier Invoice PDF'),
+        ('SUPPLIER_RETURN', 'Supplier Return PDF'),
     ]
 
     STATUS_CHOICES = [

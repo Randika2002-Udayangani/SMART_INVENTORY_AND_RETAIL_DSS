@@ -32,6 +32,7 @@ urlpatterns = [
     # ── F07 Supplier Returns ──────────────────────────────
     path('supplier-returns/summary/', views.SupplierReturnSummaryView.as_view(), name='supplier-return-summary'),
     path('supplier-returns/<int:pk>/status/', views.SupplierReturnStatusView.as_view(), name='supplier-return-status'),
+    path('supplier-returns/upload/', views.SupplierReturnUploadView.as_view(), name='supplier-return-upload'),
     path('supplier-returns/', views.SupplierReturnView.as_view(), name='supplier-return-list'),
 
     # ── F08 Inventory Health Score ────────────────────────

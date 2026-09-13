@@ -5,27 +5,33 @@
 
 {% block extra_css %}
     <style>
-        .page-header { position:sticky; top:0; z-index:1020; background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
-        .table thead th { position:sticky; top:var(--supplier-header-height, 80px); z-index:10; background:#f8f9fa; }
-        .btn-primary { background:#2d6a4f; border:none; }
-        .btn-primary:hover { background:#1b4332; }
-        .card { border-radius:12px; border:1px solid #e2e8f0; }
+        .table thead th { position:sticky; top:var(--topbar-height, 56px); z-index:10; background:var(--card2); }
+        .btn-primary { background:var(--sidebar); border:none; }
+        .btn-primary:hover { background:#0a2b2c; }
+        .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
+        .supplier-tab-panel { display:none; }
+        .supplier-tab-panel.active { display:block; }
     </style>
 {% endblock %}
 
 {% block content %}
-<div class="page-header d-flex justify-content-between align-items-center">
+<div class="topbar">
     <div>
-        <h4 class="mb-0 fw-bold">Suppliers</h4>
-        <small class="text-muted">Samanala Super Mart — supplier master records</small>
+        <h1>Suppliers</h1>
+        <div class="sub">Samanala Super Mart — supplier master records</div>
     </div>
     <div>
-        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
         <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
     </div>
 </div>
 
 <div class="container-fluid px-4">
+    <div class="border-bottom mb-3">
+        <button class="btn btn-sm btn-outline-success active me-2" onclick="showSupplierTab('suppliersTab', this)">Suppliers</button>
+        <button class="btn btn-sm btn-outline-success" onclick="showSupplierTab('returnsTab', this)">Supplier Returns</button>
+    </div>
+
+    <div id="suppliersTab" class="supplier-tab-panel active">
     <div class="d-flex justify-content-between mb-3">
         <input type="text" id="supSearch" class="form-control form-control-sm" style="width:280px;" placeholder="Search supplier name..." oninput="supplierPage = 1; renderSuppliers()">
         <button class="btn btn-primary btn-sm" onclick="showAddForm()">+ Add Supplier</button>
@@ -75,6 +81,23 @@
         </table>
         <div id="supPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
+    </div>
+
+    <div id="returnsTab" class="supplier-tab-panel">
+        <div class="card p-4 mb-3">
+            <h6 class="fw-bold mb-1">Upload Supplier Return File</h6>
+            <p class="small text-muted mb-3">Upload the Samanala Super Mart <strong>SUPPLY RETURN</strong> PDF. Products are matched by invoice description and stock is reduced from the latest active batch.</p>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-8"><label class="form-label small fw-semibold">Return PDF</label><input id="returnFile" type="file" class="form-control form-control-sm" accept=".pdf"></div>
+                <div class="col-md-4"><button id="returnUploadButton" class="btn btn-primary btn-sm w-100" onclick="uploadSupplierReturns()">Upload Returns</button></div>
+            </div>
+            <div id="returnUploadMessage" class="mt-3"></div>
+        </div>
+        <div class="card p-4">
+            <div class="d-flex justify-content-between align-items-center mb-2"><h6 class="fw-bold mb-0">Uploaded Returns</h6><button class="btn btn-outline-secondary btn-sm" onclick="loadSupplierReturns()">Refresh</button></div>
+            <div class="table-responsive"><table class="table table-hover table-sm"><thead class="table-light"><tr><th>ID</th><th>Supplier</th><th>Product</th><th>Batch</th><th>Quantity</th><th>Status</th></tr></thead><tbody id="returnsBody"><tr><td colspan="6" class="text-center text-muted">Open this tab to load returns.</td></tr></tbody></table></div>
+        </div>
+    </div>
 </div>
 
 <div class="modal fade" id="supplierModal" tabindex="-1" aria-hidden="true">
@@ -95,21 +118,57 @@
 const token = sessionStorage.getItem('access_token');
 if (!token) { window.location.href = '/dashboard/login/'; }
 
-function setSupplierHeaderHeight() {
-    const header = document.querySelector('.page-header');
-    if (header) {
-        document.documentElement.style.setProperty('--supplier-header-height', `${header.offsetHeight}px`);
-    }
-}
-
-window.addEventListener('load', setSupplierHeaderHeight);
-window.addEventListener('resize', setSupplierHeaderHeight);
-setSupplierHeaderHeight();
-
 let allSuppliers = [];
 let canManageSuppliers = false;
 let supplierPage = 1;
 const supplierPageSize = 25;
+
+function showSupplierTab(tabId, button) {
+    document.querySelectorAll('.supplier-tab-panel').forEach(panel => panel.classList.remove('active'));
+    document.getElementById(tabId).classList.add('active');
+    document.querySelectorAll('.border-bottom > button').forEach(tab => tab.classList.remove('active'));
+    button.classList.add('active');
+    if (tabId === 'returnsTab') loadSupplierReturns();
+}
+
+async function uploadSupplierReturns() {
+    const fileInput = document.getElementById('returnFile');
+    const message = document.getElementById('returnUploadMessage');
+    const button = document.getElementById('returnUploadButton');
+    if (!fileInput.files.length) {
+        message.innerHTML = '<div class="alert alert-warning py-2">Select a supplier return PDF first.</div>';
+        return;
+    }
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    button.disabled = true;
+    button.textContent = 'Uploading...';
+    try {
+        const res = await fetch('/api/supplier-returns/upload/', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Return upload failed.');
+        message.innerHTML = `<div class="alert alert-success py-2">Imported ${data.created_count} return record(s).${data.failed_count ? ` ${data.failed_count} row(s) failed.` : ''} Stock was reduced.</div>`;
+        fileInput.value = '';
+        loadSupplierReturns();
+    } catch (error) {
+        message.innerHTML = `<div class="alert alert-danger py-2">${error.message}</div>`;
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Upload Returns';
+    }
+}
+
+async function loadSupplierReturns() {
+    const tbody = document.getElementById('returnsBody');
+    try {
+        const res = await fetch('/api/supplier-returns/', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!res.ok) throw new Error('Could not load returns.');
+        const rows = await res.json();
+        tbody.innerHTML = rows.length ? rows.map(r => `<tr><td>${r.id}</td><td>${r.supplier ?? '—'}</td><td>${r.product ?? '—'}</td><td>${r.batch ?? '—'}</td><td>${r.quantity_returned ?? 0}</td><td><span class="badge bg-success">${r.status ?? '—'}</span></td></tr>`).join('') : '<tr><td colspan="6" class="text-center text-muted">No supplier returns found.</td></tr>';
+    } catch (error) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Could not load supplier returns.</td></tr>';
+    }
+}
 
 function extractArray(data) {
     if (Array.isArray(data)) return data;
@@ -171,7 +230,6 @@ function renderSuppliers() {
 function changeSupplierPage(delta) {
     supplierPage += delta;
     renderSuppliers();
-    document.querySelector('.page-header')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function editSupplierById(id) {

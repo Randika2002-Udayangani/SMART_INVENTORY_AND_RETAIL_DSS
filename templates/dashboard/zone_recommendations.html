@@ -10,6 +10,8 @@
         .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
         .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
         .nav-tabs .nav-link { color:var(--txt); }
+        .zone-header-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+        .zone-last-calculated { margin-top:4px; font-size:11px; color:var(--muted); }
 
         .kpi-strip { display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-bottom:18px; }
         .kpi-card { border-radius:12px; border:1px solid var(--border); background:var(--card); padding:16px 18px; }
@@ -45,12 +47,10 @@
     <div>
         <h1>Store Zone Recommendations</h1>
         <div class="sub">AI-assisted placement recommendations based on sales velocity, margin and expiry risk.</div>
+        <div class="zone-last-calculated" id="lastCalculated">Last calculated: —</div>
     </div>
-    <div class="text-end d-flex align-items-center gap-3">
-        <div>
-            <div class="sub mb-2" id="lastCalculated">Last calculated: —</div>
-            <button class="btn btn-primary btn-sm" onclick="calculateRecommendations()" id="calcBtn">Calculate Recommendations</button>
-        </div>
+    <div class="zone-header-actions">
+        <button class="btn btn-primary btn-sm" onclick="calculateRecommendations()" id="calcBtn">Calculate Recommendations</button>
         <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
             <i class="bi bi-box-arrow-right"></i> Logout
         </button>
