@@ -301,13 +301,25 @@
 
     let selectedSlot   = '';
     let quantity       = 1;
-    let currentProduct = demoProducts[1];
+    let currentProduct = null;
 
-    window.onload = () => {
+    window.onload = async () => {
         const params    = new URLSearchParams(window.location.search);
         const productId = parseInt(params.get('product'));
-        const found     = demoProducts.find(p => p.id === productId);
-        if (found) currentProduct = found;
+        try {
+            const response = await fetch(`/api/products/${productId}/`);
+            if (!response.ok) throw new Error('Product could not be loaded');
+            const product = await response.json();
+            currentProduct = {
+                id: product.id,
+                name: product.product_name,
+                discounted: Number(product.discounted_price ?? product.unit_price),
+            };
+        } catch (error) {
+            document.getElementById('formBody').innerHTML =
+                '<p style="color:#b91c1c;text-align:center;padding:24px;">This product could not be loaded. Please return to Products and try again.</p>';
+            return;
+        }
 
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('pickupDate').min   = today;
@@ -396,7 +408,7 @@
     }
 
     async function submitOrder() {
-    if (!validate()) return;
+    if (!currentProduct || !validate()) return;
 
     const btn       = document.getElementById('submitBtn');
     btn.disabled    = true;
@@ -406,8 +418,7 @@
 
     // Build order data
     const orderData = {
-        product:       currentProduct.id,
-        quantity:      quantity,
+        items:         [{ product_id: currentProduct.id, quantity: quantity }],
         pickup_date:   document.getElementById('pickupDate').value,
         time_slot:     selectedSlot,   // already MORNING/AFTERNOON/EVENING uppercase
         notes:         document.getElementById('notes').value
@@ -431,14 +442,18 @@
             refNum = data.order_reference || data.reference || data.ref ||
                      'ORD-2026-' + String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
         } else {
-            // API not ready — generate demo reference
-            refNum = 'ORD-2026-' +
-                String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+            const errorData = await res.json().catch(() => ({}));
+            alert(errorData.error || errorData.detail || 'Could not place the order. Please try again.');
+            btn.disabled = false;
+            btn.textContent = 'Confirm Order';
+            return;
         }
     } catch (err) {
-        // API not ready — generate demo reference
-        refNum = 'ORD-2026-' +
-            String(Math.floor(Math.random() * 99999) + 1).padStart(5, '0');
+        console.error('Order failed:', err);
+        alert('Could not connect to the order service. Please try again.');
+        btn.disabled    = false;
+        btn.textContent = 'Confirm Order';
+        return;
     }
 
     // Save to sessionStorage so My Orders page shows it
