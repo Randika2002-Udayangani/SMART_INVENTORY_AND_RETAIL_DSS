@@ -471,6 +471,8 @@ class LifecycleDecliningView(APIView):
 
 
 class LifecycleProductHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, product_id):
         try:
             product = Product.objects.get(pk=product_id)
@@ -480,10 +482,10 @@ class LifecycleProductHistoryView(APIView):
 
         queryset = ProductLifecycle.objects.filter(
             product=product
-        ).order_by('-calculated_date')
+        ).order_by('calculated_date', 'id')
         data = queryset.values(
             'id', 'product', 'status', 'recommendation',
-            'sales_velocity', 'calculated_date'
+            'sales_velocity', 'comparison_period', 'calculated_date'
         )
         return Response(list(data))
 

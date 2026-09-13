@@ -19,6 +19,12 @@
     box-shadow: 0 1px 0 var(--border);
   }
   .lifecycle-error { color: #b91c1c; }
+  .lifecycle-row { cursor: pointer; }
+  .lifecycle-row:hover { background-color: var(--card2); }
+  .history-summary { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; }
+  .history-summary .label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  .history-timeline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .history-arrow { color: var(--muted); }
 
   @media (max-width: 960px) {
     .lifecycle-table-wrap { overflow-x: auto; }
@@ -72,6 +78,22 @@
       </table>
     </div>
     <div id="lifecyclePagination" class="d-flex justify-content-between align-items-center mt-3"></div>
+  </div>
+
+  <div class="card p-4 mt-4" id="historySection" style="display:none;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="fw-bold mb-0">Product Lifecycle History</h6>
+      <span class="text-muted small" id="historyProductName"></span>
+    </div>
+    <div id="historySummary" class="history-summary p-3 mb-3"></div>
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead class="table-light">
+          <tr><th>Calculation Date</th><th>Comparison Period</th><th>Sales Velocity</th><th>Status</th><th>Recommendation</th></tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
   </div>
 {% endblock %}
 
@@ -165,7 +187,7 @@
     const pageRows = rows.slice((lifecyclePage - 1) * lifecyclePageSize, lifecyclePage * lifecyclePageSize);
 
     document.getElementById('lifecycleBody').innerHTML = pageRows.map(result => `
-      <tr>
+      <tr class="lifecycle-row" onclick="loadLifecycleHistory(${Number(result.product_id)}, this)" title="View lifecycle history">
         <td>${escapeHtml(result.product_name)}</td>
         <td>${statusBadge(result.lifecycle_status ?? result.status)}</td>
         <td>${recPill(result.recommendation)}</td>
@@ -178,6 +200,38 @@
       <button class="btn btn-sm btn-outline-secondary" onclick="changeLifecyclePage(-1)" ${lifecyclePage === 1 ? 'disabled' : ''}>Previous</button>
       <span class="text-muted small">Page ${lifecyclePage} of ${totalPages}</span>
       <button class="btn btn-sm btn-outline-secondary" onclick="changeLifecyclePage(1)" ${lifecyclePage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+  }
+
+  async function loadLifecycleHistory(productId, row) {
+    clearError();
+    try {
+      const history = await apiFetch(`/api/analytics/lifecycle/${productId}/history/`);
+      const productName = row.querySelector('td').innerText;
+      const current = history[history.length - 1];
+      const previous = history.length > 1 ? history[history.length - 2] : null;
+
+      document.getElementById('historyProductName').innerText = productName;
+      document.getElementById('historySummary').innerHTML = `
+        <div class="row g-3">
+          <div class="col-md-3"><div class="label">Current</div><div>${statusBadge(current?.status)}</div></div>
+          <div class="col-md-3"><div class="label">Previous</div><div>${statusBadge(previous?.status || '—')}</div></div>
+          <div class="col-md-3"><div class="label">Pattern</div><div class="history-timeline">${history.map((record, index) => `${index ? '<span class="history-arrow">&#8594;</span>' : ''}${statusBadge(record.status)}`).join('')}</div></div>
+          <div class="col-md-3"><div class="label">Recommendation</div><div>${recPill(current?.recommendation)}</div></div>
+        </div>`;
+      document.getElementById('historyBody').innerHTML = history.length ? history.map(record => `
+        <tr>
+          <td>${escapeHtml(record.calculated_date)}</td>
+          <td>${escapeHtml(record.comparison_period)}</td>
+          <td>${escapeHtml(record.sales_velocity)}</td>
+          <td>${statusBadge(record.status)}</td>
+          <td>${recPill(record.recommendation)}</td>
+        </tr>`).join('') : '<tr><td colspan="5" class="text-muted">No history found for this product.</td></tr>';
+      document.getElementById('historySection').style.display = 'block';
+      document.getElementById('historySection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      console.error('loadLifecycleHistory failed:', error);
+      showError('Product lifecycle history could not be loaded. Please try again.');
+    }
   }
 
   function changeLifecyclePage(delta) {
