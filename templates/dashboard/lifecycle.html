@@ -69,7 +69,24 @@
   </div>
 
   <div class="card p-4" id="tableSection" style="display:none;">
-    <h6 class="fw-bold mb-3">Product Lifecycle Status</h6>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h6 class="fw-bold mb-0">Product Lifecycle Status</h6>
+      <div class="d-flex flex-wrap gap-2">
+        <label class="visually-hidden" for="lifecycleSearch">Search by product name</label>
+        <input type="search" class="form-control form-control-sm" id="lifecycleSearch"
+               placeholder="Search product name" autocomplete="off">
+        <label class="visually-hidden" for="lifecycleRecommendation">Filter by recommendation</label>
+        <select class="form-select form-select-sm" id="lifecycleRecommendation">
+          <option value="">All recommendations</option>
+          <option value="RETAIN">RETAIN</option>
+          <option value="MONITOR">MONITOR</option>
+          <option value="DISCOUNT">DISCOUNT</option>
+          <option value="CLEARANCE">CLEARANCE</option>
+          <option value="PHASE_OUT">PHASE_OUT</option>
+          <option value="DISCONTINUE">DISCONTINUE</option>
+        </select>
+      </div>
+    </div>
     <div class="lifecycle-table-wrap">
       <table class="table table-hover lifecycle-table">
         <thead class="table-light">
@@ -146,31 +163,55 @@
 
   let allLifecycleResults = [];
   let lifecyclePage = 1;
-  const lifecyclePageSize = 25;
+  const lifecyclePageSize = 10;
+  let lifecycleSearchTimer;
 
-  async function loadLifecycle() {
+  function updateLifecycleKpis(summary) {
+    document.getElementById('countNew').innerText = summary.NEW ?? '0';
+    document.getElementById('countGrowing').innerText = summary.GROWING ?? '0';
+    document.getElementById('countStable').innerText = summary.STABLE ?? '0';
+    document.getElementById('countDeclining').innerText = summary.DECLINING ?? '0';
+    document.getElementById('countSlow').innerText = summary.SLOW_MOVING ?? '0';
+  }
+
+  async function loadLifecycle(resetPage = true, refreshKpis = false) {
     clearError();
     try {
-      const data = await apiFetch('/api/analytics/lifecycle/');
-      const summary = data.summary || {};
-      document.getElementById('countNew').innerText = summary.NEW ?? '0';
-      document.getElementById('countGrowing').innerText = summary.GROWING ?? '0';
-      document.getElementById('countStable').innerText = summary.STABLE ?? '0';
-      document.getElementById('countDeclining').innerText = summary.DECLINING ?? '0';
-      document.getElementById('countSlow').innerText = summary.SLOW_MOVING ?? '0';
+      const search = document.getElementById('lifecycleSearch').value.trim();
+      const recommendation = document.getElementById('lifecycleRecommendation').value;
+      const hasFilters = Boolean(search || recommendation);
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (recommendation) params.set('recommendation', recommendation);
+      const query = params.toString();
+      const data = await apiFetch(`/api/analytics/lifecycle/${query ? `?${query}` : ''}`);
+
+      if (!hasFilters) {
+        updateLifecycleKpis(data.summary || {});
+      } else if (refreshKpis) {
+        const totals = await apiFetch('/api/analytics/lifecycle/');
+        updateLifecycleKpis(totals.summary || {});
+      }
 
       allLifecycleResults = data.results ?? [];
       if (allLifecycleResults.length === 0) {
-        document.getElementById('emptyState').style.display = 'block';
-        document.getElementById('tableSection').style.display = 'none';
-        document.getElementById('emptyMsg').innerText = data.note || 'No lifecycle data yet. Click Calculate to run.';
+        if (hasFilters) {
+          document.getElementById('emptyState').style.display = 'none';
+          document.getElementById('tableSection').style.display = 'block';
+          document.getElementById('lifecycleBody').innerHTML = '<tr><td colspan="5" class="text-muted text-center py-4">No products match your search/filter.</td></tr>';
+        } else {
+          document.getElementById('emptyState').style.display = 'block';
+          document.getElementById('tableSection').style.display = 'none';
+          document.getElementById('emptyMsg').innerText = data.note || 'No lifecycle data yet. Click Calculate to run.';
+        }
         document.getElementById('lifecyclePagination').innerHTML = '';
+        lifecyclePage = 1;
         return;
       }
 
       document.getElementById('emptyState').style.display = 'none';
       document.getElementById('tableSection').style.display = 'block';
-      lifecyclePage = 1; // fresh data — back to page 1
+      if (resetPage) lifecyclePage = 1;
       renderLifecycleTable();
     } catch (error) {
       console.error('loadLifecycle failed:', error);
@@ -182,7 +223,7 @@
   }
 
   // Pagination — same pattern used elsewhere (Stock Levels in
-  // inventory.html, Purchases, Batches, Reorder, Notifications): 25
+  // inventory.html, Purchases, Batches, Reorder, Notifications): 10
   // rows/page, client-side slice, Previous / "Page X of Y" / Next.
   function renderLifecycleTable() {
     const rows = allLifecycleResults;
@@ -294,7 +335,7 @@
     clearError();
     try {
       await apiFetch('/api/lifecycle/calculate/', { method: 'POST' });
-      await loadLifecycle();
+      await loadLifecycle(true, true);
     } catch (error) {
       console.error('runCalculate failed:', error);
       showError('Lifecycle calculation failed. Please try again.');
@@ -303,6 +344,12 @@
       button.disabled = false;
     }
   }
+
+  document.getElementById('lifecycleSearch').addEventListener('input', () => {
+    clearTimeout(lifecycleSearchTimer);
+    lifecycleSearchTimer = setTimeout(() => loadLifecycle(), 300);
+  });
+  document.getElementById('lifecycleRecommendation').addEventListener('change', () => loadLifecycle());
 
   fetchCurrentUser();
   loadLifecycle();

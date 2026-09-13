@@ -1198,6 +1198,7 @@ def lifecycle_analytics(request):
     Query params (optional):
         ?status=GROWING            filter by one status
         ?recommendation=DISCOUNT   filter by recommendation
+        ?search=chip                filter by product name
 
     Response per product:
         product_id          int
@@ -1243,11 +1244,16 @@ def lifecycle_analytics(request):
     # ── Optional filters ──────────────────────────────────────────────────────
     status_filter = request.query_params.get('status', '').upper()
     rec_filter    = request.query_params.get('recommendation', '').upper()
+    search_term   = request.query_params.get('search', '').strip()
 
     if status_filter:
         latest_records = latest_records.filter(status=status_filter)
     if rec_filter:
         latest_records = latest_records.filter(recommendation=rec_filter)
+    if search_term:
+        latest_records = latest_records.filter(
+            product__product_name__icontains=search_term
+        )
 
     # ── Serialize ─────────────────────────────────────────────────────────────
     results = []
@@ -1275,7 +1281,7 @@ def lifecycle_analytics(request):
 
     status_counts = Counter(r['lifecycle_status'] for r in results)
 
-    return Response({
+    response_data = {
         'results': results,
         'total':   len(results),
         'summary': {
@@ -1285,11 +1291,14 @@ def lifecycle_analytics(request):
             'DECLINING':   status_counts.get('DECLINING', 0),
             'SLOW_MOVING': status_counts.get('SLOW_MOVING', 0),
         },
-        'note': (
+    }
+    if not (status_filter or rec_filter or search_term):
+        response_data['note'] = (
             'This endpoint reads the most recent calculation run. '
             'To recalculate, call POST /api/lifecycle/calculate/ first.'
-        ),
-    })
+        )
+
+    return Response(response_data)
 
  
  
