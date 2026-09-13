@@ -25,6 +25,7 @@
   .history-summary .label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
   .history-timeline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .history-arrow { color: var(--muted); }
+  .history-chart { position: relative; height: 240px; margin-bottom: 20px; }
 
   @media (max-width: 960px) {
     .lifecycle-table-wrap { overflow-x: auto; }
@@ -86,6 +87,9 @@
       <span class="text-muted small" id="historyProductName"></span>
     </div>
     <div id="historySummary" class="history-summary p-3 mb-3"></div>
+    <div class="history-chart">
+      <canvas id="historyVelocityChart" aria-label="Sales velocity over lifecycle history"></canvas>
+    </div>
     <div class="table-responsive">
       <table class="table table-sm mb-0">
         <thead class="table-light">
@@ -209,6 +213,10 @@
       const productName = row.querySelector('td').innerText;
       const current = history[history.length - 1];
       const previous = history.length > 1 ? history[history.length - 2] : null;
+      const statusColors = {
+        NEW: '#2563eb', GROWING: '#16a34a', STABLE: '#6b7280',
+        DECLINING: '#c2410c', SLOW_MOVING: '#dc2626'
+      };
 
       document.getElementById('historyProductName').innerText = productName;
       document.getElementById('historySummary').innerHTML = `
@@ -226,6 +234,46 @@
           <td>${statusBadge(record.status)}</td>
           <td>${recPill(record.recommendation)}</td>
         </tr>`).join('') : '<tr><td colspan="5" class="text-muted">No history found for this product.</td></tr>';
+      const chart = Chart.getChart('historyVelocityChart');
+      if (chart) chart.destroy();
+      if (history.length) {
+        new Chart(document.getElementById('historyVelocityChart'), {
+          type: 'line',
+          data: {
+            labels: history.map(record => record.calculated_date),
+            datasets: [{
+              label: 'Sales velocity',
+              data: history.map(record => Number(record.sales_velocity) || 0),
+              borderColor: '#2563eb',
+              backgroundColor: '#2563eb',
+              pointBackgroundColor: history.map(record => statusColors[record.status] || '#6b7280'),
+              pointBorderColor: '#ffffff',
+              pointBorderWidth: 2,
+              tension: 0.2,
+              fill: false
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { title: { display: true, text: 'Calculation date' } },
+              y: { beginAtZero: true, title: { display: true, text: 'Sales velocity' } }
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: context => {
+                    const record = history[context.dataIndex];
+                    return `${record.status}: ${record.sales_velocity ?? '—'}`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
       document.getElementById('historySection').style.display = 'block';
       document.getElementById('historySection').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) {
