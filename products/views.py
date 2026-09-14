@@ -9,7 +9,7 @@ from purchases.models import PurchaseBatch
 from core.authentication import LenientJWTAuthentication
 from users.audit import log_action
 import pandas as pd
-from users.permissions import IsManagerOrAdmin
+from users.permissions import IsAdmin, IsManagerOrAdmin
 
 from .models import Brand, Category, StoreZone, Product, ZoneRecommendation, ProductZoneOverride, ZoneCalculationRun
 from .serializers import (
@@ -153,6 +153,46 @@ class ProductAvailabilityView(APIView):
         return Response({
             'status': availability_status,
             'can_order': can_order,
+        })
+
+
+class ProductReorderThresholdView(APIView):
+    """Admin-only update for a product's manual reorder point."""
+
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+
+    def patch(self, request, pk):
+        value = request.data.get('reorder_threshold')
+        try:
+            if isinstance(value, bool):
+                raise ValueError
+            threshold = int(value)
+        except (TypeError, ValueError):
+            return Response({'error': 'reorder_threshold must be a whole number.'}, status=status.HTTP_400_BAD_REQUEST)
+        if threshold < 0 or threshold > 1_000_000:
+            return Response({'error': 'reorder_threshold must be between 0 and 1,000,000.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            product = Product.objects.get(pk=pk)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        previous_threshold = product.reorder_threshold
+        product.reorder_threshold = threshold
+        product.save(update_fields=['reorder_threshold'])
+        log_action(
+            user=request.user,
+            action='UPDATE',
+            table_name='product',
+            record_id=product.id,
+            old_value={'reorder_threshold': previous_threshold},
+            new_value={'reorder_threshold': threshold},
+            request=request,
+        )
+        return Response({
+            'product_id': product.id,
+            'product_name': product.product_name,
+            'reorder_threshold': product.reorder_threshold,
         })
 
 

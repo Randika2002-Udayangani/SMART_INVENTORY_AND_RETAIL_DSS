@@ -251,6 +251,18 @@ async function request(url, options = {}) {
     }
 }
 
+function formatStockDateTime(value) {
+    if (!value) return '—';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString('en-LK', {
+        timeZone: 'Asia/Colombo',
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: true,
+    });
+}
+
 function switchTab(name, btn) {
     ['stock','low','out','ledger','adjust'].forEach(t => {
         document.getElementById('tab-' + t).style.display = (t === name) ? 'block' : 'none';
@@ -479,16 +491,25 @@ async function loadHistoryPage() {
             return;
         }
 
-        tbody.innerHTML = rows.map(h => `
+        tbody.innerHTML = rows.map(h => {
+            const insufficientStockData = h.balance_after !== null && h.balance_after !== undefined && Number(h.balance_after) < 0;
+            const balanceCell = insufficientStockData
+                ? '<span class="badge bg-warning text-dark" title="The recorded sales exceed the available purchase/stock records.">Insufficient stock data</span>'
+                : (h.balance_after ?? '—');
+            const reasonCell = insufficientStockData
+                ? 'Recorded sales exceed available stock data.'
+                : (h.reason ?? '—');
+            return `
             <tr>
-                <td>${h.transaction_date ?? '—'}</td>
+                <td>${formatStockDateTime(h.transaction_date)}</td>
                 <td><span class="badge bg-secondary">${h.movement_type ?? '—'}</span></td>
                 <td>${h.source ?? '—'}</td>
                 <td style="color:${(h.quantity_change ?? 0) < 0 ? '#dc2626' : '#16a34a'}">${h.quantity_change ?? '—'}</td>
-                <td>${h.balance_after ?? '—'}</td>
-                <td>${h.reason ?? '—'}</td>
+                <td>${balanceCell}</td>
+                <td>${reasonCell}</td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
 
         pagDiv.innerHTML = data.total_pages > 1 ? `
             <button class="btn btn-sm btn-outline-secondary" onclick="changeHistoryPage(-1)" ${!data.has_previous ? 'disabled' : ''}>Previous</button>
@@ -528,7 +549,7 @@ async function loadLedger() {
         }
         tbody.innerHTML = ledgerData.map(l => `
             <tr>
-                <td>${l.transaction_date ?? l.date ?? l.created_at ?? '—'}</td>
+                <td>${formatStockDateTime(l.transaction_date ?? l.date ?? l.created_at)}</td>
                 <td>${l.product_name ?? '—'}</td>
                 <td><span class="badge bg-secondary">${l.transaction_type ?? '—'}</span></td>
                 <td style="color:${(l.quantity_change ?? 0) < 0 ? '#dc2626' : '#16a34a'}">${l.quantity_change ?? l.quantity ?? '—'}</td>

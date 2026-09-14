@@ -21,6 +21,8 @@
   .lifecycle-error { color: #b91c1c; }
   .lifecycle-row { cursor: pointer; }
   .lifecycle-row:hover { background-color: var(--card2); }
+  .threshold-control { display:flex; align-items:center; gap:6px; min-width:170px; }
+  .threshold-control input { width:76px; }
   .history-summary { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; }
   .history-summary .label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
   .history-timeline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -93,7 +95,7 @@
     <div class="lifecycle-table-wrap">
       <table class="table table-hover lifecycle-table">
         <thead class="table-light">
-          <tr><th>Product</th><th>Status</th><th>Recommendation</th><th>Sales Velocity</th><th>Date</th></tr>
+          <tr><th>Product</th><th>Status</th><th>Recommendation</th><th>Sales Velocity</th><th>Date</th><th id="thresholdHeader" style="display:none;">Reorder Threshold</th></tr>
         </thead>
         <tbody id="lifecycleBody"></tbody>
       </table>
@@ -187,6 +189,7 @@
   let lifecyclePage = 1;
   const lifecyclePageSize = 10;
   let lifecycleSearchTimer;
+  let canEditThreshold = false;
 
   function updateLifecycleKpis(summary) {
     document.getElementById('countNew').innerText = summary.NEW ?? '0';
@@ -253,15 +256,24 @@
     lifecyclePage = Math.min(lifecyclePage, totalPages);
     const pageRows = rows.slice((lifecyclePage - 1) * lifecyclePageSize, lifecyclePage * lifecyclePageSize);
 
-    document.getElementById('lifecycleBody').innerHTML = pageRows.map(result => `
+    document.getElementById('lifecycleBody').innerHTML = pageRows.map(result => {
+      const thresholdCell = canEditThreshold ? `
+        <td>
+          <div class="threshold-control" onclick="event.stopPropagation()">
+            <input id="threshold-${Number(result.product_id)}" type="number" min="0" step="1" class="form-control form-control-sm" value="${Number(result.reorder_threshold) || 0}" aria-label="Reorder threshold for ${escapeHtml(result.product_name)}">
+            <button class="btn btn-sm btn-outline-primary" onclick="applyReorderThreshold(event, ${Number(result.product_id)})">Apply</button>
+          </div>
+        </td>` : '';
+      return `
       <tr class="lifecycle-row" onclick="loadLifecycleHistory(${Number(result.product_id)}, this)" title="View lifecycle history">
         <td>${escapeHtml(result.product_name)}</td>
         <td>${statusBadge(result.lifecycle_status ?? result.status)}</td>
         <td>${recPill(result.recommendation)}</td>
         <td>${escapeHtml(result.sales_velocity)}</td>
         <td>${escapeHtml(result.calculated_date)}</td>
-      </tr>
-    `).join('');
+        ${thresholdCell}
+      </tr>`;
+    }).join('');
 
     document.getElementById('lifecyclePagination').innerHTML = rows.length > lifecyclePageSize ? `
       <button class="btn btn-sm btn-outline-secondary" onclick="changeLifecyclePage(-1)" ${lifecyclePage === 1 ? 'disabled' : ''}>Previous</button>
@@ -274,8 +286,10 @@
     try {
       const today = new Date();
       const dateFrom = '2026-01-01';
-      const dateTo = today.toISOString().slice(0, 10);
-      const history = await apiFetch(`/api/analytics/lifecycle/${productId}/history/?date_from=${dateFrom}&date_to=${dateTo}`);
+      const dateTo = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-');
+      const payload = await apiFetch(`/api/analytics/lifecycle/${productId}/history/?date_from=${dateFrom}&date_to=${dateTo}`);
+      const history = payload.history ?? (Array.isArray(payload) ? payload : []);
+      const salesSeries = payload.sales_series ?? history.map(record => ({ date: record.calculated_date, sales_velocity: record.sales_velocity }));
       const productName = row.querySelector('td').innerText;
       const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('historyModal'));
       document.getElementById('historyProductName').innerText = `${productName} · ${formatLifecycleDate(dateFrom)} to ${formatLifecycleDate(dateTo)}`;
@@ -287,7 +301,7 @@
       const existingChart = Chart.getChart('historyVelocityChart');
       if (existingChart) existingChart.destroy();
 
-      if (!history.length) {
+      if (!history.length && !salesSeries.some(point => Number(point.sales_velocity) > 0)) {
         document.getElementById('historySummary').innerHTML = '';
         empty.innerText = 'No historical lifecycle data is available for this product from 01 Jan 2026 to today.';
         empty.style.display = 'block';
@@ -310,7 +324,7 @@
         <div class="row g-3">
           <div class="col-md-3"><div class="label">Current</div><div>${statusBadge(current?.status)}</div></div>
           <div class="col-md-3"><div class="label">Previous</div><div>${statusBadge(previous?.status || '—')}</div></div>
-          <div class="col-md-3"><div class="label">Pattern</div><div class="history-timeline">${history.map((record, index) => `${index ? '<span class="history-arrow">&#8594;</span>' : ''}${statusBadge(record.status)}`).join('')}</div></div>
+          <div class="col-md-3"><div class="label">Pattern</div><div class="history-timeline">${history.length ? history.map((record, index) => `${index ? '<span class="history-arrow">&#8594;</span>' : ''}${statusBadge(record.status)}`).join('') : '<span class="text-muted small">No lifecycle calculation yet</span>'}</div></div>
           <div class="col-md-3"><div class="label">Recommendation</div><div>${recPill(current?.recommendation)}</div></div>
         </div>`;
       document.getElementById('historyBody').innerHTML = history.length ? history.map(record => `
@@ -321,8 +335,8 @@
           <td>${statusBadge(record.status)}</td>
           <td>${recPill(record.recommendation)}</td>
         </tr>`).join('') : '<tr><td colspan="5" class="text-muted">No history found for this product.</td></tr>';
-      const dates = history.map(record => record.calculated_date);
-      const velocities = history.map(record => Number(record.sales_velocity) || 0);
+      const dates = salesSeries.map(point => point.date);
+      const velocities = salesSeries.map(point => Number(point.sales_velocity) || 0);
       const slowMovingThreshold = 5 / 60;
       new Chart(document.getElementById('historyVelocityChart'), {
         type: 'line',
@@ -361,7 +375,7 @@
             x: { title: { display: true, text: 'Lifecycle calculation date' }, grid: { color: '#e5e7eb' }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, callback: value => formatLifecycleDate(dates[value]) } },
             y: { beginAtZero: true, title: { display: true, text: 'Units sold per day' }, grid: { color: '#dbe4df' }, ticks: { precision: 2 } }
           },
-          plugins: { legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 18 } }, tooltip: { callbacks: { label: context => { const record = history[context.dataIndex]; return context.datasetIndex === 0 ? `${record.status}: ${record.sales_velocity ?? '0'} units/day · ${record.recommendation ?? '—'}` : 'Below this line, the product is in the slow-moving range.'; } } } }
+          plugins: { legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 18 } }, tooltip: { callbacks: { label: context => context.datasetIndex === 0 ? `Sales velocity: ${context.parsed.y ?? '0'} units/day` : 'Below this line, the product is in the slow-moving range.' } } }
         }
       });
 
@@ -372,6 +386,29 @@
     } catch (error) {
       console.error('loadLifecycleHistory failed:', error);
       showError('Product lifecycle history could not be loaded. Please try again.');
+    }
+  }
+
+  async function applyReorderThreshold(event, productId) {
+    event.stopPropagation();
+    const input = document.getElementById(`threshold-${productId}`);
+    const threshold = Number(input.value);
+    if (!Number.isInteger(threshold) || threshold < 0) {
+      showError('Reorder threshold must be a whole number greater than or equal to zero.');
+      return;
+    }
+    try {
+      const saved = await apiFetch(`/api/products/${productId}/reorder-threshold/`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reorder_threshold: threshold }),
+      });
+      const result = allLifecycleResults.find(item => Number(item.product_id) === productId);
+      if (result) result.reorder_threshold = saved.reorder_threshold;
+      input.value = saved.reorder_threshold;
+      clearError();
+    } catch (error) {
+      showError(error.message || 'Could not update the reorder threshold.');
     }
   }
 
@@ -403,7 +440,13 @@
   });
   document.getElementById('lifecycleRecommendation').addEventListener('change', () => loadLifecycle());
 
-  fetchCurrentUser();
-  loadLifecycle();
+  async function initializeLifecyclePage() {
+    const role = await fetchCurrentUser();
+    canEditThreshold = String(role || '').toUpperCase() === 'ADMIN';
+    document.getElementById('thresholdHeader').style.display = canEditThreshold ? '' : 'none';
+    await loadLifecycle();
+  }
+
+  initializeLifecyclePage();
 </script>
 {% endblock %}

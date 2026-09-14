@@ -17,7 +17,7 @@ from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 
 from products.models import Product
-from purchases.models import PurchaseBatch
+from purchases.models import Purchase, PurchaseBatch
 from suppliers.models import Supplier
 from users.models import SystemConfig
 from .models import (
@@ -609,20 +609,59 @@ class LifecycleProductHistoryView(APIView):
             return Response({'error': 'Product not found'},
                             status=status.HTTP_404_NOT_FOUND)
 
+        date_from = request.query_params.get('date_from') or '2026-01-01'
+        date_to = request.query_params.get('date_to') or str(date.today())
+        try:
+            period_start = date.fromisoformat(date_from)
+            period_end = date.fromisoformat(date_to)
+        except ValueError:
+            return Response({'error': 'date_from and date_to must use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+        if period_start > period_end:
+            return Response({'error': 'date_from must not be after date_to.'}, status=status.HTTP_400_BAD_REQUEST)
+
         queryset = ProductLifecycle.objects.filter(
             product=product
         ).order_by('calculated_date', 'id')
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
-        if date_from:
-            queryset = queryset.filter(calculated_date__gte=date_from)
-        if date_to:
-            queryset = queryset.filter(calculated_date__lte=date_to)
+        queryset = queryset.filter(
+            calculated_date__gte=period_start,
+            calculated_date__lte=period_end,
+        )
         data = queryset.values(
             'id', 'product', 'status', 'recommendation',
             'sales_velocity', 'comparison_period', 'calculated_date'
         )
-        return Response(list(data))
+        history = list(data)
+
+        # Lifecycle calculations are usually monthly, so plotting only those
+        # rows leaves a product with current sales as a single point (or no
+        # graph before its first calculation).  The graph uses the actual
+        # day-by-day item-sales records for the requested fixed date range.
+        daily_sales = {
+            row['sale_date']: float(row['total'] or 0)
+            for row in (
+                ItemSalesRecord.objects.filter(
+                    product=product,
+                    sale_date__range=(period_start, period_end),
+                )
+                .values('sale_date')
+                .annotate(total=Sum('quantity_sold'))
+            )
+        }
+        sales_series = []
+        cursor = period_start
+        while cursor <= period_end:
+            sales_series.append({
+                'date': str(cursor),
+                'sales_velocity': daily_sales.get(cursor, 0),
+            })
+            cursor += timedelta(days=1)
+
+        return Response({
+            'history': history,
+            'sales_series': sales_series,
+            'date_from': str(period_start),
+            'date_to': str(period_end),
+        })
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -907,11 +946,14 @@ class SupplierReturnView(APIView):
             queryset = queryset.filter(status=ret_status)
 
         data = queryset.values(
-            'id', 'supplier', 'product', 'batch',
+            'id', 'supplier', 'product', 'product__product_name', 'batch',
             'return_bill_no', 'return_date', 'quantity_returned', 'return_value',
             'return_reason', 'recovery_type', 'status', 'notes'
         )
-        return Response(list(data))
+        return Response([
+            {**row, 'product_name': row.pop('product__product_name')}
+            for row in data
+        ])
 
     def post(self, request):
         supplier_id       = request.data.get('supplier_id')
@@ -988,7 +1030,28 @@ class SupplierReturnView(APIView):
 
 _RETURN_ANCHOR_STORE = 'Samanala Super Mart'
 _RETURN_ANCHOR_DOC_TYPE = 'SUPPLY RETURN'
-_RETURN_DATE_PATTERN = re.compile(r'^\d{1,2}-\w{3}-\d{4}$')
+_RETURN_DATE_FORMATS = (
+    '%d-%b-%Y', '%d-%B-%Y', '%d/%m/%Y', '%d-%m-%Y',
+    '%Y-%m-%d', '%d.%m.%Y',
+)
+_RETURN_HEADER_LABELS = {
+    'bill_no': re.compile(r'^(?:return\s+)?bill\s*(?:no\.?|number)?\s*[:#\-]?\s*$', re.I),
+    'return_date': re.compile(r'^(?:return\s+)?date\s*[:#\-]?\s*$', re.I),
+    # easyAcc uses "Customer" for the supplier on a supply-return document.
+    'supplier_name': re.compile(r'^(?:customer|supplier|vendor)\s*[:#\-]?\s*$', re.I),
+    'invoice_number': re.compile(r'^(?:inv(?:oice)?\s*(?:no\.?|number)?|original\s+invoice)\s*[:#\-]?\s*$', re.I),
+}
+_RETURN_HEADER_INLINE = {
+    key: re.compile(pattern, re.I)
+    for key, pattern in {
+        # A hyphen is intentionally not an inline separator: invoice IDs
+        # such as "INV-452" must not be parsed as the label "INV".
+        'bill_no': r'(?:return\s+)?bill\s*(?:no\.?|number)?\s*[:#]\s*(.+)',
+        'return_date': r'(?:return\s+)?date\s*[:#]\s*(.+)',
+        'supplier_name': r'(?:customer|supplier|vendor)\s*[:#]\s*(.+)',
+        'invoice_number': r'(?:inv(?:oice)?\s*(?:no\.?|number)?|original\s+invoice)\s*[:#]\s*(.+)',
+    }.items()
+}
 _RETURN_ITEM_LINE_PATTERN = re.compile(
     r'^(\d{3,6})\s+(.+?)\s+'
     r'([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+'
@@ -998,36 +1061,76 @@ _RETURN_SKIP_KEYWORDS = ('Net Total', 'Item Description', 'No Qty', 'Page')
 
 
 def _parse_return_header(lines):
-    try:
-        anchor_idx = lines.index(_RETURN_ANCHOR_STORE)
-    except ValueError:
-        return None, None, None, None
-    if anchor_idx + 1 >= len(lines) or _RETURN_ANCHOR_DOC_TYPE not in lines[anchor_idx + 1]:
-        return None, None, None, None
+    """Extract return metadata from text generated by different PDF layouts.
 
-    values = []
-    index = anchor_idx - 1
-    while index >= 0 and len(values) < 4:
-        line = lines[index].strip()
-        if line.lower().startswith('page '):
-            index -= 1
-            continue
-        if line in ('Bill No :', 'Date :', 'Customer :', 'Inv No :'):
-            break
-        values.insert(0, line)
-        index -= 1
+    pdfplumber preserves visual columns differently depending on the printer
+    driver.  Therefore this deliberately uses the field labels instead of a
+    fixed line position relative to the shop title.
+    """
+    normalized = [re.sub(r'\s+', ' ', line).strip() for line in lines if line and line.strip()]
+    fields = {}
 
-    bill_no = values[0] if len(values) > 0 else None
-    date_value = values[1] if len(values) > 1 else None
-    supplier_name = values[2] if len(values) > 2 else None
-    invoice_number = values[3] if len(values) > 3 else None
+    def value_after_label(index):
+        """Get a value from a label-only line, allowing one intervening label."""
+        for candidate in normalized[index + 1:index + 3]:
+            if any(pattern.match(candidate) for pattern in _RETURN_HEADER_LABELS.values()):
+                continue
+            if candidate and not re.search(r'^(?:page\s+\d+|samanala super mart|supply return)$', candidate, re.I):
+                return candidate
+        return None
+
+    for index, line in enumerate(normalized):
+        for key, label_pattern in _RETURN_HEADER_LABELS.items():
+            if key in fields:
+                continue
+            if label_pattern.match(line):
+                fields[key] = value_after_label(index)
+                continue
+            inline = _RETURN_HEADER_INLINE[key].search(line)
+            if inline:
+                # A line can contain several column labels.  Do not mistake
+                # the following label (for example "Date:") for a value.
+                value = inline.group(1).strip()
+                value = re.split(r'\s+(?=(?:return\s+)?(?:bill|date)|(?:customer|supplier|vendor)|(?:inv(?:oice)?|original\s+invoice)\b)', value, maxsplit=1, flags=re.I)[0].strip(' :')
+                value_is_another_label = re.match(
+                    r'^(?:(?:return\s+)?(?:bill|date)\s*(?:no\.?|number)?|(?:customer|supplier|vendor)|(?:inv(?:oice)?\s+(?:no\.?|number)|original\s+invoice))\s*[:#]',
+                    value,
+                    re.I,
+                )
+                if value and not value_is_another_label and not any(pattern.match(value) for pattern in _RETURN_HEADER_LABELS.values()):
+                    fields[key] = value
+
+    # Older layouts extract the four header values as separate lines directly
+    # before the shop/document title.  Retain that format as a last fallback.
+    anchor_index = next((i for i, line in enumerate(normalized)
+                         if line.casefold() == _RETURN_ANCHOR_STORE.casefold()), None)
+    if anchor_index is not None:
+        candidates = [line for line in normalized[max(0, anchor_index - 8):anchor_index]
+                      if not line.lower().startswith('page ') and
+                      not any(pattern.match(line) for pattern in _RETURN_HEADER_LABELS.values())]
+        if len(candidates) >= 4:
+            for key, value in zip(('bill_no', 'return_date', 'supplier_name', 'invoice_number'), candidates[-4:]):
+                if not fields.get(key):
+                    fields[key] = value
+
     return_date = None
-    if date_value and _RETURN_DATE_PATTERN.match(date_value):
-        try:
-            return_date = datetime.strptime(date_value, '%d-%b-%Y').date()
-        except ValueError:
-            pass
-    return bill_no, return_date, supplier_name, invoice_number
+    date_value = fields.get('return_date')
+    if date_value:
+        # Keep only the date portion when an export appends a time.
+        date_value = date_value.split()[0].strip(' ,')
+        for date_format in _RETURN_DATE_FORMATS:
+            try:
+                return_date = datetime.strptime(date_value, date_format).date()
+                break
+            except ValueError:
+                continue
+
+    return (
+        fields.get('bill_no'),
+        return_date,
+        fields.get('supplier_name'),
+        fields.get('invoice_number'),
+    )
 
 
 def _parse_return_items(lines, start_index):
@@ -1054,6 +1157,57 @@ def _parse_return_items(lines, start_index):
             })
         index += 1
     return items
+
+
+def _get_or_create_return_product(item, return_date):
+    """Find a product from a return line or register a new catalogue item."""
+    item_code = item['item_code'].strip()
+    description = item['description'].strip()
+
+    # The item code is the stable identifier in the PDF.  A name match is a
+    # fallback for older catalogue entries that pre-date SKU imports.
+    sku_matches = Product.objects.filter(sku_code__iexact=item_code)
+    if sku_matches.count() == 1:
+        return sku_matches.first(), False, None
+    if sku_matches.count() > 1:
+        return None, False, 'More than one product has this item code; product was not changed.'
+
+    name_matches = Product.objects.filter(product_name__iexact=description)
+    if name_matches.count() == 1:
+        return name_matches.first(), False, None
+    if name_matches.count() > 1:
+        return None, False, 'More than one product has this description; product was not changed.'
+
+    product = Product.objects.create(
+        product_name=description[:150],
+        sku_code=item_code[:50],
+        cost_price=item['cost_unit'],
+        avg_cost_price=item['cost_unit'],
+        unit_price=item['sell_unit'],
+        introduced_date=return_date,
+        is_active=True,
+    )
+    return product, True, None
+
+
+def _get_or_create_return_supplier(supplier_name):
+    """Find a supplier case-insensitively or register the PDF supplier."""
+    supplier = Supplier.objects.filter(supplier_name__iexact=supplier_name).first()
+    if supplier:
+        return supplier, False
+    return Supplier.objects.create(supplier_name=supplier_name[:150]), True
+
+
+def _create_return_reconciliation_batch(purchase, product, quantity, cost_price):
+    """Create stock solely to reconcile a documented return back to zero."""
+    return PurchaseBatch.objects.create(
+        purchase=purchase,
+        product=product,
+        quantity_received=quantity,
+        remaining_quantity=quantity,
+        cost_price=cost_price,
+        status='ACTIVE',
+    )
 
 
 class SupplierReturnUploadView(APIView):
@@ -1090,10 +1244,6 @@ class SupplierReturnUploadView(APIView):
             if return_date > date.today():
                 raise ValueError('Return date cannot be in the future.')
 
-            supplier = Supplier.objects.get(supplier_name__iexact=supplier_name)
-            if SupplierReturn.objects.filter(supplier=supplier, return_bill_no=bill_no).exists():
-                return Response({'error': f'Return bill {bill_no} has already been processed.'}, status=409)
-
             start_index = next((i + 1 for i, line in enumerate(lines) if line.startswith('Item Description') or line.startswith('No Unit')), 0)
             items = _parse_return_items(lines, start_index)
             if not items:
@@ -1102,18 +1252,51 @@ class SupplierReturnUploadView(APIView):
             processed = []
             flagged = []
             with transaction.atomic():
+                supplier, supplier_created = _get_or_create_return_supplier(supplier_name)
+
+                if SupplierReturn.objects.filter(supplier=supplier, return_bill_no=bill_no).exists():
+                    return Response({'error': f'Return bill {bill_no} has already been processed.'}, status=409)
+
+                created_products = []
+                reconciliation_purchase = None
+                reconciliation_batches = []
                 for item in items:
-                    matches = Product.objects.filter(product_name__iexact=item['description'])
-                    if matches.count() != 1:
-                        flagged.append({'description': item['description'], 'reason': 'Product not uniquely matched; stock was not modified.'})
+                    product, product_created, product_error = _get_or_create_return_product(item, return_date)
+                    if product_error:
+                        flagged.append({'description': item['description'], 'reason': product_error})
                         continue
-                    product = matches.first()
+                    if product_created:
+                        created_products.append({
+                            'product_id': product.id,
+                            'sku_code': product.sku_code,
+                            'product': product.product_name,
+                        })
                     batch = PurchaseBatch.objects.filter(
                         product=product, status='ACTIVE', remaining_quantity__gt=0
                     ).order_by('-id').first()
                     quantity = int(item['qty'])
-                    if not batch or quantity <= 0 or quantity > batch.remaining_quantity:
-                        flagged.append({'description': item['description'], 'reason': 'No ACTIVE batch or return quantity exceeds available batch stock.'})
+                    if quantity <= 0:
+                        flagged.append({'description': item['description'], 'reason': 'Return quantity must be greater than zero.'})
+                        continue
+
+                    # A return document can be the first record received for
+                    # an item.  Create a same-quantity reconciliation batch,
+                    # then deduct it immediately below: this preserves the
+                    # return/audit history without adding stock on hand.
+                    if not batch:
+                        if reconciliation_purchase is None:
+                            reconciliation_purchase = Purchase.objects.create(
+                                supplier=supplier,
+                                purchase_date=return_date,
+                                invoice_number=(invoice_number or f'RETURN-{bill_no}')[:50],
+                                total_amount=Decimal('0'),
+                            )
+                        batch = _create_return_reconciliation_batch(
+                            reconciliation_purchase, product, quantity, item['cost_unit']
+                        )
+                        reconciliation_batches.append(batch.id)
+                    elif quantity > batch.remaining_quantity:
+                        flagged.append({'description': item['description'], 'reason': 'Return quantity exceeds available batch stock.'})
                         continue
 
                     deduction = deduct_stock_fefo(
@@ -1150,17 +1333,15 @@ class SupplierReturnUploadView(APIView):
                 'upload_log_id': upload_log.id,
                 'return_bill_no': bill_no,
                 'supplier': supplier.supplier_name,
+                'supplier_created': supplier_created,
                 'return_date': str(return_date),
                 'processed_count': len(processed),
                 'flagged_count': len(flagged),
+                'created_products': created_products,
+                'reconciliation_batch_count': len(reconciliation_batches),
                 'processed': processed,
                 'flagged': flagged,
             }, status=201)
-        except Supplier.DoesNotExist:
-            upload_log.status = 'FAILED'
-            upload_log.error_message = f'Supplier "{supplier_name}" was not found.'
-            upload_log.save(update_fields=['status', 'error_message'])
-            return Response({'error': upload_log.error_message}, status=400)
         except Exception as exc:
             upload_log.status = 'FAILED'
             upload_log.error_message = str(exc)[:2000]
@@ -1630,6 +1811,7 @@ def lifecycle_analytics(request):
             'product_id':        record.product.id,
             'product_name':      record.product.product_name,
             'sku_code':          record.product.sku_code or '',
+            'reorder_threshold': record.product.reorder_threshold,
             'lifecycle_status':  record.status,
             'recommendation':    recommendation,
             'sales_velocity':    float(record.sales_velocity) if record.sales_velocity else None,
