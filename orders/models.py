@@ -129,6 +129,7 @@ class ChatbotLog(models.Model):
         ('BRAND_QUERY', 'Brand Query'),
         ('PRICE_QUERY', 'Price Query'),
         ('AVAILABILITY_QUERY', 'Availability Query'),
+        ('EXPIRY_QUERY', 'Expiry Query'),
         ('PACK_SIZE_QUERY', 'Pack Size Query'),
         ('UNKNOWN', 'Unknown'),
     ]
