@@ -1,3 +1,4 @@
+import os
 from django.test import TestCase, Client
 from datetime import date, timedelta
 
@@ -14,6 +15,8 @@ from inventory.models import LossRecord, SupplierReturn
 #   python manage.py test inventory.test07 --verbosity=2
 # ============================================================
 
+TEST_PASSWORD = os.environ.get('TEST_PASSWORD', 'testpass123')
+
 
 class F07TestSetup(TestCase):
     """Base setup shared across all F07 tests."""
@@ -25,13 +28,13 @@ class F07TestSetup(TestCase):
         User = get_user_model()
         self.manager = User.objects.create_user(
             username='test_manager_f07',
-            password='testpass123',
+            password=TEST_PASSWORD,
             is_staff=True
         )
 
         response = self.client.post('/api/auth/login/', {
             'username': 'test_manager_f07',
-            'password': 'testpass123'
+            'password': TEST_PASSWORD
         }, content_type='application/json')
 
         self.assertEqual(response.status_code, 200, "Login failed")

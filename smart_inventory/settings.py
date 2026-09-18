@@ -17,27 +17,17 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-
+# ─────────────────────────────────────────────────────────────────
+# ALLOWED_HOSTS
+# Local dev hosts are always included. Add your hosted domain(s)
+# via the ALLOWED_HOSTS env var (comma-separated) once deployed,
+# e.g. in Render's environment settings:
+#     ALLOWED_HOSTS=smartinventory.onrender.com,www.yourdomain.com
+# ─────────────────────────────────────────────────────────────────
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
-
-# DATABASE (Using SQLite for simplicity)
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DATABASE_NAME'),
-        'USER': os.getenv('DATABASE_USER'),
-        'PASSWORD': os.getenv('DATABASE_PASSWORD'),
-        'HOST': os.getenv('DATABASE_HOST'),
-        'PORT': os.getenv('DATABASE_PORT'),
-        'CONN_MAX_AGE': 60,
-    }
-}
+_extra_hosts = os.getenv('ALLOWED_HOSTS', '')
+if _extra_hosts:
+    ALLOWED_HOSTS += [h.strip() for h in _extra_hosts.split(',') if h.strip()]
 
 
 INSTALLED_APPS = [
@@ -71,6 +61,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -99,38 +90,22 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'smart_inventory.wsgi.application'
 
- 
-
-# Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT'),
-    }
-}
-
-# Password validation
-# https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 
 # ─────────────────────────────────────────────────────────────────
 # Database — PostgreSQL
-# All values loaded from .env file — never hardcode credentials
+# All values loaded from .env file — never hardcode credentials.
+# (Previously defined three times in this file — the last definition
+#  silently won and was missing CONN_MAX_AGE. Consolidated to one.)
 # ─────────────────────────────────────────────────────────────────
 DATABASES = {
     'default': {
-        'ENGINE'  : 'django.db.backends.postgresql',
-        'NAME'    : os.getenv('DATABASE_NAME'),
-        'USER'    : os.getenv('DATABASE_USER'),
-        'PASSWORD': os.getenv('DATABASE_PASSWORD'),
-        'HOST'    : os.getenv('DATABASE_HOST'),
-        'PORT'    : os.getenv('DATABASE_PORT'),
+        'ENGINE'      : 'django.db.backends.postgresql',
+        'NAME'        : os.getenv('DATABASE_NAME'),
+        'USER'        : os.getenv('DATABASE_USER'),
+        'PASSWORD'    : os.getenv('DATABASE_PASSWORD'),
+        'HOST'        : os.getenv('DATABASE_HOST'),
+        'PORT'        : os.getenv('DATABASE_PORT'),
+        'CONN_MAX_AGE': 60,
     }
 }
 
@@ -147,7 +122,14 @@ TIME_ZONE     = 'UTC'
 USE_I18N      = True
 USE_TZ        = True
 
-STATIC_URL = 'static/'
+STATIC_URL  = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
 MEDIA_URL  = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
@@ -180,13 +162,20 @@ SIMPLE_JWT = {
 
 # ─────────────────────────────────────────────────────────────────
 # CORS
-# Allow all origins during development
-# Restrict to specific frontend URLs in production
+# CORS_ALLOW_ALL_ORIGINS was True (dev-only setting) — now restricted
+# to explicit origins via env var. Set in .env, comma-separated:
+#     CORS_ALLOWED_ORIGINS=http://localhost:5173,https://yourfrontend.com
+# Falls back to localhost dev origins if the env var isn't set, so
+# local development still works out of the box.
 # ─────────────────────────────────────────────────────────────────
-CORS_ALLOW_ALL_ORIGINS = True
-
-
-
+_cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', '')
+if _cors_origins:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(',') if o.strip()]
+else:
+    CORS_ALLOWED_ORIGINS = [
+        'http://127.0.0.1:8000',
+        'http://localhost:8000',
+    ]
 
 # ─────────────────────────────────────────────────────────────────
 # Email — status-change notifications to customers
@@ -195,5 +184,5 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = '<your gmail>'
-EMAIL_HOST_PASSWORD = '<app password>'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')

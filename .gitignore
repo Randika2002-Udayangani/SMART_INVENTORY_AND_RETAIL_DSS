@@ -14,6 +14,15 @@ dev_scripts/*_results.json
 reconcile_ledger_vs_batch.py
 scope_check_high_stock.py
 show_duplicate_lines_2products.py
-test09_stock_audit.py
-.vscode/
+
+# Sensitive files (was previously a corrupted/malformed line here)
+.env*
+*.sql
 *.backup
+*.bak
+*.csv
+*.pdf
+git_history*.txt
+reconcile_dry_run_*.txt
+test_lavanya_dashboard.py
+.vscode/
