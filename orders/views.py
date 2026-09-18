@@ -39,7 +39,6 @@ class CustomerRegisterView(APIView):
 
 
     def post(self, request):
-        print("========== CUSTOMER REGISTER HIT ==========")
         name = request.data.get("name")
         email = request.data.get("email")
         password = request.data.get("password")

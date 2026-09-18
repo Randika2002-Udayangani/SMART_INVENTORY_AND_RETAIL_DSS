@@ -1,4 +1,5 @@
 import json
+import os
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -6,6 +7,8 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from products.models import Product
+
+TEST_PASSWORD = os.environ.get('TEST_PASSWORD', 'testpass123')
 
 
 class ProductReorderThresholdViewTests(TestCase):
@@ -16,7 +19,7 @@ class ProductReorderThresholdViewTests(TestCase):
         self.client = APIClient()
 
     def test_admin_can_set_a_manual_reorder_threshold(self):
-        user = get_user_model().objects.create_user('threshold-admin', password='testpass123')
+        user = get_user_model().objects.create_user('threshold-admin', password=TEST_PASSWORD)
         admin_group, _ = Group.objects.get_or_create(name='ADMIN')
         user.groups.add(admin_group)
         self.client.force_authenticate(user=user)
@@ -32,7 +35,7 @@ class ProductReorderThresholdViewTests(TestCase):
         self.assertEqual(self.product.reorder_threshold, 24)
 
     def test_non_admin_cannot_set_a_manual_reorder_threshold(self):
-        user = get_user_model().objects.create_user('threshold-staff', password='testpass123')
+        user = get_user_model().objects.create_user('threshold-staff', password=TEST_PASSWORD)
         self.client.force_authenticate(user=user)
 
         response = self.client.patch(
