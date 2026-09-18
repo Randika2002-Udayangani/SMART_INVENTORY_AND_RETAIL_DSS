@@ -184,3 +184,16 @@ SIMPLE_JWT = {
 # Restrict to specific frontend URLs in production
 # ─────────────────────────────────────────────────────────────────
 CORS_ALLOW_ALL_ORIGINS = True
+
+
+
+
+# ─────────────────────────────────────────────────────────────────
+# Email — status-change notifications to customers
+# ─────────────────────────────────────────────────────────────────
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = '<your gmail>'
+EMAIL_HOST_PASSWORD = '<app password>'
