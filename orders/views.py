@@ -681,7 +681,7 @@ class OrderStatusUpdateView(APIView):
             request=request,
         )
 
-        # added for notification system, review when back
+        #added for notification system, review when back
         try:
             from inventory.services.notifications import create_notification
             from django.core.mail import send_mail
@@ -701,7 +701,6 @@ class OrderStatusUpdateView(APIView):
             )
         except Exception:
             pass
-
 
         return Response({
             "message": "Order updated successfully",
