@@ -269,7 +269,7 @@ class UserDetailView(APIView):
         )
 
         return Response({'message': 'User updated', 'id': target.id, **new_value})
-    
+
 # Default keys from API Design Doc v3.1, Section 20. Auto-seeded on
 # first GET if missing — won't touch any other keys already in the
 # table (e.g. 'last_item_ledger_sync', used separately by inventory).
@@ -280,11 +280,11 @@ DEFAULT_CONFIG = [
     ("min_order_advance_hours", "24", "F12 Online Order validation"),
     ("max_order_advance_days", "7", "F12 Online Order validation"),
 ]
- 
- 
+
+
 class SystemConfigListView(APIView):
     """GET /api/config/ — all key-value pairs. Any authenticated staff."""
- 
+
     def get(self, request):
         existing_keys = set(SystemConfig.objects.values_list('key', flat=True))
         missing = [
@@ -293,7 +293,7 @@ class SystemConfigListView(APIView):
         ]
         if missing:
             SystemConfig.objects.bulk_create(missing)
- 
+
         configs = SystemConfig.objects.all().order_by('key')
         data = [{
             'key': c.key,
@@ -302,14 +302,14 @@ class SystemConfigListView(APIView):
             'updated_at': c.updated_at,
         } for c in configs]
         return Response(data)
- 
- 
+
+
 class SystemConfigDetailView(APIView):
     """
     GET /api/config/{key}/  — any authenticated staff
     PUT /api/config/{key}/  — Manager/Admin only. Body: {"value": "12"}. Writes Audit_Log.
     """
- 
+
     def get(self, request, key):
         try:
             c = SystemConfig.objects.get(key=key)
@@ -319,56 +319,69 @@ class SystemConfigDetailView(APIView):
             'key': c.key, 'value': c.value,
             'description': c.description, 'updated_at': c.updated_at,
         })
- 
+
     def put(self, request, key):
         if not (
             request.user.is_superuser
             or request.user.groups.filter(name__in=['ADMIN', 'MANAGER']).exists()
         ):
             return Response({'error': 'Manager or Admin access required'}, status=status.HTTP_403_FORBIDDEN)
- 
+
         try:
             c = SystemConfig.objects.get(key=key)
         except SystemConfig.DoesNotExist:
             return Response({'error': f"Config key '{key}' not found"}, status=status.HTTP_404_NOT_FOUND)
- 
+
         new_value = request.data.get('value')
         if new_value is None:
             return Response({'error': 'value is required'}, status=status.HTTP_400_BAD_REQUEST)
- 
+
         old_value = c.value
         c.value = str(new_value)
         c.save()
- 
+
         log_action(
             user=request.user, action='CONFIG_CHANGE', table_name='system_config',
             record_id=c.id, old_value={'value': old_value},
             new_value={'value': c.value}, request=request,
         )
- 
+
         return Response({
             'key': c.key, 'value': c.value,
             'description': c.description, 'updated_at': c.updated_at,
         })
- 
+
 class AuditLogListView(APIView):
     """
     GET /api/audit-log/
     Manager/Admin only. Filter by ?user=<id>, ?table_name=, ?action=,
     ?record_id=<id>, ?date_from=YYYY-MM-DD, ?date_to=YYYY-MM-DD
+    Paginate by ?page=<n> (default 1), ?page_size=<n> (default 25, max 100).
+
+    Response shape (changed from a bare list to support pagination):
+        {
+            "results": [...],
+            "count": <total matching rows, across all pages>,
+            "page": <current page>,
+            "page_size": <rows per page>,
+            "total_pages": <total pages at this page_size>
+        }
+    NOTE: frontend (templates/dashboard/audit_log.html) must be updated
+    alongside this change — it previously fetched the full list and
+    paginated client-side. See the matching audit_log.html update.
     """
     permission_classes = [IsManagerOrAdmin]
- 
+
     def get(self, request):
         logs = AuditLog.objects.all().order_by('-timestamp')
- 
+
         user_id = request.query_params.get('user')
         table_name = request.query_params.get('table_name')
         action = request.query_params.get('action')
         record_id = request.query_params.get('record_id')
         date_from = request.query_params.get('date_from')
         date_to = request.query_params.get('date_to')
- 
+
         if user_id:
             logs = logs.filter(user_id=user_id)
         if table_name:
@@ -387,7 +400,28 @@ class AuditLogListView(APIView):
             logs = logs.filter(timestamp__date__gte=date_from)
         if date_to:
             logs = logs.filter(timestamp__date__lte=date_to)
- 
+
+        # ── Pagination ──────────────────────────────────────────────────────
+        try:
+            page = int(request.query_params.get('page', 1))
+        except ValueError:
+            page = 1
+        page = max(1, page)
+
+        try:
+            page_size = int(request.query_params.get('page_size', 25))
+        except ValueError:
+            page_size = 25
+        page_size = max(1, min(page_size, 100))  # cap to prevent abuse
+
+        total_count = logs.count()
+        total_pages = max(1, -(-total_count // page_size))  # ceil division
+        page = min(page, total_pages)
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_logs = logs[start:end]
+
         data = [{
             'id': log.id,
             'user_id': log.user_id,
@@ -397,24 +431,30 @@ class AuditLogListView(APIView):
             'record_id': log.record_id,
             'ip_address': log.ip_address,
             'timestamp': log.timestamp,
-        } for log in logs]
- 
-        return Response(data)
- 
- 
+        } for log in page_logs]
+
+        return Response({
+            'results': data,
+            'count': total_count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': total_pages,
+        })
+
+
 class AuditLogDetailView(APIView):
     """
     GET /api/audit-log/{id}/
     Manager/Admin only. Full entry including old_value/new_value JSON.
     """
     permission_classes = [IsManagerOrAdmin]
- 
+
     def get(self, request, pk):
         try:
             log = AuditLog.objects.get(pk=pk)
         except AuditLog.DoesNotExist:
             return Response({'error': 'Audit log entry not found'}, status=status.HTTP_404_NOT_FOUND)
- 
+
         return Response({
             'id': log.id,
             'user_id': log.user_id,

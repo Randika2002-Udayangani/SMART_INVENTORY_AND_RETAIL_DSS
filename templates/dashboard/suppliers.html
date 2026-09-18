@@ -43,7 +43,7 @@
 
     <div id="suppliersTab" class="supplier-tab-panel active">
     <div class="d-flex justify-content-between mb-3">
-        <input type="text" id="supSearch" class="form-control form-control-sm" style="width:280px;" placeholder="Search supplier name..." oninput="supplierPage = 1; renderSuppliers()">
+        <input type="text" id="supSearch" class="form-control form-control-sm" style="width:280px;" placeholder="Search supplier name..." oninput="onSupplierSearchInput()">
         <button class="btn btn-primary btn-sm" onclick="showAddForm()">+ Add Supplier</button>
     </div>
 
@@ -190,14 +190,40 @@ function extractArray(data) {
     return data.results ?? data.suppliers ?? data.data ?? [];
 }
 
+// Pagination + search are now server-side (see SupplierListCreateView /
+// core.pagination). Previously loadSuppliers() fetched every supplier
+// row once, then renderSuppliers() did an instant client-side substring
+// filter + 25-row slice over the full in-memory list. Real server-side
+// pagination can't coexist with a client-only search over an unloaded
+// remainder, so search moved server-side too (?search=) — the backend
+// now does the substring match, not the browser.
+let supplierTotalPages = 1;
+let supplierSearchTimer = null;
+
+function onSupplierSearchInput() {
+    // Debounced — avoids firing a request on every keystroke.
+    window.clearTimeout(supplierSearchTimer);
+    supplierSearchTimer = window.setTimeout(() => {
+        supplierPage = 1; // new search — back to page 1
+        loadSuppliers();
+    }, 300);
+}
+
 async function loadSuppliers() {
+    const search = document.getElementById('supSearch').value.trim();
+    const params = new URLSearchParams({ page: supplierPage, page_size: supplierPageSize });
+    if (search) params.set('search', search);
+
     try {
-        const res = await fetch('/api/suppliers/', {
+        const res = await fetch(`/api/suppliers/?${params.toString()}`, {
             headers: { 'Authorization': 'Bearer ' + token }
         });
         const data = await res.json();
         allSuppliers = extractArray(data);
-        supplierPage = 1;
+        // Defensive fallback in case this is ever called against an
+        // older unpaginated response shape (a bare array).
+        supplierTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
+        supplierPage = Array.isArray(data) ? supplierPage : (data.page ?? supplierPage);
         renderSuppliers();
     } catch(e) {
         document.getElementById('supBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Could not load suppliers.</td></tr>';
@@ -205,20 +231,14 @@ async function loadSuppliers() {
 }
 
 function renderSuppliers() {
-    const search = document.getElementById('supSearch').value.toLowerCase();
-    const rows = allSuppliers.filter(s => (s.name ?? s.supplier_name ?? '').toLowerCase().includes(search));
+    const rows = allSuppliers;
     const tbody = document.getElementById('supBody');
     if (rows.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No suppliers found.</td></tr>';
         document.getElementById('supPagination').innerHTML = '';
         return;
     }
-    const totalPages = Math.max(1, Math.ceil(rows.length / supplierPageSize));
-    supplierPage = Math.min(supplierPage, totalPages);
-    const startIndex = (supplierPage - 1) * supplierPageSize;
-    const endIndex = startIndex + supplierPageSize;
-    const pageRows = rows.slice(startIndex, endIndex);
-    tbody.innerHTML = pageRows.map(s => `
+    tbody.innerHTML = rows.map(s => `
         <tr>
             <td style="font-weight:600">${s.name ?? s.supplier_name ?? '—'}</td>
             <td>${s.email ?? '—'}</td>
@@ -236,15 +256,15 @@ function renderSuppliers() {
                     </td>
         </tr>
     `).join('');
-    document.getElementById('supPagination').innerHTML = rows.length > supplierPageSize ? `
+    document.getElementById('supPagination').innerHTML = supplierTotalPages > 1 ? `
         <button class="btn btn-sm btn-outline-secondary" onclick="changeSupplierPage(-1)" ${supplierPage === 1 ? 'disabled' : ''}>Previous</button>
-        <span class="text-muted small">Page ${supplierPage} of ${totalPages}</span>
-        <button class="btn btn-sm btn-outline-secondary" onclick="changeSupplierPage(1)" ${supplierPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+        <span class="text-muted small">Page ${supplierPage} of ${supplierTotalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeSupplierPage(1)" ${supplierPage === supplierTotalPages ? 'disabled' : ''}>Next</button>` : '';
 }
 
 function changeSupplierPage(delta) {
     supplierPage += delta;
-    renderSuppliers();
+    loadSuppliers(); // server-side pagination — re-fetch the requested page
 }
 
 function editSupplierById(id) {

@@ -179,10 +179,20 @@ def _upsert_bills(parsed_bills: list[dict], DailyBillSummary, BillLineItem, Uplo
     """
     inserted = updated = unchanged = 0
 
+    # ── Bulk-fetch every existing (bill_no, date) match up front ───────────
+    # Previously ran one DailyBillSummary.filter(...).first() query PER
+    # bill inside the loop below — for a full day's ~5,000 bills that's
+    # 5,000 queries just to check what already exists. Fetching every
+    # candidate bill_no in one query and matching the exact (bill_no,
+    # date) pair in Python cuts this to 1 query total for the whole batch.
+    bill_nos = [b["bill_no"] for b in parsed_bills]
+    existing_by_key = {
+        (row.bill_no, row.date): row
+        for row in DailyBillSummary.objects.filter(bill_no__in=bill_nos)
+    }
+
     for bill in parsed_bills:
-        existing = DailyBillSummary.objects.filter(
-            bill_no=bill["bill_no"], date=bill["date"]
-        ).first()
+        existing = existing_by_key.get((bill["bill_no"], bill["date"]))
 
         if existing is None:
             record = DailyBillSummary.objects.create(

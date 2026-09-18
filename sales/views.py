@@ -44,12 +44,13 @@ from .serializers import (
 
 from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore
 from suppliers.models import Supplier
-from suppliers.views import _compute_scorecard
+from suppliers.views import _compute_scorecards_bulk, _format_scorecard
 
 from inventory.services.lifecycle import get_latest_lifecycle
 from inventory.services.reorder_logic import check_reorder_needs
 
 from core.utils import get_last_sync_date
+from core.pagination import StandardResultsPagination
 
 # =========================================================
 # HELPERS
@@ -688,12 +689,18 @@ class DailyBillsUploadView(APIView):
 # =========================================================
 
 class UploadLogListView(generics.ListAPIView):
+    """
+    GET /api/sales/upload-log/
+    Paginated — was previously unpaginated, returning every upload log
+    row ever created on every page load. See core.pagination.
+    """
 
     queryset = UploadLog.objects.all().order_by(
         '-upload_date'
     )
 
     serializer_class = UploadLogSerializer
+    pagination_class = StandardResultsPagination
 
 
 class UploadLogDetailView(generics.RetrieveAPIView):
@@ -708,8 +715,22 @@ class UploadLogDetailView(generics.RetrieveAPIView):
 # =========================================================
 
 class ItemSalesListView(generics.ListAPIView):
+    """
+    GET /api/sales/item-sales/
+    Paginated — was previously unpaginated. This is likely the
+    fastest-growing table in the project (every ledger PDF upload adds
+    rows), so this was the most urgent of the three list views fixed
+    here. See core.pagination.
+
+    NOTE: no known frontend caller was found across the dashboard pages
+    reviewed (inventory, purchases, suppliers, analytics, reports,
+    sales_upload). If something else in the app calls this endpoint
+    expecting a bare array, it will need the same frontend treatment
+    as sales_upload.html (upload-log) before this ships.
+    """
 
     serializer_class = ItemSalesSerializer
+    pagination_class = StandardResultsPagination
 
     def get_queryset(self):
 
@@ -962,9 +983,17 @@ class DailyBillsListView(generics.ListAPIView):
     Optional query params:
         ?date_from=YYYY-MM-DD
         ?date_to=YYYY-MM-DD
+
+    Paginated — was previously unpaginated. See core.pagination.
+
+    NOTE: no known frontend caller was found across the dashboard pages
+    reviewed. sales_upload.html only calls the POST upload endpoint at
+    this same path, never GET. If something else calls this expecting
+    a bare array, it needs the same frontend treatment before this ships.
     """
 
     serializer_class = DailyBillSerializer
+    pagination_class = StandardResultsPagination
 
     def get_queryset(self):
 
@@ -1144,12 +1173,28 @@ def _sales_and_profit_rows(date_from, date_to):
 
 
 def _inventory_rows():
-    """Same current-stock logic as StockSnapshotView (inventory app)."""
+    """
+    Same current-stock logic as StockSnapshotView (inventory app).
+
+    Previously ran one PurchaseBatch aggregate query PER product inside
+    the loop (N+1 — e.g. 500 products = 500 extra queries on every
+    inventory export). Fixed to run ONE aggregate query for every
+    product's stock up front, then look values up from a dict inside
+    the loop — 2 queries total regardless of product count.
+    """
+    products = list(Product.objects.filter(is_active=True))
+
+    stock_agg = (
+        PurchaseBatch.objects
+        .filter(product__in=products, status='ACTIVE')
+        .values('product_id')
+        .annotate(total=Sum('remaining_quantity'))
+    )
+    stock_map = {row['product_id']: row['total'] or 0 for row in stock_agg}
+
     rows = []
-    for product in Product.objects.filter(is_active=True):
-        current_stock = PurchaseBatch.objects.filter(
-            product=product, status='ACTIVE'
-        ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
+    for product in products:
+        current_stock = stock_map.get(product.id, 0)
 
         reorder = product.reorder_threshold or 0
         if current_stock == 0:
@@ -1606,10 +1651,16 @@ def health_score_report_export(request):
 # ─────────────────────────────────────────────────────────────────
 # GET /api/reports/supplier/?format=excel|pdf
 #
-# Reuses _compute_scorecard() from suppliers app directly — same
-# logic already tested via GET /api/suppliers/scorecard-summary/,
-# not reimplemented here. Missing components (no data yet for that
-# supplier) show as 'N/A', same convention as the Health Score export.
+# Reuses _compute_scorecards_bulk()/_format_scorecard() from the
+# suppliers app directly — same logic already tested via GET
+# /api/suppliers/scorecard-summary/, not reimplemented here. Missing
+# components (no data yet for that supplier) show as 'N/A', same
+# convention as the Health Score export.
+#
+# Was previously calling _compute_scorecard() once per supplier in a
+# loop — 4 queries PER supplier (N+1: 200 queries for 50 suppliers).
+# Now uses the bulk version: 4 queries total for every supplier,
+# same fix already applied to SupplierScorecardSummaryView.
 # ─────────────────────────────────────────────────────────────────
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -1618,7 +1669,12 @@ def supplier_report_export(request):
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
-    scores = [_compute_scorecard(s) for s in Supplier.objects.all()]
+    suppliers = list(Supplier.objects.all())
+    components_by_supplier = _compute_scorecards_bulk(suppliers)
+    scores = [
+        _format_scorecard(s, components_by_supplier.get(s.id, {}))
+        for s in suppliers
+    ]
     scores.sort(key=lambda s: (s['overall_score'] is None, -(s['overall_score'] or 0)))
 
     headers = [
