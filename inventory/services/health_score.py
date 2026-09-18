@@ -71,8 +71,9 @@ def calculate_health_scores():
     from inventory.models import InventoryHealthScore, CategoryHealthScore
     from products.models import Category
 
-    today = date.today()
+    from zoneinfo import ZoneInfo
     now = timezone.now()
+    today = now.astimezone(ZoneInfo("Asia/Colombo")).date()
 
     # ── Query 1: Active products ───────────────────────────────────────────────
     active_products = list(
