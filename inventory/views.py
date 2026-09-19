@@ -2373,3 +2373,15 @@ class NotificationMarkReadView(APIView):
         return Response({
             'id': n.id, 'is_read': rs.is_read, 'read_at': rs.read_at,
         })
+
+
+
+
+class NotificationUnreadCountView(APIView):
+    def get(self, request):
+        from orders.models import Notification, NotificationRead
+        read_ids = NotificationRead.objects.filter(
+            user=request.user, is_read=True
+        ).values_list('notification_id', flat=True)
+        count = Notification.objects.exclude(id__in=read_ids).count()
+        return Response({'unread_count': count})
