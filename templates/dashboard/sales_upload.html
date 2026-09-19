@@ -178,6 +178,7 @@
       const data = await apiFetch(endpoint, { method: 'POST', body: formData });
       showMessage(messageId, uploadMessage(data, label), 'success');
       input.value = '';
+      uploadPage = 1; // new upload — jump back to page 1 so it's visible
       await loadLogs();
     } catch (error) {
       const responseError = error.data?.error || error.data?.errors?.join('; ');
@@ -202,19 +203,24 @@
     return `<span class="${className}">${escapeHtml(normalized || '-')}</span>`;
   }
 
-  // Pagination — same pattern used elsewhere (Purchases, Batches, Reorder,
-  // Health Score, Audit Log, Loss Analysis): 25 rows/page, client-side
-  // slice, Previous / "Page X of Y" / Next.
+  // Pagination — server-side (see UploadLogListView / core.pagination).
+  // Was previously client-side: fetched every upload log row on every
+  // load, then sliced 25 at a time in the browser. Now fetches only
+  // the requested page from the backend.
   let allUploads = [];
   let uploadPage = 1;
+  let uploadTotalPages = 1;
   const uploadPageSize = 25;
 
   async function loadLogs() {
     clearPageError();
     try {
-      const data = await apiFetch('/api/sales/upload-log/');
+      const data = await apiFetch(`/api/sales/upload-log/?page=${uploadPage}&page_size=${uploadPageSize}`);
+      // Defensive fallback in case this is ever called against an older
+      // unpaginated response shape.
       allUploads = Array.isArray(data) ? data : (data.results ?? []);
-      uploadPage = 1; // fresh data — back to page 1
+      uploadTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
+      uploadPage = Array.isArray(data) ? uploadPage : (data.page ?? uploadPage);
       renderLogs();
     } catch (error) {
       document.getElementById('uploadBody').innerHTML = `<tr><td colspan="6" class="text-center text-danger">${escapeHtml(error.message)}</td></tr>`;
@@ -233,11 +239,7 @@
       return;
     }
 
-    const totalPages = Math.max(1, Math.ceil(rows.length / uploadPageSize));
-    uploadPage = Math.min(uploadPage, totalPages);
-    const pageRows = rows.slice((uploadPage - 1) * uploadPageSize, uploadPage * uploadPageSize);
-
-    body.innerHTML = pageRows.map(log => `
+    body.innerHTML = rows.map(log => `
         <tr>
           <td>${log.upload_date ? escapeHtml(new Date(log.upload_date).toLocaleString()) : '-'}</td>
           <td>${escapeHtml(log.file_name)}</td>
@@ -248,15 +250,15 @@
         </tr>
       `).join('');
 
-    document.getElementById('uploadPagination').innerHTML = rows.length > uploadPageSize ? `
+    document.getElementById('uploadPagination').innerHTML = uploadTotalPages > 1 ? `
         <button class="btn btn-sm btn-outline-secondary" onclick="changeUploadPage(-1)" ${uploadPage === 1 ? 'disabled' : ''}>Previous</button>
-        <span class="text-muted small">Page ${uploadPage} of ${totalPages}</span>
-        <button class="btn btn-sm btn-outline-secondary" onclick="changeUploadPage(1)" ${uploadPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+        <span class="text-muted small">Page ${uploadPage} of ${uploadTotalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeUploadPage(1)" ${uploadPage === uploadTotalPages ? 'disabled' : ''}>Next</button>` : '';
   }
 
   function changeUploadPage(delta) {
     uploadPage += delta;
-    renderLogs();
+    loadLogs(); // server-side pagination — re-fetch the requested page
   }
 
   async function refreshLogs(button) {
