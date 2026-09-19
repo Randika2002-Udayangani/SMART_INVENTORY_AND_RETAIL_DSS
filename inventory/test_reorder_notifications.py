@@ -1,3 +1,5 @@
+import os
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import TestCase
@@ -7,13 +9,15 @@ from inventory.models import ReorderRecommendation
 from orders.models import Notification
 from products.models import Product
 
+TEST_PASSWORD = os.environ.get('TEST_PASSWORD', 'testpass123')
+
 
 class ReorderNotificationTest(TestCase):
     def setUp(self):
         self.client = APIClient()
         manager_group = Group.objects.create(name='MANAGER')
         self.manager = get_user_model().objects.create_user(
-            username='reorder_manager', password='testpass123'
+            username='reorder_manager', password=TEST_PASSWORD
         )
         self.manager.groups.add(manager_group)
         self.client.force_authenticate(user=self.manager)

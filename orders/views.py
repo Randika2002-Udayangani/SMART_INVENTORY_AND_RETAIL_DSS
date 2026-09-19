@@ -39,7 +39,6 @@ class CustomerRegisterView(APIView):
 
 
     def post(self, request):
-        print("========== CUSTOMER REGISTER HIT ==========")
         name = request.data.get("name")
         email = request.data.get("email")
         password = request.data.get("password")
@@ -425,12 +424,26 @@ class OrderListCreateView(APIView):
             if quantity > available_stock:
                 return Response(
                     {
-                        "error": f"Insufficient stock for {product.product_name}",
+                        "error": f"Only {available_stock} left in stock for {product.product_name}",
                         "requested_quantity": quantity,
                         "available_stock": available_stock
                     },
                     status=status.HTTP_400_BAD_REQUEST
                 )
+
+            # added for notification system, review when back
+            LARGE_ORDER_THRESHOLD = 1000
+            if quantity > LARGE_ORDER_THRESHOLD:
+                try:
+                    from inventory.services.notifications import create_notification
+                    create_notification(
+                        type='LARGE_ORDER_REVIEW', priority='MEDIUM',
+                        title='Unusually large order needs review',
+                        message=f'{quantity} units of {product.product_name} requested.',
+                        reference_table='product', reference_id=product.id,
+                    )
+                except Exception:
+                    pass
 
             validated_items.append((product, quantity))
 
@@ -483,6 +496,14 @@ class OrderListCreateView(APIView):
                 {"error": str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        
+        from inventory.services.notifications import create_notification
+        create_notification(
+            type='NEW_ORDER', priority='MEDIUM',
+            title='New online order placed',
+            message=f'{order.order_reference} placed by {customer.full_name if hasattr(customer, "full_name") else customer}.',
+            reference_table='online_order', reference_id=order.id,
+        )
 
         return Response(
             {
@@ -659,6 +680,27 @@ class OrderStatusUpdateView(APIView):
             new_value={"status": new_status},
             request=request,
         )
+
+        #added for notification system, review when back
+        try:
+            from inventory.services.notifications import create_notification
+            from django.core.mail import send_mail
+
+            create_notification(
+                customer=order.customer, type='ORDER_STATUS', priority='LOW',
+                title=f'Order {order.order_reference} updated',
+                message=f'Your order is now {new_status}.',
+                reference_table='online_order', reference_id=order.id,
+            )
+            send_mail(
+                subject=f'Order {order.order_reference} — {new_status}',
+                message=f'Your order status changed to {new_status}.',
+                from_email=None,
+                recipient_list=[order.customer.email],
+                fail_silently=True,
+            )
+        except Exception:
+            pass
 
         return Response({
             "message": "Order updated successfully",

@@ -1,3 +1,4 @@
+import os
 from datetime import date
 from decimal import Decimal
 
@@ -7,6 +8,8 @@ from rest_framework.test import APIClient
 
 from products.models import Product
 from sales.models import ItemSalesRecord
+
+TEST_PASSWORD = os.environ.get('TEST_PASSWORD', 'testpass123')
 
 
 class LifecycleSalesSeriesTests(TestCase):
@@ -21,7 +24,7 @@ class LifecycleSalesSeriesTests(TestCase):
             unit_price=Decimal('15.00'),
             total_amount=Decimal('90.00'),
         )
-        user = get_user_model().objects.create_user('lifecycle-history-user', password='testpass123')
+        user = get_user_model().objects.create_user('lifecycle-history-user', password=TEST_PASSWORD)
         self.client = APIClient()
         self.client.force_authenticate(user=user)
 
