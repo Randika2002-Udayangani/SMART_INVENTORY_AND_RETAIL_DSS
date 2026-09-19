@@ -1,5 +1,4 @@
 from rest_framework import generics, permissions, status
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -10,14 +9,15 @@ from purchases.models import PurchaseBatch
 from core.authentication import LenientJWTAuthentication
 from users.audit import log_action
 import pandas as pd
-from users.permissions import IsManagerOrAdmin
+from users.permissions import IsAdmin, IsManagerOrAdmin
 
 from .models import Brand, Category, StoreZone, Product, ZoneRecommendation, ProductZoneOverride, ZoneCalculationRun
 from .serializers import (
     BrandSerializer, CategorySerializer,
     StoreZoneSerializer, ProductSerializer, ProductPublicSerializer,
     ZoneRecommendationSerializer, ZoneRecommendationStatusSerializer,
-    ProductZoneOverrideSerializer, ZoneCalculationRunSerializer
+    ProductZoneOverrideSerializer, ProductZoneOverrideStatusSerializer,
+    ZoneCalculationRunSerializer
 )
 from sales.models import UploadLog
 
@@ -70,13 +70,6 @@ class StoreZoneDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ─────────────────────────────────────────────
 class ProductListCreateView(generics.ListCreateAPIView):
     authentication_classes = [LenientJWTAuthentication]
-
-    class ProductPagination(PageNumberPagination):
-        page_size = 25
-        page_size_query_param = 'page_size'
-        max_page_size = 100
-
-    pagination_class = ProductPagination
 
     def get_queryset(self):
         queryset = Product.objects.filter(is_active=True).annotate(
@@ -160,6 +153,46 @@ class ProductAvailabilityView(APIView):
         return Response({
             'status': availability_status,
             'can_order': can_order,
+        })
+
+
+class ProductReorderThresholdView(APIView):
+    """Admin-only update for a product's manual reorder point."""
+
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+
+    def patch(self, request, pk):
+        value = request.data.get('reorder_threshold')
+        try:
+            if isinstance(value, bool):
+                raise ValueError
+            threshold = int(value)
+        except (TypeError, ValueError):
+            return Response({'error': 'reorder_threshold must be a whole number.'}, status=status.HTTP_400_BAD_REQUEST)
+        if threshold < 0 or threshold > 1_000_000:
+            return Response({'error': 'reorder_threshold must be between 0 and 1,000,000.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            product = Product.objects.get(pk=pk)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        previous_threshold = product.reorder_threshold
+        product.reorder_threshold = threshold
+        product.save(update_fields=['reorder_threshold'])
+        log_action(
+            user=request.user,
+            action='UPDATE',
+            table_name='product',
+            record_id=product.id,
+            old_value={'reorder_threshold': previous_threshold},
+            new_value={'reorder_threshold': threshold},
+            request=request,
+        )
+        return Response({
+            'product_id': product.id,
+            'product_name': product.product_name,
+            'reorder_threshold': product.reorder_threshold,
         })
 
 
@@ -487,7 +520,7 @@ class RecalculateWACView(APIView):
 
 
 class ReclassifyProductsView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsManagerOrAdmin]
 
     def post(self, request):
         from inventory.services.auto_categorise import classify_all_products
@@ -729,10 +762,141 @@ class CategoryZoneMappingView(APIView):
 class ProductZoneOverrideListCreateView(generics.ListCreateAPIView):
     queryset = ProductZoneOverride.objects.select_related('product', 'zone').order_by('-start_date')
     serializer_class = ProductZoneOverrideSerializer
-    permission_classes = [permissions.IsAuthenticated, IsManagerOrAdmin]
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [permissions.IsAuthenticated(), IsManagerOrAdmin()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        override = serializer.save()
+        log_action(
+            user=self.request.user,
+            action='CREATE',
+            table_name='product_zone_override',
+            record_id=override.id,
+            old_value=None,
+            new_value=ProductZoneOverrideSerializer(override).data,
+            request=self.request,
+        )
+
+        # Shared notification — same pattern as the status-change endpoints
+        # below. A new override is PENDING until some staff member applies
+        # it on the floor, so this is what tells the first available staff
+        # member there's something to act on.
+        from orders.models import Notification
+
+        Notification.objects.create(
+            user=None,
+            customer=None,
+            type='ZONE_OVERRIDE',
+            priority='MEDIUM',
+            title=f'New zone override: {override.product.product_name}',
+            message=(
+                f'{self.request.user.username} created a zone override for '
+                f'{override.product.product_name} — move to {override.zone.zone_name}. '
+                f'Needs to be applied on the floor.'
+            ),
+            reference_table='product_zone_override',
+            reference_id=override.id,
+        )
+
+    def perform_create(self, serializer):
+        override = serializer.save(updated_by=self.request.user)
+        log_action(
+            user=self.request.user,
+            action='ZONE_OVERRIDE_CREATE',
+            table_name='product_zone_override',
+            record_id=override.id,
+            old_value=None,
+            new_value=ProductZoneOverrideSerializer(override).data,
+            request=self.request,
+        )
+
+        # Shared notification — a new override is created PENDING and
+        # needs a staff member to physically move the product and mark
+        # it Applied, so this is the "there's work to do" signal,
+        # distinct from the "it's done" notification on the status view.
+        from orders.models import Notification
+
+        date_range = (
+            f'{override.start_date} to {override.end_date}'
+            if override.end_date else f'{override.start_date}, open-ended'
+        )
+        Notification.objects.create(
+            user=None,
+            customer=None,
+            type='ZONE_OVERRIDE',
+            priority='MEDIUM',
+            title=f'New zone override: {override.product.product_name}',
+            message=(
+                f'{self.request.user.username} created a zone override for '
+                f'{override.product.product_name} — move to {override.zone.zone_name} '
+                f'({date_range}). Awaiting apply.'
+            ),
+            reference_table='product_zone_override',
+            reference_id=override.id,
+        )
 
 
 class ProductZoneOverrideDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = ProductZoneOverride.objects.select_related('product', 'zone')
     serializer_class = ProductZoneOverrideSerializer
-    permission_classes = [permissions.IsAuthenticated, IsManagerOrAdmin]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), IsManagerOrAdmin()]
+
+
+# ─────────────────────────────────────────────
+# Product Zone Override — status workflow (staff marks Applied)
+# ─────────────────────────────────────────────
+class ProductZoneOverrideStatusUpdateView(generics.UpdateAPIView):
+    """
+    PATCH /api/zones/overrides/<pk>/status/
+    Body: {"status": "APPLIED"}
+
+    A manager creates the override as PENDING; a staff member marks it
+    APPLIED once the product has actually been physically moved to the
+    override zone. Unlike ZoneRecommendationStatusUpdateView there's no
+    accept/reject step here — just PENDING -> APPLIED — so this is open
+    to any authenticated user rather than gated to Manager/Admin.
+    """
+    queryset = ProductZoneOverride.objects.all()
+    serializer_class = ProductZoneOverrideStatusSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ['patch']
+
+    def perform_update(self, serializer):
+        old_status = serializer.instance.status
+        override = serializer.save(updated_by=self.request.user)
+        log_action(
+            user=self.request.user,
+            action='ZONE_OVERRIDE_STATUS_CHANGE',
+            table_name='product_zone_override',
+            record_id=override.id,
+            old_value={'status': old_status},
+            new_value={'status': override.status, 'updated_by': self.request.user.username},
+            request=self.request,
+        )
+
+        # Shared notification — same pattern as ZoneRecommendationStatusUpdateView.
+        # Only fires on an actual transition into APPLIED, so a repeated
+        # identical PATCH doesn't create a duplicate.
+        if old_status != override.status and override.status == 'APPLIED':
+            from orders.models import Notification
+
+            Notification.objects.create(
+                user=None,
+                customer=None,
+                type='ZONE_OVERRIDE',
+                priority='MEDIUM',
+                title=f'Zone override applied: {override.product.product_name}',
+                message=(
+                    f'{self.request.user.username} applied the zone override for '
+                    f'{override.product.product_name} — moved to {override.zone.zone_name}.'
+                ),
+                reference_table='product_zone_override',
+                reference_id=override.id,
+            )

@@ -10,6 +10,8 @@
         .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
         .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
         .nav-tabs .nav-link { color:var(--txt); }
+        .zone-header-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+        .zone-last-calculated { margin-top:4px; font-size:11px; color:var(--muted); }
 
         .kpi-strip { display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-bottom:18px; }
         .kpi-card { border-radius:12px; border:1px solid var(--border); background:var(--card); padding:16px 18px; }
@@ -45,10 +47,13 @@
     <div>
         <h1>Store Zone Recommendations</h1>
         <div class="sub">AI-assisted placement recommendations based on sales velocity, margin and expiry risk.</div>
+        <div class="zone-last-calculated" id="lastCalculated">Last calculated: —</div>
     </div>
-    <div class="text-end">
-        <div class="sub mb-2" id="lastCalculated">Last calculated: —</div>
+    <div class="zone-header-actions">
         <button class="btn btn-primary btn-sm" onclick="calculateRecommendations()" id="calcBtn">Calculate Recommendations</button>
+        <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+            <i class="bi bi-box-arrow-right"></i> Logout
+        </button>
     </div>
 </div>
 
@@ -157,21 +162,33 @@
             <div id="ovMsg" class="mt-3"></div>
         </div>
 
-        <!-- Existing overrides — this list is what actually answers
-             "where can I see a saved override": there was previously no
-             view of this at all after clicking Save. -->
-        <div class="card p-4 mb-4" style="max-width:720px;">
-            <h6 class="fw-bold mb-3">Active &amp; Upcoming Overrides</h6>
+        <!-- Existing overrides — visible to all staff now that the
+             backend GET is open to everyone; only creating one and
+             seeing this card at all when not yet manager/admin is
+             still restricted (see fetchCurrentUser block below). -->
+        <div class="card p-4 mb-4" style="max-width:820px;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-bold mb-0">Active &amp; Upcoming Overrides</h6>
+                <div class="d-flex gap-2">
+                    <input type="text" id="ovSearch" class="form-control form-control-sm" style="width:200px;" placeholder="Search product..." oninput="filterOverrides()">
+                    <select id="ovStatusFilter" class="form-select form-select-sm" style="width:160px;" onchange="filterOverrides()">
+                        <option value="">All statuses</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="APPLIED">Applied</option>
+                    </select>
+                </div>
+            </div>
             <div class="table-responsive">
                 <table class="table table-sm table-hover">
                     <thead>
-                        <tr style="background:var(--card2);"><th>Product</th><th>Zone</th><th>Start</th><th>End</th><th>Reason</th></tr>
+                        <tr style="background:var(--card2);"><th>Product</th><th>Zone</th><th>Start</th><th>End</th><th>Reason</th><th>Status</th><th></th></tr>
                     </thead>
                     <tbody id="ovListBody">
-                        <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
+                        <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>
+            <div id="ovPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         </div>
     </div>
 
@@ -252,10 +269,10 @@ function switchZoneTab(name, btn) {
         zoneTabLoaded['category-mapping'] = true;
         loadCategoryMapping();
     }
-    if (name === 'product-override' && !zoneTabLoaded['product-override'] && isManagerOrAdmin()) {
+    if (name === 'product-override' && !zoneTabLoaded['product-override']) {
         zoneTabLoaded['product-override'] = true;
-        loadOverrideFormOptions();
         loadOverridesList();
+        if (isManagerOrAdmin()) loadOverrideFormOptions();
     }
 }
 
@@ -571,34 +588,104 @@ document.getElementById('ovProductSearch').addEventListener('input', (e) => {
     e.target.classList.toggle('is-invalid', e.target.value.length > 0 && matchedId === undefined);
 });
 
-// NEEDS BACKEND CONFIRMATION: this assumes GET /api/zones/overrides/ (same
-// URL as the POST below) returns the list of existing overrides, following
-// the same ListCreateAPIView pattern used elsewhere in this codebase
-// (e.g. Purchases/Batches). Field names below (product_name, zone_name,
-// start_date, end_date, reason) are guessed from naming conventions used
-// everywhere else in this file — verify against the real response and
-// adjust the field names below if they differ.
+// Confirmed against the real API response (Postman): product_name,
+// zone_name, start_date, end_date, reason all come back as expected.
+let allOverrides = [];
+let ovPage = 1;
+const ovPageSize = 10;
+
 async function loadOverridesList() {
     const tbody = document.getElementById('ovListBody');
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>';
     try {
         const res = await request('/api/zones/overrides/');
         const data = await res.json();
-        const rows = extractArray(data);
-        if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No overrides recorded.</td></tr>';
-            return;
-        }
-        tbody.innerHTML = rows.map(o => `
-            <tr>
-                <td>${escapeHtml(o.product_name ?? o.product ?? '—')}</td>
-                <td>${escapeHtml(o.zone_name ?? o.zone ?? '—')}</td>
-                <td>${escapeHtml(o.start_date ?? '—')}</td>
-                <td>${escapeHtml(o.end_date ?? 'Open-ended')}</td>
-                <td>${escapeHtml(o.reason ?? '—')}</td>
-            </tr>
-        `).join('');
+        allOverrides = extractArray(data);
+        ovPage = 1; // fresh data — back to page 1
+        renderOverridesList();
     } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Could not load overrides.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Could not load overrides.</td></tr>';
+    }
+}
+
+// Bound to the search box and status filter — same pattern as
+// filterRecommendations() above: a changed filter is a new result set,
+// so always jump back to page 1.
+function filterOverrides() {
+    ovPage = 1;
+    renderOverridesList();
+}
+
+function renderOverridesList() {
+    const tbody = document.getElementById('ovListBody');
+    let rows = allOverrides;
+
+    const statusFilter = document.getElementById('ovStatusFilter').value;
+    if (statusFilter) rows = rows.filter(o => o.status === statusFilter);
+
+    const search = document.getElementById('ovSearch').value.trim().toLowerCase();
+    if (search) {
+        rows = rows.filter(o => (o.product_name || '').toLowerCase().includes(search));
+    }
+
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No overrides match this filter.</td></tr>';
+        document.getElementById('ovPagination').innerHTML = '';
+        return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / ovPageSize));
+    ovPage = Math.min(ovPage, totalPages);
+    const pageRows = rows.slice((ovPage - 1) * ovPageSize, ovPage * ovPageSize);
+
+    tbody.innerHTML = pageRows.map(o => `
+        <tr>
+            <td>${escapeHtml(o.product_name ?? '—')}</td>
+            <td>${escapeHtml(o.zone_name ?? '—')}</td>
+            <td>${escapeHtml(o.start_date ?? '—')}</td>
+            <td>${escapeHtml(o.end_date ?? 'Open-ended')}</td>
+            <td>${escapeHtml(o.reason ?? '—')}</td>
+            <td><span class="status-pill status-${o.status}">${o.status}</span></td>
+            <td>${o.status === 'PENDING'
+                ? `<button class="btn btn-outline-primary btn-sm" onclick="setOverrideStatus(${o.id})">Mark as Applied</button>`
+                : `<span class="text-muted small">${escapeHtml(o.updated_by_username ?? '')}</span>`}</td>
+        </tr>
+    `).join('');
+
+    document.getElementById('ovPagination').innerHTML = rows.length > ovPageSize ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeOvPage(-1)" ${ovPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${ovPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeOvPage(1)" ${ovPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+}
+
+function changeOvPage(delta) {
+    ovPage += delta;
+    renderOverridesList();
+}
+
+// Same shape as setStatus() for recommendations — staff can call this on
+// a PENDING row (backend enforces PENDING→APPLIED only for non-managers).
+async function setOverrideStatus(id) {
+    try {
+        const res = await request(`/api/zones/overrides/${id}/status/`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'APPLIED' }),
+        });
+        if (res.ok) {
+            showMsg('Override marked as applied.', 'success');
+            loadOverridesList();
+            // Now creates a shared notification on the backend too —
+            // refresh the badge immediately, same as setStatus() above.
+            if (typeof refreshSidebarAlertBadge === 'function') {
+                refreshSidebarAlertBadge();
+            }
+        } else {
+            const err = await res.json();
+            showMsg('Update failed: ' + (err.error || err.message || JSON.stringify(err)));
+        }
+    } catch (e) {
+        showMsg('Network error: ' + e.message);
     }
 }
 
@@ -630,6 +717,9 @@ async function saveOverride() {
             document.getElementById('ovEnd').value = '';
             document.getElementById('ovReason').value = '';
             loadOverridesList();
+            if (typeof refreshSidebarAlertBadge === 'function') {
+                refreshSidebarAlertBadge();
+            }
         } else {
             const err = await res.json();
             msgBox.innerHTML = `<div class="alert alert-danger py-2">${escapeHtml(JSON.stringify(err))}</div>`;
@@ -644,18 +734,13 @@ fetchCurrentUser().then(() => {
         document.getElementById('calcBtn').style.display = 'none';
         const overrideCard = document.getElementById('ovProduct').closest('.card');
         if (overrideCard) {
-            overrideCard.innerHTML = '<div class="text-muted small">Zone overrides and recalculation are restricted to managers and admins.</div>';
+            overrideCard.innerHTML = '<div class="text-muted small">Creating zone overrides is restricted to managers and admins. You can still view and apply existing ones below.</div>';
         }
-        // Fix: the Overrides list is a separate card from the form above,
-        // so it wasn't covered by the restriction message — it was left
-        // showing a "Loading..." row that never resolves for staff, since
-        // loadOverridesList() only ever runs for managers/admins (and the
-        // backend's GET on this endpoint is manager/admin-only too, so it
-        // would 403 even if we did fetch it here).
-        const overridesListCard = document.getElementById('ovListBody').closest('.card');
-        if (overridesListCard) {
-            overridesListCard.innerHTML = '<div class="text-muted small">Zone overrides are restricted to managers and admins.</div>';
-        }
+        // Fix: the Overrides list used to be hidden for staff entirely,
+        // matching a backend that blocked GET for non-managers too. Now
+        // that GET is open to any authenticated user (see views.py), staff
+        // can see this list and mark PENDING rows as Applied — only
+        // creating a new override stays manager/admin-only above.
     }
     // Recommendations is the default open tab, so load it immediately.
     // Zone Overview / Category Mapping / Product Override load lazily —

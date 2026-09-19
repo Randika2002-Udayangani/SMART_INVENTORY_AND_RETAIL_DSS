@@ -17,6 +17,7 @@ class StockLedger(models.Model):
         ('SALE_SYNC', 'Sale Sync'),
         ('MANUAL_ADJUSTMENT', 'Manual Adjustment'),
         ('INITIAL_IMPORT', 'Initial Import'),
+        ('SUPPLIER_RETURN', 'Supplier Return'),
     ]
     product = models.ForeignKey(
         Product, on_delete=models.PROTECT, db_column='product_id'
@@ -82,6 +83,7 @@ class SupplierReturn(models.Model):
     product = models.ForeignKey(
         Product, on_delete=models.PROTECT, db_column='product_id'
     )
+    return_bill_no = models.CharField(max_length=50, null=True, blank=True)
     return_date = models.DateField()
     quantity_returned = models.IntegerField()
     return_value = models.DecimalField(max_digits=12, decimal_places=2, default=0)

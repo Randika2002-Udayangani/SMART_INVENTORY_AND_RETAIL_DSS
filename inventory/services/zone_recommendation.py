@@ -12,7 +12,10 @@
 # Writes    : StoreZone (group zones, get_or_create — idempotent),
 #             Category.default_zone, ZoneRecommendation
 
-from products.models import Product, Category, StoreZone, ZoneRecommendation
+from django.utils import timezone
+from django.db.models import Q
+
+from products.models import Product, Category, StoreZone, ZoneRecommendation, ProductZoneOverride
 from inventory.models import InventoryHealthScore
 
 HIGH_VELOCITY_THRESHOLD = 70
@@ -122,10 +125,27 @@ def calculate_zone_recommendations():
         "category", "category__default_zone"
     )
 
+    # Option C (LOGIC-01): an active override is a deliberate, temporary
+    # manager decision — it should stand in for the category default when
+    # determining a product's current zone, and the engine should not
+    # generate a competing recommendation while it's in effect.
+    # "Active" is start_date/end_date only, independent of the separate
+    # PENDING/APPLIED status field (that field tracks whether staff has
+    # physically confirmed the move — not whether the manager's decision
+    # is currently in effect).
+    today = timezone.now().date()
+    active_overrides = {
+        o.product_id: o
+        for o in ProductZoneOverride.objects.filter(start_date__lte=today)
+        .filter(Q(end_date__isnull=True) | Q(end_date__gte=today))
+        .select_related("zone")
+    }
+
     created = 0
     skipped_no_score = 0
     skipped_no_current_zone = 0
     skipped_duplicate = 0
+    skipped_active_override = 0
     evaluated = 0
     new_recommendations = []
 
@@ -137,13 +157,21 @@ def calculate_zone_recommendations():
 
         evaluated += 1
 
-        current_zone = (
+        override = active_overrides.get(product.id)
+
+        current_zone = override.zone if override else (
             product.category.default_zone
             if product.category and product.category.default_zone
             else None
         )
         if current_zone is None:
             skipped_no_current_zone += 1
+            continue
+
+        if override is not None:
+            # Product is deliberately placed outside its category default
+            # right now — don't fight that decision with a new suggestion.
+            skipped_active_override += 1
             continue
 
         vel = float(score.velocity_score)
@@ -215,4 +243,5 @@ def calculate_zone_recommendations():
         "skipped_no_health_score": skipped_no_score,
         "skipped_no_current_zone": skipped_no_current_zone,
         "skipped_duplicate": skipped_duplicate,
+        "skipped_active_override": skipped_active_override,
     }

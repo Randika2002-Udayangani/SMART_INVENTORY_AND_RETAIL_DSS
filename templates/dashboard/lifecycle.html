@@ -19,6 +19,18 @@
     box-shadow: 0 1px 0 var(--border);
   }
   .lifecycle-error { color: #b91c1c; }
+  .lifecycle-row { cursor: pointer; }
+  .lifecycle-row:hover { background-color: var(--card2); }
+  .threshold-control { display:flex; align-items:center; gap:6px; min-width:170px; }
+  .threshold-control input { width:76px; }
+  .history-summary { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; }
+  .history-summary .label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  .history-timeline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .history-arrow { color: var(--muted); }
+  .history-chart { position: relative; height: 300px; margin-bottom: 20px; }
+  .history-empty { padding: 32px 16px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); text-align: center; }
+  .lifecycle-history-modal .modal-content { background: var(--card); border: 1px solid var(--border); border-radius: 14px; }
+  .lifecycle-history-modal .modal-header, .lifecycle-history-modal .modal-footer { border-color: var(--border); }
 
   @media (max-width: 960px) {
     .lifecycle-table-wrap { overflow-x: auto; }
@@ -62,16 +74,63 @@
   </div>
 
   <div class="card p-4" id="tableSection" style="display:none;">
-    <h6 class="fw-bold mb-3">Product Lifecycle Status</h6>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h6 class="fw-bold mb-0">Product Lifecycle Status</h6>
+      <div class="d-flex flex-wrap gap-2">
+        <label class="visually-hidden" for="lifecycleSearch">Search by product name</label>
+        <input type="search" class="form-control form-control-sm" id="lifecycleSearch"
+               placeholder="Search product name" autocomplete="off">
+        <label class="visually-hidden" for="lifecycleRecommendation">Filter by recommendation</label>
+        <select class="form-select form-select-sm" id="lifecycleRecommendation">
+          <option value="">All recommendations</option>
+          <option value="RETAIN">RETAIN</option>
+          <option value="MONITOR">MONITOR</option>
+          <option value="DISCOUNT">DISCOUNT</option>
+          <option value="CLEARANCE">CLEARANCE</option>
+          <option value="PHASE_OUT">PHASE_OUT</option>
+          <option value="DISCONTINUE">DISCONTINUE</option>
+        </select>
+      </div>
+    </div>
     <div class="lifecycle-table-wrap">
       <table class="table table-hover lifecycle-table">
         <thead class="table-light">
-          <tr><th>Product</th><th>Status</th><th>Recommendation</th><th>Sales Velocity</th><th>Date</th></tr>
+          <tr><th>Product</th><th>Status</th><th>Recommendation</th><th>Sales Velocity</th><th>Date</th><th id="thresholdHeader" style="display:none;">Reorder Threshold</th></tr>
         </thead>
         <tbody id="lifecycleBody"></tbody>
       </table>
     </div>
     <div id="lifecyclePagination" class="d-flex justify-content-between align-items-center mt-3"></div>
+  </div>
+
+  <div class="modal fade lifecycle-history-modal" id="historyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title fw-bold">Product Lifecycle History</h5>
+            <div class="text-muted small" id="historyProductName"></div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="historySummary" class="history-summary p-3 mb-3"></div>
+          <div id="historyEmpty" class="history-empty" style="display:none;"></div>
+          <div class="history-chart" id="historyChartWrap">
+            <canvas id="historyVelocityChart" aria-label="Lifecycle status date ranges"></canvas>
+          </div>
+          <div class="table-responsive" id="historyTableWrap">
+            <table class="table table-sm mb-0">
+              <thead class="table-light">
+                <tr><th>Calculation Date</th><th>Comparison Period</th><th>Sales Velocity</th><th>Status</th><th>Recommendation</th></tr>
+              </thead>
+              <tbody id="historyBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button></div>
+      </div>
+    </div>
   </div>
 {% endblock %}
 
@@ -81,6 +140,14 @@
     return String(value ?? '').replace(/[&<>'"]/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
     }[char]));
+  }
+
+  function formatLifecycleDate(value) {
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return value || '—';
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric'
+    });
   }
 
   function statusBadge(status) {
@@ -120,31 +187,56 @@
 
   let allLifecycleResults = [];
   let lifecyclePage = 1;
-  const lifecyclePageSize = 25;
+  const lifecyclePageSize = 10;
+  let lifecycleSearchTimer;
+  let canEditThreshold = false;
 
-  async function loadLifecycle() {
+  function updateLifecycleKpis(summary) {
+    document.getElementById('countNew').innerText = summary.NEW ?? '0';
+    document.getElementById('countGrowing').innerText = summary.GROWING ?? '0';
+    document.getElementById('countStable').innerText = summary.STABLE ?? '0';
+    document.getElementById('countDeclining').innerText = summary.DECLINING ?? '0';
+    document.getElementById('countSlow').innerText = summary.SLOW_MOVING ?? '0';
+  }
+
+  async function loadLifecycle(resetPage = true, refreshKpis = false) {
     clearError();
     try {
-      const data = await apiFetch('/api/analytics/lifecycle/');
-      const summary = data.summary || {};
-      document.getElementById('countNew').innerText = summary.NEW ?? '0';
-      document.getElementById('countGrowing').innerText = summary.GROWING ?? '0';
-      document.getElementById('countStable').innerText = summary.STABLE ?? '0';
-      document.getElementById('countDeclining').innerText = summary.DECLINING ?? '0';
-      document.getElementById('countSlow').innerText = summary.SLOW_MOVING ?? '0';
+      const search = document.getElementById('lifecycleSearch').value.trim();
+      const recommendation = document.getElementById('lifecycleRecommendation').value;
+      const hasFilters = Boolean(search || recommendation);
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (recommendation) params.set('recommendation', recommendation);
+      const query = params.toString();
+      const data = await apiFetch(`/api/analytics/lifecycle/${query ? `?${query}` : ''}`);
+
+      if (!hasFilters) {
+        updateLifecycleKpis(data.summary || {});
+      } else if (refreshKpis) {
+        const totals = await apiFetch('/api/analytics/lifecycle/');
+        updateLifecycleKpis(totals.summary || {});
+      }
 
       allLifecycleResults = data.results ?? [];
       if (allLifecycleResults.length === 0) {
-        document.getElementById('emptyState').style.display = 'block';
-        document.getElementById('tableSection').style.display = 'none';
-        document.getElementById('emptyMsg').innerText = data.note || 'No lifecycle data yet. Click Calculate to run.';
+        if (hasFilters) {
+          document.getElementById('emptyState').style.display = 'none';
+          document.getElementById('tableSection').style.display = 'block';
+          document.getElementById('lifecycleBody').innerHTML = '<tr><td colspan="5" class="text-muted text-center py-4">No products match your search/filter.</td></tr>';
+        } else {
+          document.getElementById('emptyState').style.display = 'block';
+          document.getElementById('tableSection').style.display = 'none';
+          document.getElementById('emptyMsg').innerText = data.note || 'No lifecycle data yet. Click Calculate to run.';
+        }
         document.getElementById('lifecyclePagination').innerHTML = '';
+        lifecyclePage = 1;
         return;
       }
 
       document.getElementById('emptyState').style.display = 'none';
       document.getElementById('tableSection').style.display = 'block';
-      lifecyclePage = 1; // fresh data — back to page 1
+      if (resetPage) lifecyclePage = 1;
       renderLifecycleTable();
     } catch (error) {
       console.error('loadLifecycle failed:', error);
@@ -156,7 +248,7 @@
   }
 
   // Pagination — same pattern used elsewhere (Stock Levels in
-  // inventory.html, Purchases, Batches, Reorder, Notifications): 25
+  // inventory.html, Purchases, Batches, Reorder, Notifications): 10
   // rows/page, client-side slice, Previous / "Page X of Y" / Next.
   function renderLifecycleTable() {
     const rows = allLifecycleResults;
@@ -164,20 +256,160 @@
     lifecyclePage = Math.min(lifecyclePage, totalPages);
     const pageRows = rows.slice((lifecyclePage - 1) * lifecyclePageSize, lifecyclePage * lifecyclePageSize);
 
-    document.getElementById('lifecycleBody').innerHTML = pageRows.map(result => `
-      <tr>
+    document.getElementById('lifecycleBody').innerHTML = pageRows.map(result => {
+      const thresholdCell = canEditThreshold ? `
+        <td>
+          <div class="threshold-control" onclick="event.stopPropagation()">
+            <input id="threshold-${Number(result.product_id)}" type="number" min="0" step="1" class="form-control form-control-sm" value="${Number(result.reorder_threshold) || 0}" aria-label="Reorder threshold for ${escapeHtml(result.product_name)}">
+            <button class="btn btn-sm btn-outline-primary" onclick="applyReorderThreshold(event, ${Number(result.product_id)})">Apply</button>
+          </div>
+        </td>` : '';
+      return `
+      <tr class="lifecycle-row" onclick="loadLifecycleHistory(${Number(result.product_id)}, this)" title="View lifecycle history">
         <td>${escapeHtml(result.product_name)}</td>
         <td>${statusBadge(result.lifecycle_status ?? result.status)}</td>
         <td>${recPill(result.recommendation)}</td>
         <td>${escapeHtml(result.sales_velocity)}</td>
         <td>${escapeHtml(result.calculated_date)}</td>
-      </tr>
-    `).join('');
+        ${thresholdCell}
+      </tr>`;
+    }).join('');
 
     document.getElementById('lifecyclePagination').innerHTML = rows.length > lifecyclePageSize ? `
       <button class="btn btn-sm btn-outline-secondary" onclick="changeLifecyclePage(-1)" ${lifecyclePage === 1 ? 'disabled' : ''}>Previous</button>
       <span class="text-muted small">Page ${lifecyclePage} of ${totalPages}</span>
       <button class="btn btn-sm btn-outline-secondary" onclick="changeLifecyclePage(1)" ${lifecyclePage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+  }
+
+  async function loadLifecycleHistory(productId, row) {
+    clearError();
+    try {
+      const today = new Date();
+      const dateFrom = '2026-01-01';
+      const dateTo = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-');
+      const payload = await apiFetch(`/api/analytics/lifecycle/${productId}/history/?date_from=${dateFrom}&date_to=${dateTo}`);
+      const history = payload.history ?? (Array.isArray(payload) ? payload : []);
+      const salesSeries = payload.sales_series ?? history.map(record => ({ date: record.calculated_date, sales_velocity: record.sales_velocity }));
+      const productName = row.querySelector('td').innerText;
+      const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('historyModal'));
+      document.getElementById('historyProductName').innerText = `${productName} · ${formatLifecycleDate(dateFrom)} to ${formatLifecycleDate(dateTo)}`;
+      modal.show();
+
+      const empty = document.getElementById('historyEmpty');
+      const chartWrap = document.getElementById('historyChartWrap');
+      const tableWrap = document.getElementById('historyTableWrap');
+      const existingChart = Chart.getChart('historyVelocityChart');
+      if (existingChart) existingChart.destroy();
+
+      if (!history.length && !salesSeries.some(point => Number(point.sales_velocity) > 0)) {
+        document.getElementById('historySummary').innerHTML = '';
+        empty.innerText = 'No historical lifecycle data is available for this product from 01 Jan 2026 to today.';
+        empty.style.display = 'block';
+        chartWrap.style.display = 'none';
+        tableWrap.style.display = 'none';
+        return;
+      }
+
+      empty.style.display = 'none';
+      chartWrap.style.display = 'block';
+      tableWrap.style.display = 'block';
+      const current = history[history.length - 1];
+      const previous = history.length > 1 ? history[history.length - 2] : null;
+      const statusColors = {
+        NEW: '#bfdbfe', GROWING: '#bbf7d0', STABLE: '#e5e7eb',
+        DECLINING: '#fed7aa', SLOW_MOVING: '#fecaca'
+      };
+
+      document.getElementById('historySummary').innerHTML = `
+        <div class="row g-3">
+          <div class="col-md-3"><div class="label">Current</div><div>${statusBadge(current?.status)}</div></div>
+          <div class="col-md-3"><div class="label">Previous</div><div>${statusBadge(previous?.status || '—')}</div></div>
+          <div class="col-md-3"><div class="label">Pattern</div><div class="history-timeline">${history.length ? history.map((record, index) => `${index ? '<span class="history-arrow">&#8594;</span>' : ''}${statusBadge(record.status)}`).join('') : '<span class="text-muted small">No lifecycle calculation yet</span>'}</div></div>
+          <div class="col-md-3"><div class="label">Recommendation</div><div>${recPill(current?.recommendation)}</div></div>
+        </div>`;
+      document.getElementById('historyBody').innerHTML = history.length ? history.map(record => `
+        <tr>
+          <td>${escapeHtml(record.calculated_date)}</td>
+          <td>${escapeHtml(record.comparison_period)}</td>
+          <td>${escapeHtml(record.sales_velocity)}</td>
+          <td>${statusBadge(record.status)}</td>
+          <td>${recPill(record.recommendation)}</td>
+        </tr>`).join('') : '<tr><td colspan="5" class="text-muted">No history found for this product.</td></tr>';
+      const dates = salesSeries.map(point => point.date);
+      const velocities = salesSeries.map(point => Number(point.sales_velocity) || 0);
+      const slowMovingThreshold = 5 / 60;
+      new Chart(document.getElementById('historyVelocityChart'), {
+        type: 'line',
+        data: {
+          labels: dates,
+          datasets: [
+            {
+              label: 'Sales velocity (units/day)',
+              data: velocities,
+              borderColor: '#15803d',
+              backgroundColor: 'rgba(34, 197, 94, 0.22)',
+              pointBackgroundColor: '#15803d',
+              pointBorderColor: '#ffffff',
+              pointBorderWidth: 2,
+              pointRadius: 4,
+              borderWidth: 3,
+              tension: 0.28,
+              fill: 'origin'
+            },
+            {
+              label: 'Slow-moving threshold',
+              data: dates.map(() => slowMovingThreshold),
+              borderColor: '#eab308',
+              backgroundColor: 'rgba(234, 179, 8, 0.08)',
+              borderWidth: 2,
+              borderDash: [6, 5],
+              pointRadius: 0,
+              tension: 0,
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            x: { title: { display: true, text: 'Lifecycle calculation date' }, grid: { color: '#e5e7eb' }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, callback: value => formatLifecycleDate(dates[value]) } },
+            y: { beginAtZero: true, title: { display: true, text: 'Units sold per day' }, grid: { color: '#dbe4df' }, ticks: { precision: 2 } }
+          },
+          plugins: { legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 18 } }, tooltip: { callbacks: { label: context => context.datasetIndex === 0 ? `Sales velocity: ${context.parsed.y ?? '0'} units/day` : 'Below this line, the product is in the slow-moving range.' } } }
+        }
+      });
+
+      if (velocities.every(value => value === 0)) {
+        document.getElementById('historyEmpty').innerText = 'Sales velocity is 0 for every recorded period. This means no item-sales quantity was recorded for this product in the corresponding 30-day windows.';
+        document.getElementById('historyEmpty').style.display = 'block';
+      }
+    } catch (error) {
+      console.error('loadLifecycleHistory failed:', error);
+      showError('Product lifecycle history could not be loaded. Please try again.');
+    }
+  }
+
+  async function applyReorderThreshold(event, productId) {
+    event.stopPropagation();
+    const input = document.getElementById(`threshold-${productId}`);
+    const threshold = Number(input.value);
+    if (!Number.isInteger(threshold) || threshold < 0) {
+      showError('Reorder threshold must be a whole number greater than or equal to zero.');
+      return;
+    }
+    try {
+      const saved = await apiFetch(`/api/products/${productId}/reorder-threshold/`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reorder_threshold: threshold }),
+      });
+      const result = allLifecycleResults.find(item => Number(item.product_id) === productId);
+      if (result) result.reorder_threshold = saved.reorder_threshold;
+      input.value = saved.reorder_threshold;
+      clearError();
+    } catch (error) {
+      showError(error.message || 'Could not update the reorder threshold.');
+    }
   }
 
   function changeLifecyclePage(delta) {
@@ -192,7 +424,7 @@
     clearError();
     try {
       await apiFetch('/api/lifecycle/calculate/', { method: 'POST' });
-      await loadLifecycle();
+      await loadLifecycle(true, true);
     } catch (error) {
       console.error('runCalculate failed:', error);
       showError('Lifecycle calculation failed. Please try again.');
@@ -202,7 +434,19 @@
     }
   }
 
-  fetchCurrentUser();
-  loadLifecycle();
+  document.getElementById('lifecycleSearch').addEventListener('input', () => {
+    clearTimeout(lifecycleSearchTimer);
+    lifecycleSearchTimer = setTimeout(() => loadLifecycle(), 300);
+  });
+  document.getElementById('lifecycleRecommendation').addEventListener('change', () => loadLifecycle());
+
+  async function initializeLifecyclePage() {
+    const role = await fetchCurrentUser();
+    canEditThreshold = String(role || '').toUpperCase() === 'ADMIN';
+    document.getElementById('thresholdHeader').style.display = canEditThreshold ? '' : 'none';
+    await loadLifecycle();
+  }
+
+  initializeLifecyclePage();
 </script>
 {% endblock %}
