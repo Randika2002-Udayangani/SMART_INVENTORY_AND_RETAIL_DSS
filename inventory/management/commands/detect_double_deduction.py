@@ -10,17 +10,26 @@ physical units can be deducted twice: once at order creation, once again when
 that pickup's sale is uploaded via Item Ledger.
 
 This command does NOT fix anything -- it only flags products where both
-deduction sources hit on the same day, so a real occurrence is caught
-instead of silently corrupting stock counts. Safe to run repeatedly;
+deduction sources hit on the same LOCAL calendar day, so a real occurrence is
+caught instead of silently corrupting stock counts. Safe to run repeatedly;
 makes no writes to StockLedger, PurchaseBatch, or ItemSalesRecord.
+
+Uses an explicit Asia/Colombo day boundary rather than a __date lookup or
+.date() on the raw datetime, since both of those compare against
+settings.TIME_ZONE (UTC) rather than local time -- same bug class already
+fixed in notify_expiring_batches.py and notify_missing_uploads.py.
 
 USAGE:
     python manage.py detect_double_deduction
 """
 
+from datetime import timedelta, datetime, time
+from zoneinfo import ZoneInfo
 from django.core.management.base import BaseCommand
 from inventory.models import StockLedger
 from inventory.services.notifications import create_notification
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 class Command(BaseCommand):
@@ -29,10 +38,15 @@ class Command(BaseCommand):
 
         flagged = []
         for online in online_deductions:
+            local_day = online.transaction_date.astimezone(LOCAL_TZ).date()
+            start_of_day = datetime.combine(local_day, time.min, tzinfo=LOCAL_TZ)
+            end_of_day = start_of_day + timedelta(days=1)
+
             same_day_upload = StockLedger.objects.filter(
                 product_id=online.product_id,
                 source='SALE_SYNC_ITEM_LEDGER',
-                transaction_date__date=online.transaction_date.date(),
+                transaction_date__gte=start_of_day,
+                transaction_date__lt=end_of_day,
             ).exists()
             if same_day_upload:
                 flagged.append(online.product_id)
@@ -48,7 +62,7 @@ class Command(BaseCommand):
                 type='DOUBLE_DEDUCTION_RISK', priority='HIGH',
                 title='Possible duplicate stock deduction',
                 message=f'Product {product_id} has both an ONLINE_ORDER and '
-                         f'SALE_SYNC_ITEM_LEDGER deduction on the same day.',
+                         f'SALE_SYNC_ITEM_LEDGER deduction on the same local day.',
                 reference_table='product', reference_id=product_id,
             )
         self.stdout.write(f"Flagged {len(flagged)} product(s) — see notifications.")
