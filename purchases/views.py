@@ -21,6 +21,7 @@ from sales.models import UploadLog
 from orders.models import Notification
 from django.db.models import Sum, F, DecimalField, Prefetch
 from django.db.models.functions import Coalesce
+from core.pagination import StandardResultsPagination
 
 
 
@@ -60,12 +61,29 @@ class PurchaseListCreateView(generics.ListCreateAPIView):
     # nested PurchaseBatchSerializer reads product_name and invoice_number via
     # product.product_name / purchase.invoice_number, so both need to be
     # pre-joined here to avoid re-querying per batch).
+    #
+    # Also now paginated + ?search= on invoice_number (was previously
+    # unpaginated — returned every purchase, with every batch nested
+    # inside each one, on every page load). See core.pagination.
     queryset = Purchase.objects.select_related('supplier').prefetch_related(
         Prefetch(
             'purchasebatch_set',
             queryset=PurchaseBatch.objects.select_related('product', 'purchase'),
         )
     ).order_by('-purchase_date')
+    pagination_class = StandardResultsPagination
+
+    def get_queryset(self):
+        queryset = Purchase.objects.select_related('supplier').prefetch_related(
+            Prefetch(
+                'purchasebatch_set',
+                queryset=PurchaseBatch.objects.select_related('product', 'purchase'),
+            )
+        ).order_by('-purchase_date')
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(invoice_number__icontains=search)
+        return queryset
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -118,8 +136,11 @@ class BatchListView(generics.ListAPIView):
     Returns all batches.
     Filter by: ?status=ACTIVE|EXPIRED|DEPLETED|DISPOSED|PENDING_EXPIRY
                ?product=<product_id>
+
+    Paginated — was previously unpaginated. See core.pagination.
     """
     serializer_class = PurchaseBatchSerializer
+    pagination_class = StandardResultsPagination
 
     def get_queryset(self):
         queryset = PurchaseBatch.objects.select_related(
@@ -462,14 +483,24 @@ class BulkConfirmBatchExpiryView(APIView):
         failed = []
         affected_products = set()
 
+        # Bulk-fetch every requested batch up front — was previously one
+        # PurchaseBatch.objects.get(pk=...) query PER batch inside the loop
+        # below. Bounded by request size (one invoice's PENDING_EXPIRY
+        # batches, typically dozens), so this was never a severe bottleneck,
+        # but it's a free fix while touching this view for the pagination
+        # changes above.
+        requested_ids = [item['batch_id'] for item in serializer.validated_data['batches']]
+        batches_by_id = {
+            b.id: b for b in PurchaseBatch.objects.filter(pk__in=requested_ids)
+        }
+
         with transaction.atomic():
             for item in serializer.validated_data['batches']:
                 batch_id = item['batch_id']
                 expiry_date = item['expiry_date']
 
-                try:
-                    batch = PurchaseBatch.objects.get(pk=batch_id)
-                except PurchaseBatch.DoesNotExist:
+                batch = batches_by_id.get(batch_id)
+                if batch is None:
                     failed.append({
                         'batch_id': batch_id,
                         'reason': 'Batch not found',
