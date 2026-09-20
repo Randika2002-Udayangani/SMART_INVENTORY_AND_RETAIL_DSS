@@ -8,8 +8,6 @@ from .models import ChatbotLog, ProductRating, ProductRatingSummary
 from .serializers import RatingCreateSerializer, ProductRatingPublicSerializer
 from products.serializers import ProductSerializer 
 from django.contrib.auth.hashers import make_password, check_password
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -30,7 +28,8 @@ from .authentication import CustomerJWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from users.permissions import IsManagerOrAdmin
 from rest_framework_simplejwt.tokens import RefreshToken
-from .chatbot import chatbot_response
+from .services.agent import AgentUnavailable, run_agent
+from .services.rate_limit import consume_chatbot_request
 
 class CustomerRegisterView(APIView):
 
@@ -760,40 +759,49 @@ class OrderDetailView(APIView):
         })
 
 
-@csrf_exempt
-def chatbot(request):
+class ChatbotQueryView(APIView):
+    """Authenticated endpoint; identity is always derived from the JWT."""
+    authentication_classes = [LenientJWTAuthentication, CustomerJWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
-    if request.method != "POST":
-        return JsonResponse({"error": "POST required"}, status=405)
+    def post(self, request):
+        message = str(request.data.get('message', '')).strip()
+        if not message:
+            return Response({'error': 'message field is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(message) > 2000:
+            return Response({'error': 'message must be 2000 characters or fewer'}, status=status.HTTP_400_BAD_REQUEST)
 
-    try:
-        body = json.loads(request.body)
-    except Exception:
-        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+        actor = request.user
+        allowed, retry_after = consume_chatbot_request(actor)
+        if not allowed:
+            message = "Chatbot request limit reached. Please wait a few minutes and try again."
+            return Response(
+                {'error': message, 'bot_response': message},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+                headers={'Retry-After': str(retry_after)},
+            )
 
-    message = body.get("message")
-    customer_id = body.get("customer_id")
-    session_id = body.get("session_id") or "anonymous"
+        customer = actor if isinstance(actor, Customer) else None
+        default_session = f"customer-{actor.pk}" if customer else f"staff-{actor.pk}"
+        session_id = str(request.data.get('session_id') or default_session)[:50]
+        log_filter = {'session_id': session_id, 'customer': customer} if customer else {'session_id': session_id, 'staff_user': actor}
+        history = []
+        for log in reversed(list(ChatbotLog.objects.filter(**log_filter).order_by('-created_at')[:6])):
+            history.extend([{'role': 'user', 'content': log.user_message}, {'role': 'assistant', 'content': log.bot_response}])
+        try:
+            result = run_agent(message, actor, history)
+        except AgentUnavailable as exc:
+            return Response(
+                {'error': str(exc), 'bot_response': str(exc)},
+                status=exc.status_code,
+            )
 
-    if not message:
-        return JsonResponse({"error": "message field is required"}, status=400)
-
-    result = chatbot_response(message, customer_id)
-
-    intent = result["intent"]
-    if intent not in dict(ChatbotLog.INTENT_CHOICES):
-        intent = "UNKNOWN"
-
-    ChatbotLog.objects.create(
-        customer_id=customer_id if customer_id else None,
-        session_id=session_id,
-        user_message=message,
-        bot_response=result["bot_response"],
-        intent_detected=intent,
-        query_success=result["query_success"],
-    )
-
-    return JsonResponse(result, safe=True)
+        ChatbotLog.objects.create(
+            customer=customer, staff_user=None if customer else actor, session_id=session_id,
+            user_message=message, bot_response=result['bot_response'], intent_detected='AGENT_QUERY',
+            query_success=result['query_success'], tool_calls=result['tool_calls'],
+        )
+        return Response({**result, 'session_id': session_id})
 
 
 class RatingCreateView(APIView):
@@ -1342,4 +1350,70 @@ class OrderOverdueProcessView(APIView):
         return Response({
             "message": f"{len(expired_refs)} order(s) auto-expired and stock released.",
             "expired_orders": expired_refs,
+        })
+
+
+
+class ChatbotLogListView(APIView):
+    authentication_classes = [LenientJWTAuthentication, CustomerJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        params = request.query_params
+        logs = ChatbotLog.objects.filter(customer=request.user) if isinstance(request.user, Customer) else ChatbotLog.objects.filter(staff_user=request.user)
+
+        date_from = params.get("date_from")
+        date_to = params.get("date_to")
+        if date_from:
+            logs = logs.filter(created_at__date__gte=date_from)
+        if date_to:
+            logs = logs.filter(created_at__date__lte=date_to)
+
+        intent = params.get("intent_detected")
+        if intent:
+            logs = logs.filter(intent_detected=intent.upper())
+
+        query_success = params.get("query_success")
+        if query_success is not None:
+            logs = logs.filter(query_success=query_success.lower() == "true")
+
+        return Response([
+            {
+                "id": log.id,
+                "session_id": log.session_id,
+                "customer_id": log.customer_id,
+                "user_message": log.user_message,
+                "bot_response": log.bot_response,
+                "intent_detected": log.intent_detected,
+                "query_success": log.query_success,
+                "tool_calls": log.tool_calls,
+                "created_at": log.created_at,
+            }
+            for log in logs.order_by("-created_at")
+        ])
+
+
+class ChatbotSessionDetailView(APIView):
+    authentication_classes = [LenientJWTAuthentication, CustomerJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id):
+        scope = {'customer': request.user} if isinstance(request.user, Customer) else {'staff_user': request.user}
+        logs = ChatbotLog.objects.filter(session_id=session_id, **scope).order_by("created_at")
+        if not logs.exists():
+            return Response({"error": "Session not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            "session_id": session_id,
+            "messages": [
+                {
+                    "user_message": log.user_message,
+                    "bot_response": log.bot_response,
+                    "intent_detected": log.intent_detected,
+                    "query_success": log.query_success,
+                    "tool_calls": log.tool_calls,
+                    "created_at": log.created_at,
+                }
+                for log in logs
+            ]
         })

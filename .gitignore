@@ -17,6 +17,7 @@ show_duplicate_lines_2products.py
 
 # Sensitive files (was previously a corrupted/malformed line here)
 .env*
+!.env.example
 *.sql
 *.backup
 *.bak

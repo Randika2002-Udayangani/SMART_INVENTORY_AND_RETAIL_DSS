@@ -6,16 +6,25 @@ import os
 from datetime import timedelta
 from dotenv import load_dotenv
 
-# Load .env file
-load_dotenv()
-
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# The legacy project settings live in smart_inventory/.env while chatbot
+# configuration lives in the repository-root .env. Load both explicitly so
+# startup location cannot decide which settings Django receives. Existing
+# process environment values still take precedence.
+load_dotenv(BASE_DIR / 'smart_inventory' / '.env')
+load_dotenv(BASE_DIR / '.env')
 
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 
 
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
+
+# Gemini free-tier protection: per authenticated user, enforced by a
+# database-backed counter so it is shared across Django workers.
+CHATBOT_RATE_LIMIT = int(os.getenv('CHATBOT_RATE_LIMIT', '20'))
+CHATBOT_RATE_WINDOW_SECONDS = int(os.getenv('CHATBOT_RATE_WINDOW_SECONDS', '300'))
 
 # ─────────────────────────────────────────────────────────────────
 # ALLOWED_HOSTS
