@@ -63,30 +63,44 @@
   function clearFilters() { ['userFilter','tableFilter','actionFilter','recordFilter','dateFrom','dateTo'].forEach(id => { document.getElementById(id).value = ''; }); loadLogs(); }
   function jsonText(value) { return escapeHtml(JSON.stringify(value ?? {}, null, 2)); }
 
+  // ── Pagination is now server-side (see AuditLogListView in users/views.py) ──
+  // The backend returns { results, count, page, page_size, total_pages }
+  // instead of a bare list, so each page change re-fetches from the API
+  // rather than slicing a full in-memory array — this scales as the log
+  // table grows, instead of loading every row on every request.
   let allAuditLogs = [];
   let auditPage = 1;
+  let auditTotalPages = 1;
   const auditPageSize = 25;
-  // Tracks the last-applied filter query string. This page auto-polls
-  // every 30s (see setInterval below), so unlike the other paginated
-  // pages we can't just reset to page 1 on every load — that would yank
-  // a manager reading page 3 back to page 1 every 30 seconds. Instead we
-  // only reset when the filters actually changed (Apply/Clear with new
-  // values); a same-filter reload (auto-poll, or Refresh with unchanged
-  // filters) keeps whatever page the manager is currently on.
+  // Tracks the last-applied filter query string (excluding page/page_size).
+  // This page auto-polls every 30s (see setInterval below), so unlike a
+  // simple reload we can't just reset to page 1 every time — that would
+  // yank a manager reading page 3 back to page 1 every 30 seconds. Instead
+  // we only reset to page 1 when the filters actually changed (Apply/Clear
+  // with new values); a same-filter reload (auto-poll, or Refresh with
+  // unchanged filters) keeps whatever page the manager is currently on.
   let lastAuditQuery = null;
 
   async function loadLogs() {
     const params = new URLSearchParams();
     const filters = { user: 'userFilter', table_name: 'tableFilter', action: 'actionFilter', record_id: 'recordFilter', date_from: 'dateFrom', date_to: 'dateTo' };
     Object.entries(filters).forEach(([name, id]) => { const value = document.getElementById(id).value.trim(); if (value) params.set(name, value); });
+
+    const filterQuery = params.toString();
+    if (filterQuery !== lastAuditQuery) {
+      auditPage = 1; // filters actually changed — back to page 1
+      lastAuditQuery = filterQuery;
+    }
+    params.set('page', auditPage);
+    params.set('page_size', auditPageSize);
+
     try {
-      const query = params.toString();
-      const rows = await apiFetch(`/api/audit-log/${query ? `?${query}` : ''}`);
-      allAuditLogs = Array.isArray(rows) ? rows : (rows.results ?? []);
-      if (query !== lastAuditQuery) {
-        auditPage = 1; // filters actually changed — back to page 1
-        lastAuditQuery = query;
-      }
+      const response = await apiFetch(`/api/audit-log/?${params.toString()}`);
+      // Backend always returns the paginated shape now; keep a defensive
+      // fallback in case an older cached response ever comes back as a bare array.
+      allAuditLogs = Array.isArray(response) ? response : (response.results ?? []);
+      auditTotalPages = Array.isArray(response) ? 1 : (response.total_pages ?? 1);
+      auditPage = Array.isArray(response) ? auditPage : (response.page ?? auditPage);
       renderAuditLogs();
       document.getElementById('lastUpdated').innerText = `Last updated ${new Date().toLocaleTimeString()}`;
     } catch (error) {
@@ -96,10 +110,6 @@
     }
   }
 
-  // Pagination — same pattern used elsewhere (Stock Levels in
-  // inventory.html, Purchases, Batches, Reorder, Lifecycle, Loss Analysis,
-  // Discount Engine, Health Score, Notifications): 25 rows/page,
-  // client-side slice, Previous / "Page X of Y" / Next.
   function renderAuditLogs() {
     const body = document.getElementById('logBody');
     const rows = allAuditLogs;
@@ -109,21 +119,17 @@
       return;
     }
 
-    const totalPages = Math.max(1, Math.ceil(rows.length / auditPageSize));
-    auditPage = Math.min(auditPage, totalPages);
-    const pageRows = rows.slice((auditPage - 1) * auditPageSize, auditPage * auditPageSize);
+    body.innerHTML = rows.map(log => `<tr><td>${log.timestamp ? escapeHtml(new Date(log.timestamp).toLocaleString()) : '-'}</td><td>${escapeHtml(log.username || 'Unknown')} <span class="text-muted">#${escapeHtml(log.user_id || '-')}</span></td><td><span class="badge text-bg-secondary">${escapeHtml(log.action)}</span></td><td>${escapeHtml(log.table_name)}</td><td title="Database row ID in ${escapeHtml(log.table_name || 'the affected table')}">${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</td><td>${escapeHtml(log.ip_address || '-')}</td><td><button class="btn btn-outline-secondary btn-sm" onclick="showDetails(${log.id})">Details</button></td></tr>`).join('');
 
-    body.innerHTML = pageRows.map(log => `<tr><td>${log.timestamp ? escapeHtml(new Date(log.timestamp).toLocaleString()) : '-'}</td><td>${escapeHtml(log.username || 'Unknown')} <span class="text-muted">#${escapeHtml(log.user_id || '-')}</span></td><td><span class="badge text-bg-secondary">${escapeHtml(log.action)}</span></td><td>${escapeHtml(log.table_name)}</td><td title="Database row ID in ${escapeHtml(log.table_name || 'the affected table')}">${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</td><td>${escapeHtml(log.ip_address || '-')}</td><td><button class="btn btn-outline-secondary btn-sm" onclick="showDetails(${log.id})">Details</button></td></tr>`).join('');
-
-    document.getElementById('auditPagination').innerHTML = rows.length > auditPageSize ? `
+    document.getElementById('auditPagination').innerHTML = auditTotalPages > 1 ? `
       <button class="btn btn-sm btn-outline-secondary" onclick="changeAuditPage(-1)" ${auditPage === 1 ? 'disabled' : ''}>Previous</button>
-      <span class="text-muted small">Page ${auditPage} of ${totalPages}</span>
-      <button class="btn btn-sm btn-outline-secondary" onclick="changeAuditPage(1)" ${auditPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+      <span class="text-muted small">Page ${auditPage} of ${auditTotalPages}</span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="changeAuditPage(1)" ${auditPage === auditTotalPages ? 'disabled' : ''}>Next</button>` : '';
   }
 
   function changeAuditPage(delta) {
     auditPage += delta;
-    renderAuditLogs();
+    loadLogs(); // server-side pagination — re-fetch the requested page
   }
 
   async function refreshLogs(button) { const original = button.textContent; button.disabled = true; button.textContent = 'Refreshing...'; await loadLogs(); button.textContent = 'Refreshed'; setTimeout(() => { button.textContent = original; button.disabled = false; }, 900); }
