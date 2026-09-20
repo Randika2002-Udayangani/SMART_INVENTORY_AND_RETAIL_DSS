@@ -481,7 +481,7 @@
             <div class="product-grid">
                 ${pageProds.map(p => `
                     <div class="product-card" onclick="openProductModal(${p.id})">
-                        ${p.is_near_expiry ? '<span class="near-expiry-tag">Near expiry</span>' : ''}
+                        
                         <div class="pname">${p.product_name}</div>
                         <div class="pprice">Rs ${parseFloat(p.unit_price).toFixed(2)}</div>
                         <button class="add-btn"
@@ -508,7 +508,7 @@
     }
 
     // ── Product Detail Modal ─────────────────────────────────────
-    function openProductModal(productId) {
+    async function openProductModal(productId) {
         const p = allProducts.find(p => p.id === productId);
         if (!p) return;
 
@@ -516,8 +516,8 @@
         document.getElementById('modalPrice').textContent =
             `Rs ${parseFloat(p.unit_price).toFixed(2)}`;
 
+        // Show loading for stock
         document.getElementById('modalInfoRows').innerHTML = `
-            ${p.is_near_expiry ? '<div class="near-expiry-tag">Near expiry</div>' : ''}
             ${p.sku_code ? `
             <div class="modal-info-row">
                 <span class="label">SKU</span>
@@ -527,17 +527,19 @@
                 <span class="label">Category</span>
                 <span class="value">${p.category_name || 'General'}</span>
             </div>
+            ${(p.brand_name || p.brand) ? `
             <div class="modal-info-row">
                 <span class="label">Brand</span>
-                <span class="value">${p.brand_name || p.brand || 'N/A'}</span>
-            </div>
+                <span class="value">${p.brand_name || p.brand}</span>
+            </div>` : ''}
+            ${p.expiry_date ? `
             <div class="modal-info-row">
-                <span class="label">Expiry date</span>
-                <span class="value">${p.expiry_date || 'N/A'}</span>
-            </div>
+                <span class="label">Expiry Date</span>
+                <span class="value">📅 ${p.expiry_date}</span>
+            </div>` : ''}
             <div class="modal-info-row">
                 <span class="label">Availability</span>
-                <span class="value" style="color:#1e7e34">✅ In Stock</span>
+                <span class="value" id="stockDisplay">⏳ Checking stock...</span>
             </div>`;
 
         document.getElementById('modalAddBtn').onclick = () => {
@@ -545,7 +547,76 @@
             closeProductModal();
         };
 
+        const addBtn = document.getElementById('modalAddBtn');
+        addBtn.disabled         = false;
+        addBtn.style.background = '#1a73e8';
+        addBtn.textContent      = 'Add to Cart 🛒';
+        addBtn.onclick = () => {
+            addToCart(p.id, p.product_name, parseFloat(p.unit_price));
+            closeProductModal();
+        };
+
         document.getElementById('productModal').style.display = 'flex';
+
+        // Fetch real stock from availability endpoint
+        try {
+            const res = await fetch(`/api/products/${productId}/availability/`);
+            if (res.ok) {
+                const data  = await res.json();
+                const stockEl  = document.getElementById('stockDisplay');
+                const addBtn2  = document.getElementById('modalAddBtn');
+
+                if (stockEl) {
+                    const status   = data.status;
+                    const stock    = data.stock || 0;
+
+                    if (status === 'AVAILABLE') {
+                        stockEl.innerHTML = `
+                            <span style="color:#1e7e34;">
+                                ✅ ${stock} items available
+                            </span>`;
+                        // Allow adding up to available stock
+                        addBtn2.disabled         = false;
+                        addBtn2.style.background = '#1a73e8';
+                        addBtn2.textContent      = 'Add to Cart 🛒';
+                        addBtn2.onclick = () => {
+                            addToCartWithLimit(p.id, p.product_name,
+                                parseFloat(p.unit_price), stock);
+                            closeProductModal();
+                        };
+
+                    } else if (status === 'LIMITED_STOCK') {
+                        stockEl.innerHTML = `
+                            <span style="color:#e65100;">
+                                ⚠️ Only ${stock} left — Order soon!
+                            </span>`;
+                        // Allow adding but limit to available stock
+                        addBtn2.disabled         = false;
+                        addBtn2.style.background = '#1a73e8';
+                        addBtn2.textContent      = `Add to Cart 🛒`;
+                        addBtn2.onclick = () => {
+                            addToCartWithLimit(p.id, p.product_name,
+                                parseFloat(p.unit_price), stock);
+                            closeProductModal();
+                        };
+
+                    } else {
+                        // Out of stock — disable button
+                        stockEl.innerHTML = `
+                            <span style="color:#c5221f;">
+                                ❌ Currently out of stock
+                            </span>`;
+                        addBtn2.disabled         = true;
+                        addBtn2.style.background = '#aaa';
+                        addBtn2.textContent      = 'Out of Stock';
+                        addBtn2.onclick          = null;
+                    }
+                }
+            }
+        } catch (err) {
+            const stockEl = document.getElementById('stockDisplay');
+            if (stockEl) stockEl.innerHTML = `✅ In Stock`;
+        }
     }
 
     function closeProductModal() {
@@ -660,6 +731,33 @@
         } else {
             cart.push({ product_id: productId, id: productId, product_name: productName, price: parseFloat(price), qty: 1 });
         }
+        sessionStorage.setItem('cart', JSON.stringify(cart));
+        updateCartBadge();
+        showNotification(`✅ ${productName} added to cart!`);
+    }
+
+
+    function addToCartWithLimit(productId, productName, price, maxStock) {
+        const cart     = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        const existing = cart.find(item => item.product_id === productId);
+
+        if (existing) {
+            if (existing.qty >= maxStock) {
+                showNotification(`⚠️ Max ${maxStock} items available for ${productName}`);
+                return;
+            }
+            existing.qty += 1;
+        } else {
+            cart.push({
+                product_id:   productId,
+                id:           productId,
+                product_name: productName,
+                price:        parseFloat(price),
+                qty:          1,
+                max_stock:    maxStock
+            });
+        }
+
         sessionStorage.setItem('cart', JSON.stringify(cart));
         updateCartBadge();
         showNotification(`✅ ${productName} added to cart!`);

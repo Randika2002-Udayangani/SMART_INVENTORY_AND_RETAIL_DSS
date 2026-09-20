@@ -356,10 +356,30 @@
 
     // ── Quantity controls ────────────────────────────────────────
     function changeQty(index, delta) {
-        const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
-        cart[index].qty = Math.max(1, Math.min(10, cart[index].qty + delta));
+        const cart     = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        const maxStock = cart[index].max_stock || 999;
+        const newQty   = cart[index].qty + delta;
+
+        if (newQty > maxStock) {
+            showNotification(`⚠️ Only ${maxStock} items available!`);
+            return;
+        }
+
+        cart[index].qty = Math.max(1, newQty);
         sessionStorage.setItem('cart', JSON.stringify(cart));
         renderCart();
+    }
+
+    function showNotification(msg) {
+        const el = document.createElement('div');
+        el.style.cssText = `
+            position:fixed; bottom:20px; right:20px;
+            background:#1a73e8; color:white; padding:12px 20px;
+            border-radius:8px; font-size:0.9rem; z-index:9999;
+            box-shadow:0 4px 12px rgba(0,0,0,0.2);`;
+        el.textContent = msg;
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 2500);
     }
 
     function removeItem(index) {

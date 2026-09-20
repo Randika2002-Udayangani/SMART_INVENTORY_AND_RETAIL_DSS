@@ -228,6 +228,16 @@
         { id:8, name:"Cream Cheese 150g",          price:380, discounted:266, expiry:"2026-07-20", discount:30 },
     ];
 
+    function updateCartBadge() {
+        const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        const total = cart.reduce((sum, item) => sum + (item.qty || 0), 0);
+        const badge = document.getElementById('cartBadge');
+        if (badge) {
+            badge.textContent = total;
+            badge.style.display = total > 0 ? 'inline' : 'none';
+        }
+    }
+
     // ── Dynamic nav bar ──────────────────────────────────────────
     function buildNav() {
         const token = sessionStorage.getItem('jwt');
@@ -423,6 +433,7 @@
 
                 // Extract reply text — try all possible field names
                 const replyText = data.reply
+                    || data.bot_response
                     || data.message
                     || data.response
                     || data.text
@@ -481,6 +492,8 @@
     if (orders) sessionStorage.setItem('myOrders', orders);
     window.location.href = '/customer/login/';
 }
+
+    buildNav();
 
     // Welcome message on load
     window.onload = () => {
