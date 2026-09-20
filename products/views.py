@@ -153,6 +153,8 @@ class ProductAvailabilityView(APIView):
         return Response({
             'status': availability_status,
             'can_order': can_order,
+            'stock': int(current_stock),
+
         })
 
 
