@@ -54,8 +54,9 @@
             background: rgba(255,255,255,0.2);
             border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
-            font-size: 1.4rem;
+            font-size: 0;
         }
+        .bot-avatar::after { content: "AI"; font-size: 0.8rem; font-weight: 700; color: white; }
         .bot-info h3 { font-size: 1rem; color: white; }
         .bot-info p { font-size: 0.8rem; color: rgba(255,255,255,0.8); }
         .online-dot {
@@ -80,8 +81,10 @@
         .avatar {
             width: 32px; height: 32px; border-radius: 50%;
             display: flex; align-items: center;
-            justify-content: center; font-size: 1rem; flex-shrink: 0;
+            justify-content: center; font-size: 0; flex-shrink: 0;
         }
+        .message.bot .avatar::after { content: "AI"; font-size: 0.7rem; font-weight: 700; }
+        .message.user .avatar::after { content: "You"; font-size: 0.62rem; font-weight: 700; }
         .message.bot .avatar { background: #e8f0fe; }
         .message.user .avatar { background: #e8f0fe; }
 
@@ -98,6 +101,8 @@
             background: #1a73e8; color: white;
             border-bottom-right-radius: 4px;
         }
+        .chat-list-item { display: block; margin: 4px 0 4px 4px; padding-left: 14px; }
+        .chat-list-item::before { content: "•"; margin-left: -14px; margin-right: 8px; }
 
         /* ── Product cards inside chat ── */
         .product-list { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
@@ -162,6 +167,8 @@
             font-size: 1.1rem; color: white; flex-shrink: 0;
         }
         .send-btn:hover { background: #1558b0; }
+        .send-btn { font-size: 0; }
+        .send-btn::after { content: "Send"; font-size: 0.7rem; font-weight: 700; }
 
         /* ── Mobile ── */
         @media (max-width: 480px) {
@@ -190,7 +197,7 @@
             <div class="bot-avatar">🤖</div>
             <div class="bot-info">
                 <h3>SmartDeals Assistant</h3>
-                <p><span class="online-dot"></span>Online — ready to help!</p>
+                <p><span class="online-dot"></span>Online - ready to help!</p>
             </div>
         </div>
 
@@ -217,16 +224,6 @@
 </div>
 
 <script>
-    const demoProducts = [
-        { id:1, name:"Anchor Full Cream Milk 1L",  price:350, discounted:280, expiry:"2026-07-25", discount:20 },
-        { id:2, name:"Milo Chocolate Drink 400g",  price:480, discounted:384, expiry:"2026-07-22", discount:20 },
-        { id:3, name:"Yogurt Strawberry 200g",     price:120, discounted:84,  expiry:"2026-07-20", discount:30 },
-        { id:4, name:"Bread Loaf 400g",            price:85,  discounted:60,  expiry:"2026-07-19", discount:29 },
-        { id:5, name:"Cheddar Cheese Block 250g",  price:620, discounted:496, expiry:"2026-07-23", discount:20 },
-        { id:6, name:"Orange Juice 1L",            price:290, discounted:203, expiry:"2026-07-21", discount:30 },
-        { id:7, name:"Butter Unsalted 200g",       price:420, discounted:336, expiry:"2026-07-24", discount:20 },
-        { id:8, name:"Cream Cheese 150g",          price:380, discounted:266, expiry:"2026-07-20", discount:30 },
-    ];
 
     function updateCartBadge() {
         const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
@@ -285,74 +282,35 @@
         updateCartBadge();
     }
     
-    function getBotResponse(input) {
-        const msg = input.toLowerCase();
+    function escapeHtml(value) {
+        const element = document.createElement('div');
+        element.textContent = String(value ?? '');
+        return element.innerHTML;
+    }
 
-        // Price of specific product
-        if (msg.includes('price') || msg.includes('cost') || msg.includes('how much')) {
-            const found = demoProducts.find(p =>
-                p.name.toLowerCase().split(' ').some(w => w.length > 3 && msg.includes(w))
-            );
-            if (found) return { text: `Here is the price for <strong>${found.name}</strong>:`, products: [found] };
-        }
-
-        // Under a price
-        const underMatch = msg.match(/under\s+rs?\s*(\d+)|below\s+rs?\s*(\d+)|less than\s+rs?\s*(\d+)/);
-        if (underMatch) {
-            const limit = parseInt(underMatch[1] || underMatch[2] || underMatch[3]);
-            const found = demoProducts.filter(p => p.discounted <= limit);
-            return found.length > 0
-                ? { text: `Here are items available under Rs ${limit}:`, products: found }
-                : { text: `Sorry, no items found under Rs ${limit}. Try a higher amount!`, products: [] };
-        }
-
-        // Availability check
-        if (msg.includes('do you have') || msg.includes('available') || msg.includes('in stock')) {
-            const found = demoProducts.find(p =>
-                p.name.toLowerCase().split(' ').some(w => w.length > 3 && msg.includes(w))
-            );
-            if (found) return { text: `Yes! <strong>${found.name}</strong> is available:`, products: [found] };
-            return { text: `Yes, we have ${demoProducts.length} near-expiry items available today! Here are some:`, products: demoProducts.slice(0,3) };
-        }
-
-        // Expiring soon
-        if (msg.includes('expir') || msg.includes('soon')) {
-            const soon = [...demoProducts].sort((a,b) => a.expiry.localeCompare(b.expiry)).slice(0,3);
-            return { text: `These items are expiring soonest — grab them before they're gone! 🏃`, products: soon };
-        }
-
-        // Today's deals / all
-        if (msg.includes('deal') || msg.includes('discount') || msg.includes('offer') || msg.includes('all') || msg.includes('today')) {
-            return { text: `Here are all today's near-expiry deals with special discounts! 🔥`, products: demoProducts };
-        }
-
-        // Specific product search
-        const found = demoProducts.find(p =>
-            p.name.toLowerCase().split(' ').some(w => w.length > 3 && msg.includes(w))
-        );
-        if (found) return { text: `I found a match for you:`, products: [found] };
-
-        // Greeting
-        if (msg.includes('hello') || msg.includes('hi') || msg.includes('hey')) {
-            return { text: `Hello! 👋 I'm your SmartDeals assistant. I can help you find near-expiry products at discounted prices.<br><br>Try asking:<br>• <em>Price of Milo</em><br>• <em>Items under Rs 200</em><br>• <em>Do you have milk?</em><br>• <em>Show today's deals</em>`, products: [] };
-        }
-
-        // Unknown
-        return {
-            text: `I didn't quite understand that 🤔 Try asking:<br><br>• <em>Price of Milo</em><br>• <em>Items under Rs 500</em><br>• <em>Do you have Anchor milk?</em><br>• <em>Show expiring soon</em><br>• <em>Today's deals</em>`,
-            products: []
-        };
+    function formatBotMessage(value) {
+        // Gemini occasionally escapes Markdown punctuation. Normalise it,
+        // then render only the small, safe subset used by chatbot replies.
+        const normalised = String(value ?? '')
+            .replace(/\r\n?/g, '\n')
+            .replace(/\\([*_])/g, '$1')
+            .replace(/([^\n])\s+([*-])\s+(?=\*\*|[A-Za-z0-9])/g, '$1\n$2 ');
+        return escapeHtml(normalised)
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/^\s*[-*]\s+(.+)$/gm, '<span class="chat-list-item">$1</span>')
+            .replace(/\n/g, '<br>');
     }
 
     function addMessage(text, sender, products = []) {
         const messages = document.getElementById('chatMessages');
+        const messageHTML = sender === 'bot' ? formatBotMessage(text) : escapeHtml(text);
 
         const productHTML = products.length > 0 ? `
             <div class="product-list">
                 ${products.map(p => `
                     <div class="mini-card">
                         <div>
-                            <div class="pname">${p.name}</div>
+                            <div class="pname">${escapeHtml(p.name)}</div>
                             <div class="pprice">
                                 <s>Rs ${p.price}</s> →
                                 <span class="pdiscount">Rs ${p.discounted}</span>
@@ -380,7 +338,7 @@
         div.className = `message ${sender}`;
         div.innerHTML = `
             <div class="avatar">${sender === 'bot' ? '🤖' : '👤'}</div>
-            <div class="bubble">${text}${productHTML}</div>`;
+            <div class="bubble">${messageHTML}${productHTML}</div>`;
         messages.appendChild(div);
         messages.scrollTop = messages.scrollHeight;
     }
@@ -414,14 +372,15 @@
         showTyping();
 
         const token = sessionStorage.getItem('jwt');
+        // Anonymous visitors have no JWT — only attach the header when a
+        // real token exists so the request is never sent as 'Bearer null'.
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
 
         try {
             const res = await fetch('/api/chatbot/query/', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + token
-                },
+                headers: headers,
                 body: JSON.stringify({ message: text })
             });
 
@@ -432,13 +391,7 @@
                 hideTyping();
 
                 // Extract reply text — try all possible field names
-                const replyText = data.reply
-                    || data.bot_response
-                    || data.message
-                    || data.response
-                    || data.text
-                    || data.answer
-                    || '';
+                const replyText = data.bot_response || '';
 
                 // Extract products — try all possible field names
                 const rawProducts = data.products
@@ -457,24 +410,18 @@
                 }));
 
                 // If no reply text but has products
-                const displayText = replyText ||
-                    (products.length > 0
-                        ? `Found ${products.length} product(s) for you:`
-                        : `I didn't understand that. Try: "price of Milo", "items under Rs 500", "do you have milk?"`);
+                const displayText = replyText || 'I could not find matching current data for that request.';
 
                 addMessage(displayText, 'bot', products);
                 return;
             }
-        } catch (err) {
-            console.log('Chatbot API error, using demo mode:', err);
-        }
-
-        // Fallback to demo mode
-        setTimeout(() => {
+            const data = await res.json().catch(() => ({}));
             hideTyping();
-            const response = getBotResponse(text);
-            addMessage(response.text, 'bot', response.products);
-        }, 800);
+            addMessage(data.bot_response || data.error || 'The chatbot is temporarily unavailable. Please try again.', 'bot');
+        } catch (err) {
+            hideTyping();
+            addMessage('The chatbot is temporarily unavailable. Please try again.', 'bot');
+        }
     }
 
     function sendSuggestion(text) {
@@ -498,10 +445,7 @@
     // Welcome message on load
     window.onload = () => {
         setTimeout(() => {
-            addMessage(
-                `Hello! 👋 Welcome to <strong>SmartDeals</strong>!<br><br>I can help you find near-expiry products at special discounted prices. Just type anything or click a suggestion below!`,
-                'bot'
-            );
+            addMessage('Welcome to SmartDeals. Ask about products, prices, or availability.', 'bot');
         }, 400);
     };
 </script>
