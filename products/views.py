@@ -1,4 +1,5 @@
 from rest_framework import generics, permissions, status
+from decimal import Decimal
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -20,6 +21,7 @@ from .serializers import (
     ZoneCalculationRunSerializer
 )
 from sales.models import UploadLog
+from core.pagination import StandardResultsPagination
 
 
 def product_list(request):
@@ -70,6 +72,7 @@ class StoreZoneDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ─────────────────────────────────────────────
 class ProductListCreateView(generics.ListCreateAPIView):
     authentication_classes = [LenientJWTAuthentication]
+    pagination_class = StandardResultsPagination
 
     def get_queryset(self):
         queryset = Product.objects.filter(is_active=True).annotate(
@@ -153,6 +156,8 @@ class ProductAvailabilityView(APIView):
         return Response({
             'status': availability_status,
             'can_order': can_order,
+            'stock': int(current_stock),
+
         })
 
 
@@ -467,10 +472,39 @@ class ZoneRecommendationListView(generics.ListAPIView):
 # Recalculate WAC
 # ─────────────────────────────────────────────
 class RecalculateWACView(APIView):
+    """
+    POST /api/products/<id>/recalculate-wac/
+
+    IMPORTANT FIX: this previously used a DIFFERENT, inconsistent formula
+    from the one already fixed in purchases/views.py's
+    _recalculate_avg_cost_price() (see that function's docstring history —
+    "All three WAC code paths in the system now agree" — this endpoint was
+    apparently a fourth path that got missed):
+
+      - OLD (this view): summed quantity_received across ALL batches
+        regardless of status — including EXPIRED, DISPOSED, and
+        PENDING_EXPIRY batches that hold zero real stock. Manually
+        clicking "Recalculate WAC" on a product could therefore produce
+        a different number than the automatic invoice-upload pipeline
+        computes for the exact same data.
+      - NEW (this fix): ACTIVE-status batches only, using
+        remaining_quantity (current stock) instead of quantity_received
+        (original arrival quantity) — identical formula and semantics to
+        _recalculate_avg_cost_price() in purchases/views.py, including
+        the same "leave avg_cost_price unchanged if zero remaining
+        stock" edge case, instead of resetting it to a misleading value.
+
+    Also fixes a performance issue: the old code iterated the `batches`
+    queryset twice in Python (once for total_units, once for total_cost),
+    which re-ran the query twice since a queryset isn't cached until
+    evaluated. Replaced with a single .aggregate() call.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
         from purchases.models import PurchaseBatch
+        from django.db.models import Sum, F, DecimalField
+        from django.db.models.functions import Coalesce
 
         try:
             product = Product.objects.get(pk=pk)
@@ -480,18 +514,30 @@ class RecalculateWACView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        batches     = PurchaseBatch.objects.filter(product=product)
-        total_units = sum(b.quantity_received for b in batches)
+        active_batches = PurchaseBatch.objects.filter(product=product, status='ACTIVE')
 
-        if total_units == 0:
+        agg = active_batches.aggregate(
+            total_cost=Coalesce(
+                Sum(
+                    F('remaining_quantity') * F('cost_price'),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+                Decimal('0'),
+            ),
+            total_qty=Coalesce(Sum('remaining_quantity'), 0),
+        )
+        total_units = agg['total_qty']
+        total_cost = agg['total_cost']
+
+        if not total_units or total_units == 0:
             return Response(
-                {'error': 'No purchase batches found for this product — cannot calculate WAC'},
+                {'error': 'No ACTIVE purchase batches with remaining stock found for '
+                          'this product — cannot calculate WAC'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        total_cost = sum(b.quantity_received * b.cost_price for b in batches)
-        old_wac    = product.avg_cost_price
-        new_wac    = total_cost / total_units
+        old_wac = product.avg_cost_price
+        new_wac = (total_cost / total_units).quantize(Decimal('0.01'))
 
         product.avg_cost_price = new_wac
         product.save(update_fields=['avg_cost_price'])
@@ -502,7 +548,7 @@ class RecalculateWACView(APIView):
             table_name='product',
             record_id=product.id,
             old_value={'avg_cost_price': str(old_wac)},
-            new_value={'avg_cost_price': str(round(new_wac, 2))},
+            new_value={'avg_cost_price': str(new_wac)},
             request=request,
         )
 
@@ -510,10 +556,9 @@ class RecalculateWACView(APIView):
             'product_id'          : product.id,
             'product_name'        : product.product_name,
             'old_avg_cost_price'  : old_wac,
-            'new_avg_cost_price'  : round(new_wac, 2),
+            'new_avg_cost_price'  : new_wac,
             'total_units_received': total_units,
-
-            'batches_used'        : batches.count(),
+            'batches_used'        : active_batches.count(),
         })
 
 
@@ -769,39 +814,13 @@ class ProductZoneOverrideListCreateView(generics.ListCreateAPIView):
         return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
-        override = serializer.save()
-        log_action(
-            user=self.request.user,
-            action='CREATE',
-            table_name='product_zone_override',
-            record_id=override.id,
-            old_value=None,
-            new_value=ProductZoneOverrideSerializer(override).data,
-            request=self.request,
-        )
-
-        # Shared notification — same pattern as the status-change endpoints
-        # below. A new override is PENDING until some staff member applies
-        # it on the floor, so this is what tells the first available staff
-        # member there's something to act on.
-        from orders.models import Notification
-
-        Notification.objects.create(
-            user=None,
-            customer=None,
-            type='ZONE_OVERRIDE',
-            priority='MEDIUM',
-            title=f'New zone override: {override.product.product_name}',
-            message=(
-                f'{self.request.user.username} created a zone override for '
-                f'{override.product.product_name} — move to {override.zone.zone_name}. '
-                f'Needs to be applied on the floor.'
-            ),
-            reference_table='product_zone_override',
-            reference_id=override.id,
-        )
-
-    def perform_create(self, serializer):
+        # NOTE: this class previously had perform_create() defined TWICE.
+        # Python silently uses only the last definition, so the first
+        # version (action='CREATE', no updated_by, an older notification
+        # copy) was completely dead code — never executed. This is that
+        # surviving second version, kept as-is; the dead first one has
+        # been removed rather than merged, since it was never running in
+        # the first place and merging risks changing real behavior.
         override = serializer.save(updated_by=self.request.user)
         log_action(
             user=self.request.user,

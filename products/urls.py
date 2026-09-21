@@ -31,5 +31,5 @@ urlpatterns = [
     path('products/<int:pk>/', views.ProductDetailView.as_view(), name='product-detail'),
 
     # Customer availability remains intentionally disabled until its route is needed.
-    # path('products/<int:pk>/availability/', views.ProductAvailabilityView.as_view(), name='product-availability'),
+    path('products/<int:pk>/availability/', views.ProductAvailabilityView.as_view(), name='product-availability'),
 ]

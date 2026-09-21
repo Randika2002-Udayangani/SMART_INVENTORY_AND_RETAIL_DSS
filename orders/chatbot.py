@@ -25,10 +25,13 @@
 # ============================================================
 
 import re
+from datetime import date, timedelta
 
+from django.db.models import Min, Q
 from fuzzywuzzy import fuzz
 
 from products.models import Product, Brand
+from purchases.models import PurchaseBatch
 from inventory.services.stock import get_available_stock
 
 FUZZY_THRESHOLD = 80  # per Section 18 — corrected from 70% in v2.0
@@ -58,13 +61,17 @@ def _fuzzy_match_product(message):
 
 
 def _product_public_dict(product, is_available=None):
-    return {
+    result = {
+        "id": product.id,
         "product_name": product.product_name,
         "unit_price": float(product.unit_price),
         "is_available": (
             is_available if is_available is not None else product.is_active
         ),
     }
+    if hasattr(product, "earliest_expiry"):
+        result["expiry_date"] = product.earliest_expiry
+    return result
 
 
 def detect_intent(message):
@@ -77,6 +84,9 @@ def detect_intent(message):
 
     if any(w in message for w in ["price", "cost", "how much", "rate"]):
         return "PRICE_QUERY"
+
+    if any(w in message for w in ["expir", "near expiry", "near-expiry"]):
+        return "EXPIRY_QUERY"
 
     if any(w in message for w in ["available", "have", "stock", "in stock"]):
         return "AVAILABILITY_QUERY"
@@ -155,6 +165,35 @@ def handle_availability_query(message):
     }
 
 
+def handle_expiry_query(message=None):
+    today = date.today()
+    products = Product.objects.filter(
+        is_active=True,
+        purchasebatch__status__in=["ACTIVE", "PENDING_EXPIRY"],
+        purchasebatch__remaining_quantity__gt=0,
+        purchasebatch__expiry_date__isnull=False,
+        purchasebatch__expiry_date__gte=today,
+        purchasebatch__expiry_date__lte=today + timedelta(days=30),
+    ).annotate(
+        earliest_expiry=Min(
+            "purchasebatch__expiry_date",
+            filter=Q(
+                purchasebatch__status__in=["ACTIVE", "PENDING_EXPIRY"],
+                purchasebatch__remaining_quantity__gt=0,
+            ),
+        )
+    ).distinct().order_by("earliest_expiry", "id")[:10]
+
+    return {
+        "bot_response": (
+            "Here are the products expiring within the next 30 days:"
+            if products else "There are no near-expiry products right now."
+        ),
+        "products": [_product_public_dict(product) for product in products],
+        "query_success": bool(products),
+    }
+
+
 def handle_brand_query(message):
     brand = _fuzzy_match_brand(message)
     if not brand:
@@ -214,6 +253,7 @@ _HANDLERS = {
     "BUDGET_QUERY": handle_budget_query,
     "PRICE_QUERY": handle_price_query,
     "AVAILABILITY_QUERY": handle_availability_query,
+    "EXPIRY_QUERY": handle_expiry_query,
     "BRAND_QUERY": handle_brand_query,
     "PACK_SIZE_QUERY": handle_pack_size_query,
 }
