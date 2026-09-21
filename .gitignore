@@ -27,3 +27,7 @@ git_history*.txt
 reconcile_dry_run_*.txt
 test_lavanya_dashboard.py
 .vscode/
+
+dev_scripts/inspect_db_state.py
+dev_scripts/smoke_test_new_tools.py
+test09_stock_audit.py
