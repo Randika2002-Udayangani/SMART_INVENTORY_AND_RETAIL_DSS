@@ -48,14 +48,14 @@
   <div id="errorState" class="alert alert-danger reorder-error" role="alert" hidden></div>
 
   <div class="mb-3 d-flex gap-2 flex-wrap">
-    <select id="urgencyFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadRecommendations()">
+    <select id="urgencyFilter" class="form-select form-select-sm" style="width:160px;" onchange="handleReorderFilterChange()">
       <option value="">All Urgency</option>
       <option value="CRITICAL">CRITICAL</option>
       <option value="HIGH">HIGH</option>
       <option value="MEDIUM">MEDIUM</option>
       <option value="LOW">LOW</option>
     </select>
-    <select id="statusFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadRecommendations()">
+    <select id="statusFilter" class="form-select form-select-sm" style="width:160px;" onchange="handleReorderFilterChange()">
       <option value="">All Status</option>
       <option value="PENDING">PENDING</option>
       <option value="ORDERED">ORDERED</option>
@@ -84,6 +84,7 @@
   let canManageReorders = false;
   let allRecommendations = [];
   let reorderPage = 1;
+  let reorderTotalPages = 1;
   const reorderPageSize = 25;
 
   function escapeHtml(value) {
@@ -137,15 +138,15 @@
     clearError();
     const urgency = document.getElementById('urgencyFilter').value;
     const status = document.getElementById('statusFilter').value;
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ page: reorderPage, page_size: reorderPageSize });
     if (urgency) params.set('urgency', urgency);
     if (status) params.set('status', status);
 
     try {
-      const query = params.toString();
-      const data = await apiFetch(`/api/reorder/recommendations/${query ? `?${query}` : ''}`);
+      const data = await apiFetch(`/api/reorder/recommendations/?${params.toString()}`);
       allRecommendations = Array.isArray(data) ? data : (data.results ?? []);
-      reorderPage = 1; // fresh data (filter changed / reload) — back to page 1
+      reorderTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
+      reorderPage = Array.isArray(data) ? reorderPage : (data.page ?? reorderPage);
       renderRecommendations();
     } catch (error) {
       console.error('loadRecommendations failed:', error);
@@ -155,10 +156,14 @@
     }
   }
 
-  // Renders the current page of allRecommendations. Pagination follows the
-  // same pattern used elsewhere (Stock Levels in inventory.html, Purchases,
-  // Batches, Notifications) — 25 rows/page, client-side slice, Previous /
-  // "Page X of Y" / Next.
+  function handleReorderFilterChange() {
+    reorderPage = 1; // filter changed — back to page 1
+    loadRecommendations();
+  }
+
+  // Renders the current page of allRecommendations. Pagination is now
+  // server-side (see ReorderRecommendationListView / core.pagination) —
+  // this used to fetch every recommendation and slice 25 at a time here.
   function renderRecommendations() {
     const tbody = document.getElementById('reorderBody');
     const rows = allRecommendations;
@@ -168,11 +173,7 @@
       return;
     }
 
-    const totalPages = Math.max(1, Math.ceil(rows.length / reorderPageSize));
-    reorderPage = Math.min(reorderPage, totalPages);
-    const pageRows = rows.slice((reorderPage - 1) * reorderPageSize, reorderPage * reorderPageSize);
-
-    tbody.innerHTML = pageRows.map(recommendation => `
+    tbody.innerHTML = rows.map(recommendation => `
       <tr>
         <td>${escapeHtml(recommendation.product_name)}</td>
         <td>${escapeHtml(recommendation.current_stock)}</td>
@@ -185,15 +186,15 @@
     `).join('');
     document.querySelectorAll('.action-cell').forEach(cell => { cell.hidden = !canManageReorders; });
 
-    document.getElementById('reorderPagination').innerHTML = rows.length > reorderPageSize ? `
+    document.getElementById('reorderPagination').innerHTML = reorderTotalPages > 1 ? `
       <button class="btn btn-sm btn-outline-secondary" onclick="changeReorderPage(-1)" ${reorderPage === 1 ? 'disabled' : ''}>Previous</button>
-      <span class="text-muted small">Page ${reorderPage} of ${totalPages}</span>
-      <button class="btn btn-sm btn-outline-secondary" onclick="changeReorderPage(1)" ${reorderPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+      <span class="text-muted small">Page ${reorderPage} of ${reorderTotalPages}</span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="changeReorderPage(1)" ${reorderPage === reorderTotalPages ? 'disabled' : ''}>Next</button>` : '';
   }
 
   function changeReorderPage(delta) {
     reorderPage += delta;
-    renderRecommendations();
+    loadRecommendations(); // server-side pagination — re-fetch the requested page
   }
 
   async function updateStatus(id, nextStatus) {
@@ -226,6 +227,7 @@
     clearError();
     try {
       await apiFetch('/api/reorder/calculate/', { method: 'POST' });
+      reorderPage = 1; // fresh calculation — jump back to page 1
       await loadRecommendations();
     } catch (error) {
       console.error('runCalculate failed:', error);

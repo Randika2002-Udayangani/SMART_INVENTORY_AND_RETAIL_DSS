@@ -145,8 +145,8 @@
     <!-- Stock Levels Tab -->
     <div id="tab-stock">
         <div class="mb-3 d-flex gap-2">
-            <input type="text" id="stockSearch" class="form-control form-control-sm" style="width:260px;" placeholder="Search product name..." onkeyup="renderStock()">
-            <select id="stockFilter" class="form-select form-select-sm" style="width:180px;" onchange="renderStock()">
+            <input type="text" id="stockSearch" class="form-control form-control-sm" style="width:260px;" placeholder="Search product name..." onkeyup="stockPage = 1; loadStock(1)">
+            <select id="stockFilter" class="form-select form-select-sm" style="width:180px;" onchange="stockPage = 1; loadStock(1)">
                 <option value="">All Products</option>
                 <option value="AVAILABLE">Available</option>
                 <option value="LOW">Low Stock</option>
@@ -277,6 +277,7 @@ function switchTab(name, btn) {
 let allStock = [];
 let ledgerData = [];
 let stockPage = 1;
+let stockTotalPages = 1;
 const stockPageSize = 25;
 
 function stockBadge(current, threshold) {
@@ -285,52 +286,77 @@ function stockBadge(current, threshold) {
     return '<span class="badge-available">AVAILABLE</span>';
 }
 
-async function loadStock() {
+async function loadStockSummary() {
     try {
-        const res = await request('/api/inventory/stock/');
-        const data = await res.json();
-       allStock = data.stock ?? (Array.isArray(data) ? data : (data.results ?? []));
-
-        document.getElementById('kpiTotal').innerText = allStock.length;
-        document.getElementById('kpiLow').innerText = allStock.filter(p => (p.current_stock ?? p.quantity ?? 0) > 0 && (p.current_stock ?? p.quantity ?? 0) < (p.reorder_threshold ?? 0)).length;
-        document.getElementById('kpiOut').innerText = allStock.filter(p => (p.current_stock ?? p.quantity ?? 0) <= 0).length;
-
-        // Try to get sync date from first record or a dedicated endpoint
-        const syncRes = await request('/api/inventory/sync-date/').catch(() => null);
-        if (syncRes && syncRes.ok) {
-    const syncData = await syncRes.json();
-    const syncDate = syncData.last_sync_date ?? syncData.sync_date;
-
-    if (syncDate) {
-        const date = new Date(syncDate);
-
-        document.getElementById('kpiSync').innerText =
-            date.toLocaleString('en-LK', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: true
-            });
-    } else {
-        document.getElementById('kpiSync').innerText = '—';
+        const data = await apiFetch('/api/inventory/stock/summary/');
+        const summary = data.summary ?? data;
+        document.getElementById('kpiTotal').innerText = summary.total_products ?? summary.total ?? 0;
+        document.getElementById('kpiLow').innerText = summary.low_stock ?? 0;
+        document.getElementById('kpiOut').innerText = summary.out_of_stock ?? 0;
+    } catch (e) {
+        // Keep the current KPI values visible if this fetch briefly fails.
     }
-} else {
-    document.getElementById('kpiSync').innerText = '—';
 }
 
-        populateInventoryProductOptions();
+async function loadStock(page = stockPage) {
+    const search = document.getElementById('stockSearch').value.trim();
+    const filter = document.getElementById('stockFilter').value;
+    const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(stockPageSize),
+    });
+    if (search) params.set('search', search);
+    if (filter) params.set('status', filter);
+
+    try {
+        const data = await apiFetch(`/api/inventory/stock/?${params.toString()}`);
+        allStock = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
+        stockPage = Number(data.page ?? page) || 1;
+        stockTotalPages = Number(data.total_pages ?? 1) || 1;
+
+        await Promise.all([
+            loadStockSummary(),
+            populateInventoryProductOptions(),
+        ]);
+
+        const syncRes = await request('/api/inventory/sync-date/').catch(() => null);
+        if (syncRes && syncRes.ok) {
+            const syncData = await syncRes.json();
+            const syncDate = syncData.last_sync_date ?? syncData.sync_date;
+
+            if (syncDate) {
+                const date = new Date(syncDate);
+                document.getElementById('kpiSync').innerText = date.toLocaleString('en-LK', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true
+                });
+            } else {
+                document.getElementById('kpiSync').innerText = '—';
+            }
+        } else {
+            document.getElementById('kpiSync').innerText = '—';
+        }
+
         renderStock();
-    } catch(e) {
+    } catch (e) {
         document.getElementById('stockBody').innerHTML = '<tr><td colspan="8" class="text-center text-muted">Could not load stock data.</td></tr>';
     }
 }
 
-function populateInventoryProductOptions() {
-    const datalist = document.getElementById('inventoryProductOptions');
-    datalist.innerHTML = allStock.map(p => `<option value="${p.product_id ?? p.id}">${p.product_name ?? p.name ?? ''}</option>`).join('');
+async function populateInventoryProductOptions() {
+    try {
+        const data = await apiFetch('/api/inventory/products/picker/');
+        const products = Array.isArray(data.products) ? data.products : [];
+        const datalist = document.getElementById('inventoryProductOptions');
+        datalist.innerHTML = products.map(p => `<option value="${p.id}">${p.product_name ?? ''}</option>`).join('');
+    } catch (e) {
+        document.getElementById('inventoryProductOptions').innerHTML = '';
+    }
 }
 
 async function loadUploadSummary() {
@@ -365,29 +391,15 @@ async function loadUploadSummary() {
 }
 
 function renderStock() {
-    const search = document.getElementById('stockSearch').value.toLowerCase();
-    const filter = document.getElementById('stockFilter').value;
-
-    let rows = allStock.filter(p => {
-        const name = (p.product_name ?? p.name ?? '').toLowerCase();
-        if (search && !name.includes(search)) return false;
-        const current = p.current_stock ?? p.quantity ?? 0;
-        const threshold = p.reorder_threshold ?? 0;
-        if (filter === 'AVAILABLE' && (current <= 0 || (threshold && current < threshold))) return false;
-        if (filter === 'LOW' && !(current > 0 && threshold && current < threshold)) return false;
-        if (filter === 'OUT' && current > 0) return false;
-        return true;
-    });
-
+    const rows = allStock;
     const tbody = document.getElementById('stockBody');
     if (rows.length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No products match.</td></tr>';
+        document.getElementById('stockPagination').innerHTML = '';
         return;
     }
-    const totalPages = Math.max(1, Math.ceil(rows.length / stockPageSize));
-    stockPage = Math.min(stockPage, totalPages);
-    const pageRows = rows.slice((stockPage - 1) * stockPageSize, stockPage * stockPageSize);
-    tbody.innerHTML = pageRows.map(p => {
+
+    tbody.innerHTML = rows.map(p => {
         const current = p.current_stock ?? p.quantity ?? 0;
         const threshold = p.reorder_threshold ?? '—';
         return `
@@ -395,22 +407,24 @@ function renderStock() {
             <td style="font-weight:600">${p.product_name ?? p.name ?? '—'}</td>
             <td>${p.category_name || '—'}</td>
             <td>${p.brand_name || 'UNBRANDED'}</td>
-            
             <td>${current}</td>
             <td>${threshold}</td>
             <td>${stockBadge(current, p.reorder_threshold)}</td>
             <td><button class="btn btn-sm btn-outline-secondary" onclick="viewDetail(${p.product_id ?? p.id})">View</button></td>
         </tr>`;
     }).join('');
-    document.getElementById('stockPagination').innerHTML = rows.length > stockPageSize ? `
+
+    document.getElementById('stockPagination').innerHTML = stockTotalPages > 1 ? `
         <button class="btn btn-sm btn-outline-secondary" onclick="changeStockPage(-1)" ${stockPage === 1 ? 'disabled' : ''}>Previous</button>
-        <span class="text-muted small">Page ${stockPage} of ${totalPages}</span>
-        <button class="btn btn-sm btn-outline-secondary" onclick="changeStockPage(1)" ${stockPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+        <span class="text-muted small">Page ${stockPage} of ${stockTotalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeStockPage(1)" ${stockPage === stockTotalPages ? 'disabled' : ''}>Next</button>` : '';
 }
 
 function changeStockPage(delta) {
-    stockPage += delta;
-    renderStock();
+    const nextPage = stockPage + delta;
+    if (nextPage < 1 || nextPage > stockTotalPages) return;
+    stockPage = nextPage;
+    loadStock(stockPage);
 }
 
 async function loadLowStock() {
@@ -594,6 +608,8 @@ async function submitAdjustment() {
 }
 
 fetchCurrentUser();
+loadStockSummary();
+populateInventoryProductOptions();
 loadStock();
 loadUploadSummary();
 </script>

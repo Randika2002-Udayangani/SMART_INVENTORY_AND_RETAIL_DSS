@@ -3,6 +3,7 @@ import csv
 import io
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from users.permissions import IsManagerOrAdmin  
 from decimal import Decimal
 from users.audit import log_action
@@ -50,6 +51,15 @@ from django.utils import timezone as dj_timezone
 
 from django.utils import timezone as dj_timezone
 from core.utils import get_last_sync_date, get_latest_sync_uploads
+from core.pagination import StandardResultsPagination
+
+
+# Same fix pattern as notify_expiring_batches.py, notify_missing_uploads.py,
+# lifecycle.py, health_score.py and analytics/views.py: date.today() reads
+# the SERVER's own OS clock, not Django's TIME_ZONE setting. Works fine on
+# local machines already set to Sri Lanka time, but silently wrong the
+# moment this runs on a UTC-clocked host (Render included).
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -57,15 +67,67 @@ from core.utils import get_last_sync_date, get_latest_sync_uploads
 # ═════════════════════════════════════════════════════════════════
 
 class StockSnapshotView(APIView):
+    """
+    GET /api/inventory/stock/?search=&status=AVAILABLE|LOW|OUT&page=&page_size=
+
+    FIX (performance, N+1): previously ran one PurchaseBatch aggregate query
+    PER product inside the loop below (N+1 — e.g. 500 active products
+    meant 500 extra queries on this one page load). Same bug already fixed
+    in LowStockView further down this file (see its "Bulk-fetch all active
+    batch stock in one query" comment) — StockSnapshotView just never got
+    the same fix applied. Now uses the identical bulk-fetch pattern: one
+    query for every product's stock, then a dict lookup inside the loop
+    instead of a query.
+
+    FIX (pagination): previously returned every active product in one
+    response with no pagination at all — fine for a small catalogue, but
+    for 500-2000+ products this meant inventory.html's loadStock() pulled
+    the entire table on every page load just to render 25 rows, and
+    inventory.html computed its Total/Low/Out KPI cards by counting that
+    same full client-side array. Search/status filtering also happened
+    entirely in the browser over the fully-loaded list.
+
+    The expensive part (DB query count) was ALREADY correct after the N+1
+    fix above — this only changes what gets serialized into the HTTP
+    response. Stock is still computed for every active product in one bulk
+    query + one Python loop (cheap, no per-product queries); search/status
+    filtering and pagination now happen on that same in-memory list before
+    it's returned, instead of after it reaches the browser.
+
+    KPI totals (Total/Low/Out) must NOT be computed from this endpoint's
+    paginated response — see StockSummaryView below, same fix pattern as
+    HealthScoreSummaryView.
+
+    Note: this is a plain APIView, not generics.ListAPIView, so pagination
+    is hand-rolled below (matching HealthScoreListView's envelope) rather
+    than via `pagination_class` — that attribute only does something on
+    DRF's generic list views, so it's deliberately not set here.
+    """
+
     def get(self, request):
         last_sync = get_last_sync_date()
-        products  = Product.objects.filter(is_active=True).select_related('category', 'brand')
-        result    = []
+        products  = list(Product.objects.filter(is_active=True).select_related('category', 'brand'))
+
+        stock_by_product = {
+            row['product']: row['total'] or 0
+            for row in PurchaseBatch.objects.filter(
+                product_id__in=[p.id for p in products],
+                status='ACTIVE',
+            ).values('product').annotate(total=Sum('remaining_quantity'))
+        }
+
+        search = request.query_params.get('search', '').strip().lower()
+        status_filter = request.query_params.get('status', '').strip().upper()
+        if status_filter and status_filter not in ('AVAILABLE', 'LOW', 'OUT'):
+            return Response(
+                {'error': "status must be one of: AVAILABLE, LOW, OUT."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        result = []
 
         for product in products:
-            current_stock = PurchaseBatch.objects.filter(
-                product=product, status='ACTIVE'
-            ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
+            current_stock = stock_by_product.get(product.id, 0)
 
             reorder = product.reorder_threshold or 0
             if current_stock == 0:
@@ -74,6 +136,15 @@ class StockSnapshotView(APIView):
                 stock_status = 'LOW STOCK'
             else:
                 stock_status = 'AVAILABLE'
+
+            if search and search not in product.product_name.lower():
+                continue
+            if status_filter == 'AVAILABLE' and stock_status != 'AVAILABLE':
+                continue
+            if status_filter == 'LOW' and stock_status != 'LOW STOCK':
+                continue
+            if status_filter == 'OUT' and stock_status != 'OUT OF STOCK':
+                continue
 
             result.append({
                 'product_id'       : product.id,
@@ -88,12 +159,91 @@ class StockSnapshotView(APIView):
                 'last_sync_date'   : last_sync,
             })
 
+        try:
+            page = max(1, int(request.query_params.get('page', 1)))
+            page_size = min(100, max(1, int(request.query_params.get('page_size', 25))))
+        except (TypeError, ValueError):
+            return Response({'error': 'page and page_size must be integers.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        count = len(result)
+        total_pages = max(1, -(-count // page_size))  # ceiling division
+        start = (page - 1) * page_size
+        page_rows = result[start:start + page_size]
+
         return Response({
             'last_sync_date': last_sync,
             'note'          : 'Stock is snapshot-based.',
-            'count'         : len(result),
-            'stock'         : result
+            'results'       : page_rows,
+            'count'         : count,
+            'page'          : page,
+            'page_size'     : page_size,
+            'total_pages'   : total_pages,
         })
+
+
+class StockSummaryView(APIView):
+    """
+    GET /api/inventory/stock/summary/
+
+    Total/Low/Out/Available counts for the inventory.html KPI cards.
+    Paired with the pagination fix on StockSnapshotView above — those KPI
+    cards must read from here, not from counting a paginated results list,
+    or they'll silently show only the current page's counts instead of the
+    real totals. Same fix pattern as HealthScoreSummaryView.
+
+    Reuses the identical bulk-fetch (no N+1) that StockSnapshotView uses,
+    just returns counts instead of per-product rows.
+    """
+    def get(self, request):
+        products = list(Product.objects.filter(is_active=True))
+
+        stock_by_product = {
+            row['product']: row['total'] or 0
+            for row in PurchaseBatch.objects.filter(
+                product_id__in=[p.id for p in products],
+                status='ACTIVE',
+            ).values('product').annotate(total=Sum('remaining_quantity'))
+        }
+
+        total = low = out = available = 0
+        for product in products:
+            current_stock = stock_by_product.get(product.id, 0)
+            reorder = product.reorder_threshold or 0
+            total += 1
+            if current_stock == 0:
+                out += 1
+            elif current_stock <= reorder:
+                low += 1
+            else:
+                available += 1
+
+        return Response({
+            'total_products': total,
+            'low_stock'     : low,
+            'out_of_stock'  : out,
+            'available'     : available,
+        })
+
+
+class InventoryProductOptionsView(APIView):
+    """
+    GET /api/inventory/products/picker/
+
+    Lightweight {id, name} pairs for every active product — nothing else.
+    Feeds inventory.html's <datalist id="inventoryProductOptions">, shared
+    across the Stock Ledger and Manual Adjustment tabs' product-ID inputs.
+
+    Deliberately separate from StockSnapshotView: the datalist doesn't need
+    stock levels, categories, brands, or WAC — just enough to let someone
+    type a product name and get its ID. No PurchaseBatch query at all here,
+    so this stays cheap even at 2000+ products, and doesn't inherit
+    StockSnapshotView's pagination (a <datalist> needs the full option set
+    to be useful — paginating it would just move the problem, not solve it;
+    this endpoint solves it by making the per-row payload small instead).
+    """
+    def get(self, request):
+        products = Product.objects.filter(is_active=True).values('id', 'product_name').order_by('product_name')
+        return Response({'products': list(products)})
 
 
 STOCK_LEDGER_HISTORY_LIMIT = 100
@@ -382,7 +532,7 @@ def expiry_summary(request):
     Auth: Staff JWT required
     """
  
-    today = date.today()
+    today = datetime.now(LOCAL_TZ).date()
     d7    = today + timedelta(days=7)
     d14   = today + timedelta(days=14)
     d30   = today + timedelta(days=30)
@@ -455,7 +605,7 @@ class LowStockView(APIView):
     """
  
     def get(self, request):
-        today = date.today()
+        today = datetime.now(LOCAL_TZ).date()
         since = today - timedelta(days=SALES_LOOKBACK_DAYS)
  
         products = Product.objects.filter(is_active=True)
@@ -528,15 +678,27 @@ class LowStockView(APIView):
 
 
 class OutOfStockView(APIView):
+    """
+    GET /api/inventory/out-of-stock/
+
+    FIX (performance): same N+1 bug as StockSnapshotView above — one
+    PurchaseBatch aggregate query per product inside the loop. Same fix
+    applied: bulk-fetch stock for every product in one query first.
+    """
     def get(self, request):
-        products = Product.objects.filter(is_active=True)
-        out      = []
+        products = list(Product.objects.filter(is_active=True))
 
+        stock_by_product = {
+            row['product']: row['total'] or 0
+            for row in PurchaseBatch.objects.filter(
+                product_id__in=[p.id for p in products],
+                status='ACTIVE',
+            ).values('product').annotate(total=Sum('remaining_quantity'))
+        }
+
+        out = []
         for product in products:
-            current = PurchaseBatch.objects.filter(
-                product=product, status='ACTIVE'
-            ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
-
+            current = stock_by_product.get(product.id, 0)
             if current == 0:
                 out.append({
                     'product_id'  : product.id,
@@ -610,7 +772,7 @@ class LifecycleProductHistoryView(APIView):
                             status=status.HTTP_404_NOT_FOUND)
 
         date_from = request.query_params.get('date_from') or '2026-01-01'
-        date_to = request.query_params.get('date_to') or str(date.today())
+        date_to = request.query_params.get('date_to') or str(datetime.now(LOCAL_TZ).date())
         try:
             period_start = date.fromisoformat(date_from)
             period_end = date.fromisoformat(date_to)
@@ -762,7 +924,7 @@ class LossRecordView(APIView):
             loss_type     = loss_type,
             loss_quantity = quantity,
             loss_value    = loss_value,
-            loss_date     = date.today(),
+            loss_date     = datetime.now(LOCAL_TZ).date(),
             recorded_by   = request.user,
             notes         = notes,
         )
@@ -869,7 +1031,7 @@ class LossAutoDetectView(APIView):
     permission_classes = [IsManagerOrAdmin]
 
     def post(self, request):
-        today   = date.today()
+        today   = datetime.now(LOCAL_TZ).date()
         expired = PurchaseBatch.objects.filter(
             status='ACTIVE',
             expiry_date__lt=today,
@@ -995,7 +1157,7 @@ class SupplierReturnView(APIView):
             supplier          = supplier,
             batch             = batch,
             product           = product,
-            return_date       = date.today(),
+            return_date       = datetime.now(LOCAL_TZ).date(),
             quantity_returned = int(quantity_returned),
             return_value      = return_value,
             return_reason     = return_reason,
@@ -1241,7 +1403,7 @@ class SupplierReturnUploadView(APIView):
             bill_no, return_date, supplier_name, invoice_number = _parse_return_header(lines)
             if not bill_no or not supplier_name or not return_date:
                 raise ValueError('Could not extract a valid return bill number, date, and supplier from the PDF header.')
-            if return_date > date.today():
+            if return_date > datetime.now(LOCAL_TZ).date():
                 raise ValueError('Return date cannot be in the future.')
 
             start_index = next((i + 1 for i, line in enumerate(lines) if line.startswith('Item Description') or line.startswith('No Unit')), 0)
@@ -1459,12 +1621,31 @@ class HealthScoreListView(APIView):
     GET /api/health-scores/
     Returns the LATEST health score per product (one row per product,
     not one row per calculation run). Filter by ?status= and/or
-    ?product=<id>. Includes product_name and sku_code so callers don't
-    need a separate lookup per row.
+    ?product=<id>, and now ?search= (matches product name or SKU).
+    Includes product_name and sku_code so callers don't need a
+    separate lookup per row.
+
+    Paginated — was previously unpaginated, returning every product's
+    health score on every page load. Manual page/page_size handling
+    (matching AuditLogListView's envelope) since this is a plain
+    APIView, not generics.ListAPIView. See core.pagination for the
+    shared version used elsewhere; kept manual here only because this
+    view already builds a plain dict list via .values() rather than a
+    serializer, so the DRF pagination_class hook doesn't apply directly.
+
+    NOTE: the KPI summary counts on the health_score.html dashboard
+    (HEALTHY/WATCH/AT RISK/CRITICAL totals) previously came from
+    counting this endpoint's full result set client-side — that would
+    have broken silently once this endpoint stopped returning everything
+    at once. Fixed by wiring up the already-existing (but previously
+    unrouted) HealthScoreSummaryView at GET /api/health-scores/summary/
+    instead — see urls.py — which computes those counts with a proper
+    aggregate query, independent of pagination. The frontend was updated
+    to call that endpoint for the KPI cards instead of counting the list.
     """
  
     def get(self, request):
-        from django.db.models import OuterRef, Subquery
+        from django.db.models import OuterRef, Subquery, Q
  
         latest_ids = (
             InventoryHealthScore.objects
@@ -1478,13 +1659,19 @@ class HealthScoreListView(APIView):
  
         status_filter = request.query_params.get('status')
         product_filter = request.query_params.get('product')
+        search = request.query_params.get('search')
  
         if status_filter:
             queryset = queryset.filter(status=status_filter)
         if product_filter:
             queryset = queryset.filter(product_id=product_filter)
+        if search:
+            queryset = queryset.filter(
+                Q(product__product_name__icontains=search) |
+                Q(product__sku_code__icontains=search)
+            )
  
-        data = queryset.values(
+        queryset = queryset.values(
             'id', 'product', 'product__product_name', 'product__sku_code',
             'product__category__category_name',
             'velocity_score', 'margin_score',
@@ -1492,7 +1679,30 @@ class HealthScoreListView(APIView):
             'overall_score', 'status', 'recommended_action',
             'rating_sufficient', 'weighting_mode', 'calculated_date', 'calculated_at'
         )
-        return Response(list(data))
+
+        try:
+            page = max(1, int(request.query_params.get('page', 1)))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            page_size = int(request.query_params.get('page_size', 25))
+        except (TypeError, ValueError):
+            page_size = 25
+        page_size = max(1, min(page_size, 100))
+
+        total_count = queryset.count()
+        total_pages = max(1, -(-total_count // page_size))
+        page = min(page, total_pages)
+        start = (page - 1) * page_size
+        page_rows = list(queryset[start:start + page_size])
+
+        return Response({
+            'results': page_rows,
+            'count': total_count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': total_pages,
+        })
  
 
  
@@ -2103,15 +2313,27 @@ class ReorderCalculateView(APIView):
         created_or_updated = []
         notifications_created = 0
  
+        # Bulk-fetch every existing PENDING recommendation for the products
+        # in this run's results, up front — was previously one
+        # ReorderRecommendation.objects.filter(...).first() query PER
+        # result inside the loop below, on top of the N+1 already fixed
+        # in check_reorder_needs() itself. For a run with, say, 80
+        # products needing reorder, that's 80 fewer queries here.
+        result_product_ids = [r['product_id'] for r in results]
+        existing_by_product = {
+            rec.product_id: rec
+            for rec in ReorderRecommendation.objects.filter(
+                product_id__in=result_product_ids, status='PENDING'
+            )
+        }
+ 
         for r in results:
             touched_product_ids.add(r['product_id'])
  
             # Capture previous urgency BEFORE update_or_create overwrites it,
             # so we can detect a genuine escalation vs. a repeat of the same
             # urgency level.
-            existing = ReorderRecommendation.objects.filter(
-                product_id=r['product_id'], status='PENDING'
-            ).first()
+            existing = existing_by_product.get(r['product_id'])
             previous_urgency = existing.urgency if existing else None
  
             rec, was_created = ReorderRecommendation.objects.update_or_create(
@@ -2180,7 +2402,9 @@ class ReorderRecommendationListView(generics.ListAPIView):
     """
     GET /api/reorder/recommendations/
     Filter by ?urgency=CRITICAL/HIGH/MEDIUM/LOW and ?status=PENDING/ORDERED/IGNORED
+    Paginated — was previously unpaginated. See core.pagination.
     """
+    pagination_class = StandardResultsPagination
     serializer_class = ReorderRecommendationSerializer
  
     def get_queryset(self):

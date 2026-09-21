@@ -4,6 +4,8 @@ from . import views
 urlpatterns = [
     # ── Stock snapshot ───────────────────────────────────
     path('inventory/stock/', views.StockSnapshotView.as_view(), name='stock-snapshot'),
+    path('inventory/stock/summary/', views.StockSummaryView.as_view(), name='stock-summary'),
+    path('inventory/products/picker/', views.InventoryProductOptionsView.as_view(), name='inventory-product-picker'),
     path('inventory/stock/<int:product_id>/', views.ProductStockDetailView.as_view(), name='product-stock-detail'),
     path('inventory/stock/<int:product_id>/history/', views.ProductStockHistoryView.as_view(), name='inventory-stock-history'),
     path('stock/<int:product_id>/history/', views.ProductStockHistoryView.as_view(), name='stock-history'),
@@ -37,6 +39,7 @@ urlpatterns = [
 
     # ── F08 Inventory Health Score ────────────────────────
     path('health-scores/calculate/', views.HealthScoreCalculateView.as_view(), name='health-score-calculate'),
+    path('health-scores/summary/', views.HealthScoreSummaryView.as_view(), name='health-score-summary'),
     path('health-scores/categories/', views.CategoryHealthScoreView.as_view(), name='health-score-categories'),
     path('health-scores/critical/', views.HealthScoreCriticalView.as_view(), name='health-score-critical'),
     path('health-scores/history/<int:product_id>/', views.HealthScoreHistoryView.as_view(), name='health-score-history'),
@@ -68,5 +71,3 @@ urlpatterns = [
  
 
 ]
-
-

@@ -220,7 +220,9 @@ let allData = [];
 let currentFilter = 'ALL';
 let currentSearch = '';
 let hsPage = 1;
+let hsTotalPages = 1;
 const hsPageSize = 25;
+let hsSearchDebounceTimer = null;
 let criticalData = [];
 let criticalPage = 1;
 const criticalPageSize = 20;
@@ -269,25 +271,23 @@ function filterTable(filter, btn) {
     document.querySelectorAll('#filterButtons button').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
     hsPage = 1; // filter changed — back to page 1
-    renderTable();
+    fetchHealthScorePage();
 }
 
 function handleSearchInput() {
-    currentSearch = document.getElementById('productSearch').value.trim().toLowerCase();
-    hsPage = 1; // search changed — back to page 1
-    renderTable();
-}
-
-function matchesSearch(row, term) {
-    if (!term) return true;
-    const name = String(row.product__product_name ?? row.product_name ?? '').toLowerCase();
-    const sku = String(row.product__sku_code ?? row.sku_code ?? '').toLowerCase();
-    return name.includes(term) || sku.includes(term);
+    // Debounced — search is now server-side (see HealthScoreListView's
+    // new ?search= param), so this can't fire a request on every
+    // keystroke the way the old client-side filter could.
+    window.clearTimeout(hsSearchDebounceTimer);
+    hsSearchDebounceTimer = window.setTimeout(() => {
+        currentSearch = document.getElementById('productSearch').value.trim();
+        hsPage = 1; // search changed — back to page 1
+        fetchHealthScorePage();
+    }, 300);
 }
 
 function renderTable() {
-    let rows = currentFilter === 'ALL' ? allData : allData.filter(r => r.status === currentFilter);
-    rows = rows.filter(r => matchesSearch(r, currentSearch));
+    const rows = allData;
     const tbody = document.getElementById('hsBody');
     if (rows.length === 0) {
         const message = currentSearch
@@ -298,15 +298,10 @@ function renderTable() {
         return;
     }
 
-    // Pagination — same pattern used elsewhere (Stock Levels in
-    // inventory.html, Purchases, Batches, Reorder, Lifecycle, Loss
-    // Analysis, Discount Engine, Notifications): 25 rows/page, client-side
-    // slice, Previous / "Page X of Y" / Next.
-    const totalPages = Math.max(1, Math.ceil(rows.length / hsPageSize));
-    hsPage = Math.min(hsPage, totalPages);
-    const pageRows = rows.slice((hsPage - 1) * hsPageSize, hsPage * hsPageSize);
-
-    tbody.innerHTML = pageRows.map(r => `
+    // Pagination + filtering + search are now all server-side (see
+    // HealthScoreListView's ?status=/?search=/?page= params). This used
+    // to fetch every row once and filter/search/slice 25 at a time here.
+    tbody.innerHTML = rows.map(r => `
         <tr>
             <td style="font-weight:600">${r.product__product_name ?? r.product_name ?? '—'}</td>
             <td>${r.product__category__category_name ?? r.category ?? '—'}</td>
@@ -321,15 +316,15 @@ function renderTable() {
         </tr>
     `).join('');
 
-    document.getElementById('hsPagination').innerHTML = rows.length > hsPageSize ? `
+    document.getElementById('hsPagination').innerHTML = hsTotalPages > 1 ? `
         <button class="btn btn-sm btn-outline-secondary" onclick="changeHsPage(-1)" ${hsPage === 1 ? 'disabled' : ''}>Previous</button>
-        <span class="text-muted small">Page ${hsPage} of ${totalPages}</span>
-        <button class="btn btn-sm btn-outline-secondary" onclick="changeHsPage(1)" ${hsPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+        <span class="text-muted small">Page ${hsPage} of ${hsTotalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeHsPage(1)" ${hsPage === hsTotalPages ? 'disabled' : ''}>Next</button>` : '';
 }
 
 function changeHsPage(delta) {
     hsPage += delta;
-    renderTable();
+    fetchHealthScorePage(); // server-side pagination — re-fetch without resetting to page 1
 }
 
 // ── Product detail + history (per row "Details" button) ────────────────────
@@ -491,23 +486,42 @@ async function refreshCategories() {
     setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 900);
 }
 
-function updateSummaryCounts() {
-    const counts = {
-        HEALTHY: 0,
-        WATCH: 0,
-        'AT RISK': 0,
-        CRITICAL: 0,
-    };
+// KPI counts now come from GET /api/health-scores/summary/ — a proper
+// aggregate query on the backend (HealthScoreSummaryView, previously
+// built but never routed — see urls.py). Previously these counts were
+// computed by counting every row client-side, which only worked because
+// the full list was fetched unpaginated; now that the list is paginated,
+// counting the current page would have given silently wrong totals.
+async function updateSummaryCounts() {
+    try {
+        const data = await apiFetch('/api/health-scores/summary/');
+        const counts = data.summary ?? {};
+        document.getElementById('countHealthy').innerText = counts.HEALTHY ?? 0;
+        document.getElementById('countWatch').innerText = counts.WATCH ?? 0;
+        document.getElementById('countAtRisk').innerText = counts['AT RISK'] ?? 0;
+        document.getElementById('countCritical').innerText = counts.CRITICAL ?? 0;
+        return data;
+    } catch (e) {
+        // Leave whatever the KPI cards currently show rather than zeroing
+        // them out on a transient failure.
+        return null;
+    }
+}
 
-    allData.forEach(row => {
-        const status = row.status;
-        if (status in counts) counts[status] += 1;
-    });
+async function fetchHealthScorePage() {
+    const params = new URLSearchParams({ page: hsPage, page_size: hsPageSize });
+    if (currentFilter !== 'ALL') params.set('status', currentFilter);
+    if (currentSearch) params.set('search', currentSearch);
 
-    document.getElementById('countHealthy').innerText = counts.HEALTHY ?? 0;
-    document.getElementById('countWatch').innerText = counts.WATCH ?? 0;
-    document.getElementById('countAtRisk').innerText = counts['AT RISK'] ?? 0;
-    document.getElementById('countCritical').innerText = counts.CRITICAL ?? 0;
+    try {
+        const listData = await apiFetch(`/api/health-scores/?${params.toString()}`);
+        allData = Array.isArray(listData) ? listData : (listData.results ?? []);
+        hsTotalPages = Array.isArray(listData) ? 1 : (listData.total_pages ?? 1);
+        hsPage = Array.isArray(listData) ? hsPage : (listData.page ?? hsPage);
+        renderTable();
+    } catch (e) {
+        document.getElementById('hsBody').innerHTML = '<tr><td colspan="10" class="text-center text-muted">Could not load data.</td></tr>';
+    }
 }
 
 async function loadHealthScores() {
@@ -521,19 +535,21 @@ async function loadHealthScores() {
             setLastCalculatedLabel(null, true);
         }
 
-        const listData = await apiFetch('/api/health-scores/');
-        allData = Array.isArray(listData) ? listData : (listData.results ?? []);
+        hsPage = 1; // fresh load — back to page 1
+        const [, summaryData] = await Promise.all([
+            fetchHealthScorePage(),
+            updateSummaryCounts(),
+        ]);
 
-        updateSummaryCounts();
-
-        const latestRow = [...allData].sort((a, b) => new Date(b.calculated_at || b.calculated_date || 0) - new Date(a.calculated_at || a.calculated_date || 0))[0];
-        const latestStamp = latestRow?.calculated_at || latestRow?.calculated_date || null;
-        if (latestStamp) {
-            setLastCalculatedLabel(latestStamp, false);
+        // Fall back to the latest row's own timestamp only if neither the
+        // analytics summary above nor /api/health-scores/summary/ had one.
+        if (!summaryTimestamp && !summaryData?.last_calculated_at && allData.length) {
+            const latestRow = [...allData].sort((a, b) => new Date(b.calculated_at || b.calculated_date || 0) - new Date(a.calculated_at || a.calculated_date || 0))[0];
+            const latestStamp = latestRow?.calculated_at || latestRow?.calculated_date || null;
+            if (latestStamp) {
+                setLastCalculatedLabel(latestStamp, false);
+            }
         }
-
-        hsPage = 1; // fresh data — back to page 1
-        renderTable();
     } catch(e) {
         document.getElementById('hsBody').innerHTML = '<tr><td colspan="10" class="text-center text-muted">Could not load data.</td></tr>';
     }
