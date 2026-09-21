@@ -24,12 +24,12 @@ from purchases.models import PurchaseBatch
 
 from .models import Customer, OnlineOrder, OnlineOrderItem
 from .tokens import get_tokens_for_customer
-from .authentication import CustomerJWTAuthentication
+from .authentication import CustomerJWTAuthentication, LenientCustomerJWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from users.permissions import IsManagerOrAdmin
 from rest_framework_simplejwt.tokens import RefreshToken
 from .services.agent import AgentUnavailable, run_agent
-from .services.rate_limit import consume_chatbot_request
+from .services.rate_limit import consume_chatbot_request, get_client_ip
 
 class CustomerRegisterView(APIView):
 
@@ -760,9 +760,16 @@ class OrderDetailView(APIView):
 
 
 class ChatbotQueryView(APIView):
-    """Authenticated endpoint; identity is always derived from the JWT."""
-    authentication_classes = [LenientJWTAuthentication, CustomerJWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    """Public chatbot endpoint.
+
+    Anonymous website visitors may use the public read-only tools only.
+    Identity is still derived from the JWT when supplied: customer JWTs
+    get customer-scoped behaviour, staff JWTs get manager-gated tools,
+    and tool-level authorization in orders.services.agent remains the
+    security boundary regardless of endpoint visibility.
+    """
+    authentication_classes = [LenientJWTAuthentication, LenientCustomerJWTAuthentication]
+    permission_classes = [AllowAny]
 
     def post(self, request):
         message = str(request.data.get('message', '')).strip()
@@ -772,7 +779,7 @@ class ChatbotQueryView(APIView):
             return Response({'error': 'message must be 2000 characters or fewer'}, status=status.HTTP_400_BAD_REQUEST)
 
         actor = request.user
-        allowed, retry_after = consume_chatbot_request(actor)
+        allowed, retry_after = consume_chatbot_request(actor, request)
         if not allowed:
             message = "Chatbot request limit reached. Please wait a few minutes and try again."
             return Response(
@@ -782,9 +789,20 @@ class ChatbotQueryView(APIView):
             )
 
         customer = actor if isinstance(actor, Customer) else None
-        default_session = f"customer-{actor.pk}" if customer else f"staff-{actor.pk}"
+        anonymous = not getattr(actor, 'is_authenticated', False)
+        if customer:
+            default_session = f"customer-{actor.pk}"
+        elif not anonymous:
+            default_session = f"staff-{actor.pk}"
+        else:
+            default_session = f"anonymous-{get_client_ip(request)}"
         session_id = str(request.data.get('session_id') or default_session)[:50]
-        log_filter = {'session_id': session_id, 'customer': customer} if customer else {'session_id': session_id, 'staff_user': actor}
+        if customer:
+            log_filter = {'session_id': session_id, 'customer': customer}
+        elif not anonymous:
+            log_filter = {'session_id': session_id, 'staff_user': actor}
+        else:
+            log_filter = {'session_id': session_id, 'customer__isnull': True, 'staff_user__isnull': True}
         history = []
         for log in reversed(list(ChatbotLog.objects.filter(**log_filter).order_by('-created_at')[:6])):
             history.extend([{'role': 'user', 'content': log.user_message}, {'role': 'assistant', 'content': log.bot_response}])
@@ -797,7 +815,9 @@ class ChatbotQueryView(APIView):
             )
 
         ChatbotLog.objects.create(
-            customer=customer, staff_user=None if customer else actor, session_id=session_id,
+            customer=customer,
+            staff_user=None if customer or anonymous else actor,
+            session_id=session_id,
             user_message=message, bot_response=result['bot_response'], intent_detected='AGENT_QUERY',
             query_success=result['query_success'], tool_calls=result['tool_calls'],
         )

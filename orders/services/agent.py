@@ -6,6 +6,7 @@ tool which is not in ``TOOL_HANDLERS``.
 """
 
 import logging
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -43,6 +44,21 @@ never replace a list with "and more", and do not escape bullet or bold markers
 with backslashes. Do not include unrelated matches merely because their names
 contain a search word.
 
+Tool selection: price or product lookup → search_products/get_product_details/
+find_cheapest_product/compare_products. Current stock or availability →
+get_current_stock. Whether a requested quantity can be bought →
+check_purchase_quantity (it decides can_fulfill; never compute stock yourself).
+Expiring products → get_expiring_products. Which of two products sells more →
+compare_product_sales. Best-selling or most-sold products →
+get_best_selling_products; pass a "category" argument to rank only products in
+that category (e.g. "best selling cooking oils"). When several facts are
+needed, call every relevant
+tool before answering. Never say you lack access to sales, stock, price, or
+expiry information before calling the matching tool; only say information is
+unavailable after a tool returns no data or the product cannot be found, and
+then say exactly what was not found. Always quote the tool's numbers as given;
+never calculate, estimate, or invent figures yourself.
+
 You cannot place orders, add products to carts, or process checkouts. Include
 the following order notice only when the customer directly asks whether they
 can order, buy, check out, or place an order. Never include it in product
@@ -57,6 +73,26 @@ MANAGER_TOOLS = {
     "get_product_lifecycle", "get_health_score", "get_sales_summary",
     "get_slow_moving_products", "get_profit_margin",
 }
+
+# Explicit allowlist of tools that are safe for anonymous (not logged-in)
+# website visitors. Deny-by-default: any tool added in the future that is
+# NOT listed here will automatically be inaccessible to anonymous users,
+# even though the chatbot endpoint itself is public. Customer-specific
+# tools belong in neither set — they are then blocked for anonymous users
+# but still available to logged-in customers (and managers).
+PUBLIC_TOOLS = frozenset({
+    "search_products", "get_product_details", "find_cheapest_product",
+    "compare_products", "get_current_stock", "get_expiring_products",
+    "compare_product_sales", "get_best_selling_products", "check_purchase_quantity",
+})
+
+
+def is_anonymous(user):
+    """True when the caller has no authenticated identity at all.
+
+    Covers DRF's AnonymousUser and any None user passed programmatically.
+    """
+    return not getattr(user, "is_authenticated", False)
 
 
 def is_manager(user):
@@ -188,6 +224,226 @@ def get_expiring_products(arguments, user):
     ]}
 
 
+def _sales_period(arguments):
+    """Shared sales-window parsing — mirrors the analytics default of the
+    last 30 days (analytics.views._parse_date_range) so the chatbot never
+    invents a different definition of a sales period from the dashboard."""
+    end = date.fromisoformat(arguments["date_to"]) if arguments.get("date_to") else date.today()
+    start = date.fromisoformat(arguments["date_from"]) if arguments.get("date_from") else end - timedelta(days=30)
+    if start > end:
+        raise ValueError("date_from must be on or before date_to.")
+    return start, end
+
+
+# Matches a numeric size unit embedded in a product name or query, e.g.
+# "1kg", "500ml", "1 L", "2 lt".  Longer units are listed before their
+# prefixes so "1 lt" is captured as one size token ("1l") rather than an
+# "l" size plus a stray "t" word.
+_SIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(kg|ml|lt|ltr|litre|litres|g|l)\b", re.IGNORECASE)
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+# Generic, non-product filler words that carry no identifying signal on their
+# own, so natural phrases like "1kg of sugar" score only on "1kg" + "sugar".
+_STOPWORDS = {"of", "the", "a", "an", "and", "with", "for", "to", "in", "on", "pls", "please"}
+
+
+def _normalize_size_unit(unit):
+    return {"kg": "kg", "ml": "ml", "lt": "l", "ltr": "l",
+            "litre": "l", "litres": "l", "g": "g", "l": "l"}[unit.lower()]
+
+
+def _tokenize(text):
+    """Split *text* into normalized, comparable tokens.
+
+    Size expressions such as ``1kg`` / ``1 L`` are collapsed into a single
+    token (``1l``) so that a query "1kg" matches a product named "Fortune
+    Vegetable Oil 1kg".  Case is folded and generic stopwords are dropped so
+    natural phrases match on their distinguishing terms only.
+    """
+    if not text:
+        return []
+    text = text.lower()
+    tokens = [f"{m.group(1)}{_normalize_size_unit(m.group(2))}"
+              for m in _SIZE_RE.finditer(text)]
+    text = _SIZE_RE.sub(" ", text)
+    tokens.extend(w for w in _WORD_RE.findall(text) if w not in _STOPWORDS)
+    return tokens
+
+
+def _resolve_product(name):
+    """Resolve a single active product from a (possibly natural) name.
+
+    Matching is deterministic and never relies on database row order:
+
+      1. An exact case-insensitive match on the whole product name wins.
+      2. Otherwise every size-normalised, stopword-stripped token of the
+         query must be present as a token of the product name.  Among the
+         candidates the strongest signal wins — most matched tokens with the
+         fewest surplus (non-query) tokens, which surfaces the most specific
+         product first.
+      3. Two candidates tied on that signal are equally plausible; the
+         function returns ``None`` instead of silently picking an arbitrary
+         database row.
+    """
+    if not name:
+        return None
+    name = str(name).strip()
+    if not name:
+        return None
+    products = Product.objects.filter(is_active=True)
+
+    # 1. Exact match — highest priority.
+    exact = products.filter(product_name__iexact=name).first()
+    if exact:
+        return exact
+
+    # 2. Token-aware fallback.
+    query_tokens = _tokenize(name)
+    if not query_tokens:
+        return None
+
+    candidates = []
+    for product in products:
+        product_tokens = _tokenize(product.product_name)
+        if not product_tokens:
+            continue
+        # Every query token must be covered for the product to be a candidate.
+        if all(token in product_tokens for token in query_tokens):
+            matched = len(query_tokens)
+            surplus = len(product_tokens) - matched
+            # Stronger = more matched tokens, fewer surplus tokens.
+            candidates.append((product, (matched, -surplus)))
+
+    if not candidates:
+        return None
+    # Deterministic ranking; ties are ambiguous → refuse to guess.
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    if len(candidates) > 1 and candidates[1][1] == candidates[0][1]:
+        return None
+    return candidates[0][0]
+
+
+def _units_sold(product_id, start, end):
+    """Units sold in the period — the same Sum(quantity_sold) the
+    analytics dashboard uses for 'units sold'."""
+    return ItemSalesRecord.objects.filter(
+        product_id=product_id, sale_date__range=(start, end)
+    ).aggregate(units=Sum("quantity_sold"))["units"] or 0
+
+
+def compare_product_sales(arguments, user):
+    """Deterministic units-sold comparison between two products.
+
+    Uses ItemSalesRecord (the same source the analytics dashboard uses)
+    over the standard 30-day analysis period unless explicit dates are
+    given. Returns units only; the backend decides which product sells
+    more — Gemini only explains the structured result.
+    """
+    name_a = str(arguments.get("product_a") or "").strip()
+    name_b = str(arguments.get("product_b") or "").strip()
+    if not name_a or not name_b:
+        raise ValueError("Both product_a and product_b are required.")
+    start, end = _sales_period(arguments)
+    product_a = _resolve_product(name_a)
+    product_b = _resolve_product(name_b)
+    missing = [n for n, p in ((name_a, product_a), (name_b, product_b)) if p is None]
+    if missing:
+        return {"period": {"date_from": str(start), "date_to": str(end)},
+                "not_found": missing,
+                "message": "No matching active product was found for: " + ", ".join(missing) + "."}
+    units_a = _units_sold(product_a.id, start, end)
+    units_b = _units_sold(product_b.id, start, end)
+    if units_a > units_b:
+        better = product_a.product_name
+    elif units_b > units_a:
+        better = product_b.product_name
+    else:
+        better = None
+    return {
+        "period": {"date_from": str(start), "date_to": str(end)},
+        "product_a": {"name": product_a.product_name, "units_sold": units_a},
+        "product_b": {"name": product_b.product_name, "units_sold": units_b},
+        "better_selling": better,
+        "difference_units": abs(units_a - units_b),
+    }
+
+
+def get_best_selling_products(arguments, user):
+    """Top products ranked by units sold over the standard sales period.
+
+    Units are customer-safe; revenue is included only for managers so
+    sensitive business analytics stay behind the existing role policy.
+
+    An optional ``category`` constraint narrows the ranking to products in
+    the matching Category (filtered through the real Category relationship,
+    not a name substring hack on products).  When it is omitted the existing
+    all-products behaviour is preserved.
+    """
+    start, end = _sales_period(arguments)
+    try:
+        limit = int(arguments.get("limit") or 5)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be a whole number.")
+    limit = max(1, min(limit, 10))
+    category = (arguments.get("category") or "").strip()
+
+    sale_filter = Q(sale_date__range=(start, end))
+    if category:
+        # Filter through the actual Category relationship so only products in
+        # that category are aggregated/ranked; products with category=NULL are
+        # naturally excluded by the inner join.
+        sale_filter &= Q(product__category__category_name__icontains=category)
+
+    rows = (ItemSalesRecord.objects.filter(sale_filter)
+            .values("product_id")
+            .annotate(units=Sum("quantity_sold"), revenue=Sum("total_amount"))
+            .order_by("-units", "product_id")[:limit])
+    product_map = {p.id: p for p in Product.objects.filter(
+        id__in=[row["product_id"] for row in rows]).select_related("brand", "category")}
+    include_revenue = is_manager(user)
+    products = []
+    for row in rows:
+        product = product_map.get(row["product_id"])
+        if not product:
+            continue
+        entry = {"product_name": product.product_name, "units_sold": row["units"]}
+        if include_revenue:
+            entry["revenue"] = _number(row["revenue"] or 0)
+        products.append(entry)
+    return {"period": {"date_from": str(start), "date_to": str(end)}, "products": products}
+
+
+def check_purchase_quantity(arguments, user):
+    """Purchase feasibility check against real sellable stock.
+
+    Uses inventory.services.stock.get_available_stock() — the single
+    authoritative stock implementation — and decides can_fulfill in the
+    backend. Read-only: no order is created and no stock is reserved.
+
+    Product resolution goes through _resolve_product() so a natural-language
+    request (e.g. "Milk Budget" or "1kg Fortune Vegetable Oil") resolves to
+    the right product rather than the first database row.
+    """
+    product = _resolve_product(str(arguments.get("product_name") or "").strip())
+    if not product:
+        return {"product": None, "message": "No matching active product was found."}
+    try:
+        requested = int(arguments.get("quantity"))
+    except (TypeError, ValueError):
+        raise ValueError("quantity must be a whole number of units.")
+    if requested <= 0:
+        raise ValueError("quantity must be a positive whole number.")
+    available = get_available_stock(product.id)
+    return {
+        "product": product.product_name,
+        "requested_quantity": requested,
+        "available_quantity": available,
+        "can_fulfill": available >= requested,
+        "shortfall": max(0, requested - available),
+        "remaining": max(0, available - requested),
+    }
+
+
 def get_low_stock_products(arguments, user):
     from inventory.views import LowStockView
     # Keep the existing deterministic view logic as the source of truth.
@@ -258,6 +514,8 @@ TOOL_HANDLERS = {
     "search_products": search_products, "get_product_details": get_product_details,
     "find_cheapest_product": find_cheapest_product, "compare_products": compare_products,
     "get_current_stock": get_current_stock_tool, "get_expiring_products": get_expiring_products,
+    "compare_product_sales": compare_product_sales, "get_best_selling_products": get_best_selling_products,
+    "check_purchase_quantity": check_purchase_quantity,
     "get_low_stock_products": get_low_stock_products,
     "get_reorder_recommendations": get_reorder_recommendations, "get_product_lifecycle": get_product_lifecycle,
     "get_health_score": get_health_score, "get_sales_summary": get_sales_summary,
@@ -277,6 +535,9 @@ TOOLS = [
     _tool("compare_products", "Compare named products using current database data.", {"product_names": {"type": "array", "items": {"type": "string"}}}, ("product_names",)),
     _tool("get_current_stock", "Get current product availability; exact stock is manager-only.", {"product_name": {"type": "string"}}, ("product_name",)),
     _tool("get_expiring_products", "List active products with in-stock batches expiring within a number of days (default 30, max 90).", {"product_name": {"type": "string"}, "days": {"type": "integer"}}),
+    _tool("compare_product_sales", "Compare units sold for two named products over the standard sales period (last 30 days unless dates given).", {"product_a": {"type": "string"}, "product_b": {"type": "string"}, "date_from": {"type": "string"}, "date_to": {"type": "string"}}, ("product_a", "product_b")),
+    _tool("get_best_selling_products", "List the best-selling products by units sold over the standard sales period (last 30 days unless dates given). Pass an optional category name to rank only products in that category.", {"limit": {"type": "integer"}, "category": {"type": "string"}, "date_from": {"type": "string"}, "date_to": {"type": "string"}}),
+    _tool("check_purchase_quantity", "Check whether a requested quantity of a product can be fulfilled from current sellable stock; read-only, does not place an order.", {"product_name": {"type": "string"}, "quantity": {"type": "integer"}}, ("product_name", "quantity")),
     *[_tool(name, description, props) for name, description, props in [
         ("get_low_stock_products", "List products below their configured reorder threshold.", {}),
         ("get_reorder_recommendations", "Run the existing deterministic reorder recommendation service.", {}),
@@ -312,6 +573,10 @@ def execute_tool(name, arguments, user):
         return {"error": "Unknown tool requested."}, "rejected"
     if name in MANAGER_TOOLS and not is_manager(user):
         return {"error": "This information is available only to managers and administrators."}, "forbidden"
+    if is_anonymous(user) and name not in PUBLIC_TOOLS:
+        # Deny-by-default for anonymous visitors: only explicitly public
+        # tools are reachable without any authenticated identity.
+        return {"error": "This information requires you to be logged in."}, "forbidden"
     try:
         return TOOL_HANDLERS[name](arguments, user), "completed"
     except (ValueError, TypeError) as exc:
@@ -329,7 +594,13 @@ def run_agent(message, user, history=None):
         raise AgentUnavailable(str(exc)) from exc
 
     contents = provider.make_contents(history, message)
-    available_tools = TOOLS if is_manager(user) else [tool for tool in TOOLS if tool["name"] not in MANAGER_TOOLS]
+    if is_manager(user):
+        available_tools = TOOLS
+    elif is_anonymous(user):
+        # Anonymous visitors are offered only the explicitly public tools.
+        available_tools = [tool for tool in TOOLS if tool["name"] in PUBLIC_TOOLS]
+    else:
+        available_tools = [tool for tool in TOOLS if tool["name"] not in MANAGER_TOOLS]
     tool_events = []
     try:
         for _ in range(4):

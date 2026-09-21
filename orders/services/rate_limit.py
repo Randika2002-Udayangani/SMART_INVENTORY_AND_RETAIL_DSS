@@ -9,12 +9,33 @@ from django.utils import timezone
 from orders.models import ChatbotRateLimit, Customer
 
 
-def _actor_key(user):
-    prefix = "customer" if isinstance(user, Customer) else "staff"
-    return f"{prefix}:{user.pk}"
+def get_client_ip(request=None):
+    """Best-effort client IP for anonymous rate limiting."""
+    if request is None:
+        return "unknown"
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded:
+        ip = forwarded.split(",")[0].strip()
+    else:
+        ip = request.META.get("REMOTE_ADDR", "unknown")
+    return ip or "unknown"
 
 
-def consume_chatbot_request(user):
+def _actor_key(user, request=None):
+    """Rate-limit bucket key.
+
+    Authenticated customers and staff are keyed by primary key. Anonymous
+    visitors have no identity, so they are keyed by client IP address —
+    they cannot bypass the limiter simply because they are not logged in.
+    """
+    if isinstance(user, Customer):
+        return f"customer:{user.pk}"
+    if getattr(user, "is_authenticated", False) and getattr(user, "pk", None) is not None:
+        return f"staff:{user.pk}"
+    return f"anonymous:{get_client_ip(request)}"
+
+
+def consume_chatbot_request(user, request=None):
     """Consume one request if within the configured fixed time window.
 
     Returns (allowed, retry_after_seconds). Row locking means this remains
@@ -23,7 +44,7 @@ def consume_chatbot_request(user):
     limit = max(1, int(settings.CHATBOT_RATE_LIMIT))
     window_seconds = max(1, int(settings.CHATBOT_RATE_WINDOW_SECONDS))
     now = timezone.now()
-    actor_key = _actor_key(user)
+    actor_key = _actor_key(user, request)
 
     with transaction.atomic():
         try:

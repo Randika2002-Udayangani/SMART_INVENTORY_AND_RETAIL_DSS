@@ -372,14 +372,15 @@
         showTyping();
 
         const token = sessionStorage.getItem('jwt');
+        // Anonymous visitors have no JWT — only attach the header when a
+        // real token exists so the request is never sent as 'Bearer null'.
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
 
         try {
             const res = await fetch('/api/chatbot/query/', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + token
-                },
+                headers: headers,
                 body: JSON.stringify({ message: text })
             });
 
