@@ -227,7 +227,15 @@ let supplierLookup = {};
 
 async function loadSuppliersForAutocomplete() {
     try {
-        const data = await apiFetch('/api/suppliers/');
+        // /api/suppliers/ is now paginated (see core.pagination) — this
+        // datalist needs every supplier for the New Purchase form's
+        // autocomplete, not one page of 25. page_size=100 is the max
+        // the backend allows; fine for a single supermarket's supplier
+        // count, but if the supplier list ever grows past 100 this will
+        // silently start truncating the same way the un-fixed version
+        // of this bug did — worth revisiting with real pagination/search
+        // in this dropdown if that happens.
+        const data = await apiFetch('/api/suppliers/?page_size=100');
         const suppliers = extractArray(data);
         const datalist = document.getElementById('supplierOptions');
         datalist.innerHTML = '';
@@ -307,13 +315,26 @@ function extractArray(data) {
 let allPurchases = [];
 let purchaseSearchTerm = '';
 let purchasesPage = 1;
+let purchasesTotalPages = 1;
 const purchasesPageSize = 25;
+let purchaseSearchTimer = null;
 
 
+// Pagination + search are now server-side (see PurchaseListCreateView /
+// core.pagination). Previously loadPurchases() fetched every purchase
+// (with every batch nested inside each one) once, then the search box
+// filtered the in-memory list by invoice_number and pagination sliced
+// 25 rows at a time client-side. Both moved server-side, same pattern
+// as suppliers.html.
 async function loadPurchases() {
+    const params = new URLSearchParams({ page: purchasesPage, page_size: purchasesPageSize });
+    if (purchaseSearchTerm) params.set('search', purchaseSearchTerm);
+
     try {
-        const data = await apiFetch('/api/purchases/');
+        const data = await apiFetch(`/api/purchases/?${params.toString()}`);
         allPurchases = extractArray(data);
+        purchasesTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
+        purchasesPage = Array.isArray(data) ? purchasesPage : (data.page ?? purchasesPage);
         renderPurchasesTable();
     } catch(e) {
         document.getElementById('purchasesBody').innerHTML = '<tr><td colspan="5" class="text-center text-muted">Could not load purchases.</td></tr>';
@@ -321,15 +342,17 @@ async function loadPurchases() {
 }
 
 function handlePurchaseSearch() {
-    purchaseSearchTerm = document.getElementById('purchaseSearch').value.trim().toLowerCase();
-    purchasesPage = 1; // new search — back to page 1
-    renderPurchasesTable();
+    // Debounced — avoids firing a request on every keystroke.
+    window.clearTimeout(purchaseSearchTimer);
+    purchaseSearchTimer = window.setTimeout(() => {
+        purchaseSearchTerm = document.getElementById('purchaseSearch').value.trim();
+        purchasesPage = 1; // new search — back to page 1
+        loadPurchases();
+    }, 300);
 }
 
 function renderPurchasesTable() {
-    const rows = purchaseSearchTerm
-        ? allPurchases.filter(p => String(p.invoice_number ?? '').toLowerCase().includes(purchaseSearchTerm))
-        : allPurchases;
+    const rows = allPurchases;
     const tbody = document.getElementById('purchasesBody');
     if (rows.length === 0) {
         const message = purchaseSearchTerm
@@ -340,12 +363,7 @@ function renderPurchasesTable() {
         return;
     }
 
-    // Pagination: same pattern as Stock Levels (inventory.html) — 25 rows/page.
-    const totalPages = Math.max(1, Math.ceil(rows.length / purchasesPageSize));
-    purchasesPage = Math.min(purchasesPage, totalPages);
-    const pageRows = rows.slice((purchasesPage - 1) * purchasesPageSize, purchasesPage * purchasesPageSize);
-
-    tbody.innerHTML = pageRows.map(p => `
+    tbody.innerHTML = rows.map(p => `
         <tr>
             <td><a href="/dashboard/purchases/detail/${p.id}/">${p.invoice_number ?? '—'}</a></td>
             <td>${p.supplier_name ?? (typeof p.supplier === 'object' ? p.supplier?.name : p.supplier) ?? '—'}</td>
@@ -355,15 +373,15 @@ function renderPurchasesTable() {
         </tr>
     `).join('');
 
-    document.getElementById('purchasesPagination').innerHTML = rows.length > purchasesPageSize ? `
+    document.getElementById('purchasesPagination').innerHTML = purchasesTotalPages > 1 ? `
         <button class="btn btn-sm btn-outline-secondary" onclick="changePurchasesPage(-1)" ${purchasesPage === 1 ? 'disabled' : ''}>Previous</button>
-        <span class="text-muted small">Page ${purchasesPage} of ${totalPages}</span>
-        <button class="btn btn-sm btn-outline-secondary" onclick="changePurchasesPage(1)" ${purchasesPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+        <span class="text-muted small">Page ${purchasesPage} of ${purchasesTotalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changePurchasesPage(1)" ${purchasesPage === purchasesTotalPages ? 'disabled' : ''}>Next</button>` : '';
 }
 
 function changePurchasesPage(delta) {
     purchasesPage += delta;
-    renderPurchasesTable();
+    loadPurchases(); // server-side pagination — re-fetch the requested page
 }
 
 function batchStatusBadge(s) {
@@ -373,17 +391,32 @@ function batchStatusBadge(s) {
 
 let allBatches = [];
 let batchesPage = 1;
+let batchesTotalPages = 1;
 const batchesPageSize = 25;
 
+// Pagination is now server-side (see BatchListView / core.pagination).
+// The status filter was already sent as a query param before; only the
+// pagination itself moves from client-side slicing to server-side pages.
 async function loadBatches() {
+    // Called by the status filter dropdown, opening the Batches tab, and
+    // the post-bulk-action refresh — all of these are a fresh view, so
+    // reset to page 1 (matches the original behaviour, which always
+    // reset on every load). Previous/Next uses fetchBatchesPage()
+    // directly below instead, so paging doesn't get reset mid-browse.
+    batchesPage = 1;
+    await fetchBatchesPage();
+}
+
+async function fetchBatchesPage() {
     const status = document.getElementById('batchStatusFilter').value;
-    let url = '/api/batches/?';
-    if (status) url += `status=${status}`;
+    const params = new URLSearchParams({ page: batchesPage, page_size: batchesPageSize });
+    if (status) params.set('status', status);
 
     try {
-        const data = await apiFetch(url);
+        const data = await apiFetch(`/api/batches/?${params.toString()}`);
         allBatches = extractArray(data);
-        batchesPage = 1; // fresh data (filter changed / reload) — back to page 1
+        batchesTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
+        batchesPage = Array.isArray(data) ? batchesPage : (data.page ?? batchesPage);
         renderBatches();
     } catch(e) {
         document.getElementById('batchesBody').innerHTML = '<tr><td colspan="9" class="text-center text-muted">Could not load batches.</td></tr>';
@@ -405,12 +438,7 @@ function renderBatches() {
         return;
     }
 
-    // Pagination: same pattern as Stock Levels (inventory.html) — 25 rows/page.
-    const totalPages = Math.max(1, Math.ceil(rows.length / batchesPageSize));
-    batchesPage = Math.min(batchesPage, totalPages);
-    const pageRows = rows.slice((batchesPage - 1) * batchesPageSize, batchesPage * batchesPageSize);
-
-    tbody.innerHTML = pageRows.map(b => {
+    tbody.innerHTML = rows.map(b => {
         const isPending = b.status === 'PENDING_EXPIRY';
         const expiryCell = isPending
             ? `<input type="date" id="expiryInput_${b.id}" class="form-control form-control-sm" style="min-width:150px;">`
@@ -437,10 +465,10 @@ function renderBatches() {
         </tr>`;
     }).join('');
 
-    document.getElementById('batchesPagination').innerHTML = rows.length > batchesPageSize ? `
+    document.getElementById('batchesPagination').innerHTML = batchesTotalPages > 1 ? `
         <button class="btn btn-sm btn-outline-secondary" onclick="changeBatchesPage(-1)" ${batchesPage === 1 ? 'disabled' : ''}>Previous</button>
-        <span class="text-muted small">Page ${batchesPage} of ${totalPages}</span>
-        <button class="btn btn-sm btn-outline-secondary" onclick="changeBatchesPage(1)" ${batchesPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+        <span class="text-muted small">Page ${batchesPage} of ${batchesTotalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeBatchesPage(1)" ${batchesPage === batchesTotalPages ? 'disabled' : ''}>Next</button>` : '';
 
     // "Select all" checkbox reflects only the rows on the current page.
     const selectAll = document.getElementById('selectAllBatches');
@@ -449,7 +477,7 @@ function renderBatches() {
 
 function changeBatchesPage(delta) {
     batchesPage += delta;
-    renderBatches();
+    fetchBatchesPage(); // server-side pagination — re-fetch without resetting to page 1
 }
 
 // Selects/deselects every PENDING_EXPIRY checkbox currently visible on this
@@ -664,6 +692,7 @@ async function submitPurchase() {
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
             msgBox.innerHTML = '<div class="alert alert-success py-2">Purchase recorded successfully.</div>';
+            purchasesPage = 1; // new purchase — jump to page 1 (list is newest-first) so it's visible
             loadPurchases();
         } else {
             msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${escapeHtmlPurchase(JSON.stringify(data))}</div>`;
@@ -697,6 +726,7 @@ async function uploadInvoicePdf() {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || data.detail || 'Upload failed');
         msgBox.innerHTML = `<div class="alert alert-success py-2">Invoice uploaded. ${escapeHtmlPurchase(data.message || '')}</div>`;
+        purchasesPage = 1; // new purchase — jump to page 1 (list is newest-first) so it's visible
         loadPurchases();
     } catch (e) {
         msgBox.innerHTML = `<div class="alert alert-danger py-2">${escapeHtmlPurchase(e.message)}</div>`;

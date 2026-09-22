@@ -419,14 +419,21 @@ async function loadBrandsForProductForm() {
 
 let allProducts = [];
 let prodPage = 1;
+let prodTotalPages = 1;
 const prodPageSize = 25;
 
+// Pagination is now server-side (see ProductListCreateView / core.pagination).
+// Search/category filtering here is triggered by the explicit "Search"
+// button (not live-as-you-type), so no debounce is needed — the button
+// click and the category dropdown's own trigger just call loadProducts()
+// directly, same as before.
 async function loadProducts() {
     const search = document.getElementById('prodSearch').value;
     const category = document.getElementById('prodCategory').value;
-    let url = '/api/products/?';
-    if (search) url += `search=${encodeURIComponent(search)}&`;
-    if (category) url += `category=${category}`;
+    const params = new URLSearchParams({ page: prodPage, page_size: prodPageSize });
+    if (search) params.set('search', search);
+    if (category) params.set('category', category);
+    const url = `/api/products/?${params.toString()}`;
 
     document.getElementById('prodBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>';
 
@@ -434,7 +441,8 @@ async function loadProducts() {
         const res = await request(url);
         const data = await res.json();
         allProducts = extractArray(data);
-        prodPage = 1; // fresh data (new search/filter/reload) — back to page 1
+        prodTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
+        prodPage = Array.isArray(data) ? prodPage : (data.page ?? prodPage);
         renderProducts();
         if (editProductId) {
             const productToEdit = allProducts.find(product => String(product.id) === String(editProductId));
@@ -458,11 +466,7 @@ function renderProducts() {
         return;
     }
 
-    const totalPages = Math.max(1, Math.ceil(rows.length / prodPageSize));
-    prodPage = Math.min(prodPage, totalPages);
-    const pageRows = rows.slice((prodPage - 1) * prodPageSize, prodPage * prodPageSize);
-
-    tbody.innerHTML = pageRows.map(p => `
+    tbody.innerHTML = rows.map(p => `
         <tr>
             <td style="font-weight:600">${escapeHtml(p.product_name ?? '—')}</td>
             <td>${escapeHtml(p.category_name ?? '—')}</td>
@@ -479,15 +483,15 @@ function renderProducts() {
         </tr>
     `).join('');
 
-    document.getElementById('prodPagination').innerHTML = rows.length > prodPageSize ? `
+    document.getElementById('prodPagination').innerHTML = prodTotalPages > 1 ? `
         <button class="btn btn-sm btn-outline-secondary" onclick="changeProdPage(-1)" ${prodPage === 1 ? 'disabled' : ''}>Previous</button>
-        <span class="text-muted small">Page ${prodPage} of ${totalPages}</span>
-        <button class="btn btn-sm btn-outline-secondary" onclick="changeProdPage(1)" ${prodPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+        <span class="text-muted small">Page ${prodPage} of ${prodTotalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeProdPage(1)" ${prodPage === prodTotalPages ? 'disabled' : ''}>Next</button>` : '';
 }
 
 function changeProdPage(delta) {
     prodPage += delta;
-    renderProducts();
+    loadProducts(); // server-side pagination — re-fetch the requested page
 }
 
 async function reclassify() {
