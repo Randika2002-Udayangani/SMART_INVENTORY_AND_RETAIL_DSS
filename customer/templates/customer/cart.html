@@ -21,7 +21,18 @@
 
         .page { padding: 24px; max-width: 700px; margin: 0 auto; }
 
-        .page-title { font-size: 1.3rem; font-weight: 700; margin-bottom: 20px; color: #222; }
+        .page-title {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 1.3rem; font-weight: 700; margin-bottom: 20px; color: #222;
+        }
+        .clear-cart-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 12px; border: 1px solid #c5221f; border-radius: 8px;
+            background: white; color: #c5221f; cursor: pointer;
+            font-size: 0.82rem; font-weight: 600;
+        }
+        .clear-cart-btn:hover { background: #fce8e6; }
+        .clear-cart-btn:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
 
         /* ── Cart items ── */
         .cart-item {
@@ -177,7 +188,13 @@
 </nav>
 
 <div class="page">
-    <div class="page-title">🛒 My Cart</div>
+    <div class="page-title">
+        <span>🛒 My Cart</span>
+        <button type="button" class="clear-cart-btn" id="clearCartBtn"
+                onclick="clearCart()" style="display:none;">
+            🗑️ Clear Cart
+        </button>
+    </div>
 
     <!-- Success Screen -->
     <div class="success-screen" id="successScreen">
@@ -208,6 +225,23 @@
             badge.textContent = total;
             badge.style.display = total > 0 ? 'inline' : 'none';
         }
+    }
+
+    function updateClearCartButton(cart) {
+        const button = document.getElementById('clearCartBtn');
+        if (button) button.style.display = cart.length > 0 ? 'inline-flex' : 'none';
+    }
+
+    function clearCart() {
+        const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        if (cart.length === 0) return;
+
+        if (!confirm('Are you sure you want to remove all items from your cart?')) return;
+
+        sessionStorage.removeItem('cart');
+        updateCartBadge();
+        renderCart();
+        showNotification('Cart cleared');
     }
 
     // ── Build nav bar ────────────────────────────────────────────
@@ -259,6 +293,7 @@
     // ── Render cart ──────────────────────────────────────────────
     function renderCart() {
         const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        updateClearCartButton(cart);
         console.log('Cart data:', cart);          
         console.log('Cart length:', cart.length); 
         const content = document.getElementById('cartContent');

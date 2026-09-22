@@ -31,11 +31,22 @@
         }
         .search-wrapper { flex: 1; position: relative; }
         .search-wrapper input {
-            width: 100%; padding: 10px 16px;
+            width: 100%; padding: 10px 44px 10px 16px;
             border: 1.5px solid #ddd; border-radius: 8px;
             font-size: 1rem; outline: none;
         }
         .search-wrapper input:focus { border-color: #1a73e8; }
+        .clear-search-btn {
+            position: absolute; top: 50%; right: 12px;
+            transform: translateY(-50%);
+            display: none; align-items: center; justify-content: center;
+            width: 24px; height: 24px; padding: 0;
+            border: 0; border-radius: 50%;
+            background: #e5e7eb; color: #4b5563;
+            cursor: pointer; font-size: 1.1rem; line-height: 1;
+        }
+        .clear-search-btn:hover { background: #d1d5db; color: #111827; }
+        .clear-search-btn:focus-visible { outline: 2px solid #1a73e8; outline-offset: 2px; }
         .suggestions-dropdown {
             position: absolute; top: 100%; left: 0; right: 0;
             background: white; border: 1.5px solid #1a73e8;
@@ -131,14 +142,16 @@
             font-weight: 700; color: #222; font-size: 0.92rem;
             margin-bottom: 8px; line-height: 1.3;
         }
-        .near-expiry-tag {
-            display: inline-block; margin-bottom: 8px; padding: 4px 8px;
-            border-radius: 999px; background: #fff3cd; color: #856404;
-            font-size: 0.72rem; font-weight: 700;
-        }
         .product-card .pprice {
             color: #1a73e8; font-weight: 700; font-size: 1rem;
             margin-bottom: 10px;
+        }
+        .product-card .original-price {
+            color: #999; text-decoration: line-through; font-size: 0.8rem;
+            margin-right: 5px;
+        }
+        .product-card .discount-badge {
+            color: #1e7e34; font-size: 0.75rem; font-weight: 700;
         }
         .product-card .add-btn {
             width: 100%; padding: 8px; background: #1a73e8;
@@ -243,6 +256,10 @@
                autocomplete="off"
                oninput="showSuggestions(this.value)"
                onkeydown="handleSearchKey(event)">
+        <button type="button" class="clear-search-btn" id="clearSearchBtn"
+                aria-label="Clear search" title="Clear search" onclick="clearSearch()">
+            &times;
+        </button>
         <div class="suggestions-dropdown" id="suggestionsDropdown"></div>
     </div>
     <button onclick="searchProducts()">Search</button>
@@ -383,25 +400,59 @@
             : `Welcome to <strong>Samanala Super Mart!</strong>`;
     }
 
+    function getProductPrice(product) {
+        const discounted = parseFloat(product.discounted_price);
+        return Number.isFinite(discounted) && discounted < parseFloat(product.unit_price)
+            ? discounted
+            : parseFloat(product.unit_price);
+    }
+
+    function renderProductPrice(product) {
+        const original = parseFloat(product.unit_price);
+        const discounted = getProductPrice(product);
+        if (discounted < original) {
+            const percentage = product.discount_percentage ??
+                Math.round((1 - discounted / original) * 100);
+            return `<span class="original-price">Rs ${original.toFixed(2)}</span>
+                    Rs ${discounted.toFixed(2)}
+                    <span class="discount-badge">${percentage}% OFF</span>`;
+        }
+        return `Rs ${original.toFixed(2)}`;
+    }
+
     // ── Load all products ────────────────────────────────────────
     async function loadAllProducts() {
         try {
-            allProducts = [];
-            let page = 1;
-            let totalCount = null;
+            // Fetch products and discounts in parallel
+            const [productsRes, discountsRes] = await Promise.all([
+                fetch('/api/products/'),
+                fetch('/api/discounts/recommendations/?status=PENDING', {
+                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                })
+            ]);
 
-            do {
-                const res = await fetch(`/api/products/?page=${page}&page_size=100`);
-                if (!res.ok) throw new Error(`Products request failed: ${res.status}`);
+            const data     = await productsRes.json();
+            allProducts    = Array.isArray(data) ? data : (data.results || []);
 
-                const data = await res.json();
-                const pageProducts = Array.isArray(data) ? data : (data.results || []);
-                allProducts.push(...pageProducts);
-                totalCount = Array.isArray(data) ? allProducts.length : data.count;
-                page += 1;
+            // Build discount map keyed by product_id
+            let discountMap = {};
+            if (discountsRes.ok) {
+                const discData   = await discountsRes.json();
+                const discounts  = Array.isArray(discData) ? discData : (discData.results || []);
+                discounts.forEach(d => {
+                    discountMap[d.product] = {
+                        pct:   parseFloat(d.recommended_discount_pct).toFixed(0),
+                        price: parseFloat(d.recommended_price).toFixed(2)
+                    };
+                });
+                console.log('Discounts loaded:', discountMap);
+            }
 
-                if (Array.isArray(data) || !pageProducts.length) break;
-            } while (allProducts.length < totalCount);
+            // Add discount info to products
+            allProducts = allProducts.map(p => ({
+                ...p,
+                discount: discountMap[p.id] || null
+            }));
 
             // Group by category
             grouped = {};
@@ -414,12 +465,24 @@
             showCategories();
         } catch (err) {
             console.error('Load error:', err);
-            document.getElementById('mainContent').innerHTML = `
-                <div class="state-box">
-                    <div class="icon">⚠️</div>
-                    <p>Could not load products. Please try again.</p>
-                </div>`;
         }
+    }
+
+    function renderProductPrice(p) {
+        if (p.discount) {
+            return `
+                <span style="text-decoration:line-through;color:#aaa;font-size:0.82rem;">
+                    Rs ${parseFloat(p.unit_price).toFixed(2)}
+                </span>
+                <span style="color:#c5221f;font-weight:700;font-size:1rem;margin-left:4px;">
+                    Rs ${p.discount.price}
+                </span>`;
+        }
+        return `Rs ${parseFloat(p.unit_price).toFixed(2)}`;
+    }
+
+    function getProductPrice(p) {
+        return p.discount ? p.discount.price : parseFloat(p.unit_price);
     }
 
     // ── Show category boxes ──────────────────────────────────────
@@ -481,11 +544,18 @@
             <div class="product-grid">
                 ${pageProds.map(p => `
                     <div class="product-card" onclick="openProductModal(${p.id})">
-                        
+                        ${p.discount ? `
+                            <div style="margin-bottom:6px;">
+                                <span style="background:#fce8e6;color:#c5221f;
+                                    font-size:0.72rem;padding:3px 8px;
+                                    border-radius:12px;font-weight:700;">
+                                    🏷️ ${p.discount.pct}% OFF
+                                </span>
+                            </div>` : ''}
                         <div class="pname">${p.product_name}</div>
-                        <div class="pprice">Rs ${parseFloat(p.unit_price).toFixed(2)}</div>
+                        <div class="pprice">${renderProductPrice(p)}</div>
                         <button class="add-btn"
-                            onclick="event.stopPropagation(); addToCart(${p.id}, '${p.product_name.replace(/'/g, '')}', ${parseFloat(p.unit_price)})">
+                            onclick="event.stopPropagation(); addToCart(${p.id}, '${p.product_name.replace(/'/g, '')}', ${getProductPrice(p)})">
                             Add to Cart 🛒
                         </button>
                     </div>`).join('')}
@@ -513,10 +583,20 @@
         if (!p) return;
 
         document.getElementById('modalProductName').textContent = p.product_name;
-        document.getElementById('modalPrice').textContent =
-            `Rs ${parseFloat(p.unit_price).toFixed(2)}`;
+        document.getElementById('modalPrice').innerHTML = p.discount
+            ? `<span style="text-decoration:line-through;color:#aaa;font-size:1rem;">
+                Rs ${parseFloat(p.unit_price).toFixed(2)}
+            </span>
+            <span style="color:#c5221f;font-weight:700;font-size:1.5rem;margin-left:8px;">
+                Rs ${p.discount.price}
+            </span>
+            <span style="background:#fce8e6;color:#c5221f;font-size:0.8rem;
+                padding:3px 10px;border-radius:12px;margin-left:8px;font-weight:700;">
+                🏷️ ${p.discount.pct}% OFF
+            </span>`
+            : `Rs ${parseFloat(p.unit_price).toFixed(2)}`;
 
-        // Show loading for stock
+            // Show loading for stock
         document.getElementById('modalInfoRows').innerHTML = `
             ${p.sku_code ? `
             <div class="modal-info-row">
@@ -543,7 +623,7 @@
             </div>`;
 
         document.getElementById('modalAddBtn').onclick = () => {
-            addToCart(p.id, p.product_name, parseFloat(p.unit_price));
+            addToCart(p.id, p.product_name, getProductPrice(p));
             closeProductModal();
         };
 
@@ -552,7 +632,7 @@
         addBtn.style.background = '#1a73e8';
         addBtn.textContent      = 'Add to Cart 🛒';
         addBtn.onclick = () => {
-            addToCart(p.id, p.product_name, parseFloat(p.unit_price));
+            addToCart(p.id, p.product_name, getProductPrice(p));
             closeProductModal();
         };
 
@@ -581,7 +661,7 @@
                         addBtn2.textContent      = 'Add to Cart 🛒';
                         addBtn2.onclick = () => {
                             addToCartWithLimit(p.id, p.product_name,
-                                parseFloat(p.unit_price), stock);
+                                getProductPrice(p), stock);
                             closeProductModal();
                         };
 
@@ -596,7 +676,7 @@
                         addBtn2.textContent      = `Add to Cart 🛒`;
                         addBtn2.onclick = () => {
                             addToCartWithLimit(p.id, p.product_name,
-                                parseFloat(p.unit_price), stock);
+                                getProductPrice(p), stock);
                             closeProductModal();
                         };
 
@@ -628,8 +708,24 @@
     });
 
     // ── Search ───────────────────────────────────────────────────
+    function updateClearSearchButton(value) {
+        const button = document.getElementById('clearSearchBtn');
+        if (button) button.style.display = value.trim() ? 'flex' : 'none';
+    }
+
+    function clearSearch() {
+        const input = document.getElementById('searchInput');
+        input.value = '';
+        document.getElementById('suggestionsDropdown').style.display = 'none';
+        updateClearSearchButton('');
+        showCategories();
+        input.focus();
+    }
+
     function searchProducts() {
-        const query = document.getElementById('searchInput').value.trim().toLowerCase();
+        const input = document.getElementById('searchInput');
+        const query = input.value.trim().toLowerCase();
+        updateClearSearchButton(input.value);
         document.getElementById('suggestionsDropdown').style.display = 'none';
 
         if (!query) { showCategories(); return; }
@@ -662,13 +758,30 @@
         } else {
             document.getElementById('mainContent').innerHTML = `
                 <div class="product-grid">
-                    ${results.slice(0, 24).map(p => `
+                   ${results.slice(0, 24).map(p => `
                         <div class="product-card" onclick="openProductModal(${p.id})">
-                            ${p.is_near_expiry ? '<span class="near-expiry-tag">Near expiry</span>' : ''}
+                            ${p.discount ? `
+                                <div style="margin-bottom:6px;">
+                                    <span style="background:#fce8e6; color:#c5221f;
+                                        font-size:0.72rem; padding:3px 8px;
+                                        border-radius:12px; font-weight:700;">
+                                        🏷️ ${p.discount.pct}% OFF
+                                    </span>
+                                </div>` : ''}
                             <div class="pname">${p.product_name}</div>
-                            <div class="pprice">Rs ${parseFloat(p.unit_price).toFixed(2)}</div>
+                            <div class="pprice">
+                                ${p.discount
+                                    ? `<span style="text-decoration:line-through;color:#aaa;font-size:0.85rem;">
+                                        Rs ${parseFloat(p.unit_price).toFixed(2)}
+                                    </span>
+                                    <span style="color:#c5221f;font-weight:700;font-size:1rem;margin-left:6px;">
+                                        Rs ${p.discount.price}
+                                    </span>`
+                                    : `Rs ${parseFloat(p.unit_price).toFixed(2)}`
+                                }
+                            </div>
                             <button class="add-btn"
-                                onclick="event.stopPropagation(); addToCart(${p.id}, '${p.product_name.replace(/'/g, '')}', ${parseFloat(p.unit_price)})">
+                                onclick="event.stopPropagation(); addToCart(${p.id}, '${p.product_name.replace(/'/g, '')}', ${p.discount ? p.discount.price : parseFloat(p.unit_price)})">
                                 Add to Cart 🛒
                             </button>
                         </div>`).join('')}
@@ -679,6 +792,7 @@
 
     // ── Suggestions ──────────────────────────────────────────────
     function showSuggestions(value) {
+        updateClearSearchButton(value);
         const dropdown = document.getElementById('suggestionsDropdown');
         const query    = value.trim().toLowerCase();
         if (!query) { dropdown.style.display = 'none'; return; }
@@ -699,7 +813,7 @@
                 : name;
             return `<div class="suggestion-item" onclick="selectSuggestion('${name.replace(/'/g, '')}')">
                         <span>🛒</span><span>${hl}</span>
-                        <span class="price">Rs ${parseFloat(p.unit_price).toFixed(2)}</span>
+                        <span class="price">${renderProductPrice(p)}</span>
                     </div>`;
         }).join('');
         dropdown.style.display = 'block';

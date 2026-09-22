@@ -79,6 +79,8 @@ class ProductPublicSerializer(serializers.ModelSerializer):
         default=None    # returns null instead of crashing for unbranked products
     )
     is_near_expiry = serializers.SerializerMethodField()
+    discounted_price = serializers.SerializerMethodField()
+    discount_percentage = serializers.SerializerMethodField()
 
     class Meta:
         model  = Product
@@ -90,6 +92,7 @@ class ProductPublicSerializer(serializers.ModelSerializer):
             'brand', 'brand_name',
             'expiry_date',
             'is_near_expiry',
+            'discounted_price', 'discount_percentage',
             # cost_price    — excluded: internal supplier cost
             # avg_cost_price — excluded: internal WAC used for profit calc
         ]
@@ -100,6 +103,32 @@ class ProductPublicSerializer(serializers.ModelSerializer):
             expiry_date
             and date.today() <= expiry_date <= date.today() + timedelta(days=30)
         )
+
+    def _get_customer_discount(self, obj):
+        from inventory.models import DiscountRecommendation
+
+        return (
+            DiscountRecommendation.objects
+            .filter(
+                product=obj,
+                status__in=['PENDING', 'APPLIED'],
+                best_action='DISCOUNT',
+                batch__status='ACTIVE',
+                batch__remaining_quantity__gt=0,
+                batch__expiry_date__gte=date.today(),
+                recommended_price__lt=obj.unit_price,
+            )
+            .order_by('days_until_expiry', '-calculated_date', '-id')
+            .first()
+        )
+
+    def get_discounted_price(self, obj):
+        recommendation = self._get_customer_discount(obj)
+        return recommendation.recommended_price if recommendation else None
+
+    def get_discount_percentage(self, obj):
+        recommendation = self._get_customer_discount(obj)
+        return recommendation.recommended_discount_pct if recommendation else None
 
 # ─────────────────────────────────────────────
 # Product — STAFF serializer
@@ -132,6 +161,8 @@ class ProductSerializer(serializers.ModelSerializer):
         default=None
     )
     is_near_expiry = serializers.SerializerMethodField()
+    discounted_price = serializers.SerializerMethodField()
+    discount_percentage = serializers.SerializerMethodField()
 
     class Meta:
         model  = Product
@@ -143,6 +174,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'brand', 'brand_name',
             'expiry_date',
             'is_near_expiry',
+            'discounted_price', 'discount_percentage',
         ]
 
     def get_is_near_expiry(self, obj):
@@ -151,6 +183,32 @@ class ProductSerializer(serializers.ModelSerializer):
             expiry_date
             and date.today() <= expiry_date <= date.today() + timedelta(days=30)
         )
+
+    def _get_customer_discount(self, obj):
+        from inventory.models import DiscountRecommendation
+
+        return (
+            DiscountRecommendation.objects
+            .filter(
+                product=obj,
+                status__in=['PENDING', 'APPLIED'],
+                best_action='DISCOUNT',
+                batch__status='ACTIVE',
+                batch__remaining_quantity__gt=0,
+                batch__expiry_date__gte=date.today(),
+                recommended_price__lt=obj.unit_price,
+            )
+            .order_by('days_until_expiry', '-calculated_date', '-id')
+            .first()
+        )
+
+    def get_discounted_price(self, obj):
+        recommendation = self._get_customer_discount(obj)
+        return recommendation.recommended_price if recommendation else None
+
+    def get_discount_percentage(self, obj):
+        recommendation = self._get_customer_discount(obj)
+        return recommendation.recommended_discount_pct if recommendation else None
 
     def to_internal_value(self, data):
         # sku_code is unique=True + null=True + blank=True on the model.
