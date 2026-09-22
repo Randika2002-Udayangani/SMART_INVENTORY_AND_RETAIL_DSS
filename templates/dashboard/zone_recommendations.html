@@ -559,11 +559,15 @@ let ovProductLookup = {};
 
 async function loadOverrideFormOptions() {
     try {
+        // Scoped fix: /api/products/ is now paginated (25/page) — this
+        // picker needs every active product, so it uses the dedicated
+        // lightweight picker endpoint instead (see ProductPickerOptionsView
+        // in products/views.py). /api/zones/ is untouched — not affected.
         const [prodRes, zoneRes] = await Promise.all([
-            request('/api/products/'),
+            request('/api/products/picker/'),
             request('/api/zones/'),
         ]);
-        const products = extractArray(await prodRes.json());
+        const products = (await prodRes.json()).products ?? [];
         const zones = extractArray(await zoneRes.json());
 
         ovProductLookup = {};
