@@ -25,7 +25,8 @@
 # ============================================================
 
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from django.db.models import Min, Q
 from fuzzywuzzy import fuzz
@@ -33,6 +34,8 @@ from fuzzywuzzy import fuzz
 from products.models import Product, Brand
 from purchases.models import PurchaseBatch
 from inventory.services.stock import get_available_stock
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 FUZZY_THRESHOLD = 80  # per Section 18 — corrected from 70% in v2.0
 
@@ -166,7 +169,7 @@ def handle_availability_query(message):
 
 
 def handle_expiry_query(message=None):
-    today = date.today()
+    today = datetime.now(LOCAL_TZ).date()
     products = Product.objects.filter(
         is_active=True,
         purchasebatch__status__in=["ACTIVE", "PENDING_EXPIRY"],

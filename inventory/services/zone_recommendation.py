@@ -68,11 +68,14 @@ def assign_zones_from_groups():
         if was_created:
             zones_created.append(zone_name)
 
+        mapped_names.update(category_names)
+        categories_by_name = {
+            category.category_name: category
+            for category in Category.objects.filter(category_name__in=category_names)
+        }
         for cat_name in category_names:
-            mapped_names.add(cat_name)
-            try:
-                category = Category.objects.get(category_name=cat_name)
-            except Category.DoesNotExist:
+            category = categories_by_name.get(cat_name)
+            if category is None:
                 continue
             if category.default_zone_id != zone.id:
                 category.default_zone = zone

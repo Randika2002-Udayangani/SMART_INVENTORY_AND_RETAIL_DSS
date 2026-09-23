@@ -1,8 +1,11 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 # products/serializers.py
 from rest_framework import serializers
 from .models import Brand, Category, StoreZone, Product
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 # ─────────────────────────────────────────────
@@ -96,9 +99,10 @@ class ProductPublicSerializer(serializers.ModelSerializer):
 
     def get_is_near_expiry(self, obj):
         expiry_date = getattr(obj, 'earliest_expiry', None)
+        today = datetime.now(LOCAL_TZ).date()
         return bool(
             expiry_date
-            and date.today() <= expiry_date <= date.today() + timedelta(days=30)
+            and today <= expiry_date <= today + timedelta(days=30)
         )
 
 # ─────────────────────────────────────────────
@@ -147,9 +151,10 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_is_near_expiry(self, obj):
         expiry_date = getattr(obj, 'earliest_expiry', None)
+        today = datetime.now(LOCAL_TZ).date()
         return bool(
             expiry_date
-            and date.today() <= expiry_date <= date.today() + timedelta(days=30)
+            and today <= expiry_date <= today + timedelta(days=30)
         )
 
     def to_internal_value(self, data):

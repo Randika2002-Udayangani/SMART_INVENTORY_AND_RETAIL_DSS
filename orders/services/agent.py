@@ -7,8 +7,9 @@ tool which is not in ``TOOL_HANDLERS``.
 
 import logging
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from django.db.models import Min, OuterRef, Q, Subquery, Sum
 
@@ -19,6 +20,8 @@ from products.models import Product
 from sales.models import ItemSalesRecord
 from .gemini import GeminiQuotaExceeded, GeminiUnavailable
 from .provider import get_provider
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 logger = logging.getLogger(__name__)
@@ -198,7 +201,7 @@ def get_expiring_products(arguments, user):
     except (TypeError, ValueError):
         raise ValueError("days must be a whole number of days.")
     days = max(1, min(days, 90))
-    today = date.today()
+    today = datetime.now(LOCAL_TZ).date()
     # One combined Q so the row filter and the Min() aggregate apply to the
     # SAME joined batch row (chained .filter() calls would create separate
     # joins and let a product qualify via two different batches).
@@ -228,7 +231,7 @@ def _sales_period(arguments):
     """Shared sales-window parsing — mirrors the analytics default of the
     last 30 days (analytics.views._parse_date_range) so the chatbot never
     invents a different definition of a sales period from the dashboard."""
-    end = date.fromisoformat(arguments["date_to"]) if arguments.get("date_to") else date.today()
+    end = date.fromisoformat(arguments["date_to"]) if arguments.get("date_to") else datetime.now(LOCAL_TZ).date()
     start = date.fromisoformat(arguments["date_from"]) if arguments.get("date_from") else end - timedelta(days=30)
     if start > end:
         raise ValueError("date_from must be on or before date_to.")
@@ -477,7 +480,7 @@ def get_health_score(arguments, user):
 
 
 def _date_range(arguments):
-    end = date.fromisoformat(arguments["date_to"]) if arguments.get("date_to") else date.today()
+    end = date.fromisoformat(arguments["date_to"]) if arguments.get("date_to") else datetime.now(LOCAL_TZ).date()
     start = date.fromisoformat(arguments["date_from"]) if arguments.get("date_from") else end - timedelta(days=30)
     if start > end:
         raise ValueError("date_from must be on or before date_to.")

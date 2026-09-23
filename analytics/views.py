@@ -19,7 +19,7 @@ from sales.services.profit_engine import (
 from sales.models import ItemSalesRecord
 from products.models import Product
 from core.utils import get_last_sync_date
-from django.db.models import Max, Sum
+from django.db.models import Count, Max, Q, Sum
 
 from django.db.models.functions import TruncMonth  
 from inventory.models import InventoryHealthScore, ProductLifecycle
@@ -300,19 +300,14 @@ def overview(request):
 
     # ── Data quality — computed off product_ids actually in this period ──────
     product_ids = [r['product_id'] for r in product_results]
-    products_missing_wac = Product.objects.filter(
-        id__in=product_ids
-    ).filter(
-        avg_cost_price__isnull=True
-    ).count() + Product.objects.filter(
-        id__in=product_ids, avg_cost_price=0
-    ).count()
-    sales_record_count = ItemSalesRecord.objects.filter(
+    products_missing_wac = Product.objects.filter(id__in=product_ids).aggregate(
+        missing=Count('id', filter=Q(avg_cost_price__isnull=True) | Q(avg_cost_price=0))
+    )['missing'] or 0
+    sales_quality = ItemSalesRecord.objects.filter(
         sale_date__range=(date_from, date_to)
-    ).count()
-    latest_sales_date = ItemSalesRecord.objects.filter(
-        sale_date__range=(date_from, date_to)
-    ).aggregate(latest=Max('sale_date'))['latest']
+    ).aggregate(count=Count('id'), latest=Max('sale_date'))
+    sales_record_count = sales_quality['count'] or 0
+    latest_sales_date = sales_quality['latest']
 
     data_quality = {
         'sales_records': sales_record_count,

@@ -18,8 +18,9 @@ DOCUMENT SOURCES (all cross-referenced before writing):
   WHETHER a recommendation is needed at all — both rules are honoured.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from django.db.models import Sum
 
@@ -28,6 +29,8 @@ from products.models import Product          # product_id, sku_code, avg_cost_pr
 #from inventory.models import PurchaseBatch  # remaining_quantity, status, purchase→supplier
 from purchases.models import PurchaseBatch    #fix by R
 from sales.models import ItemSalesRecord   # quantity_sold, sale_date
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 # ── Constants  [LR p.20] ────────────────────────────────────────────────────
@@ -177,23 +180,41 @@ def check_reorder_needs(as_of: date = None) -> list:
             urgency            (str)     — CRITICAL | HIGH | MEDIUM | LOW
             supplier_id        (int|None)
     """
-    today   = as_of or date.today()
+    today   = as_of or datetime.now(LOCAL_TZ).date()
     since   = today - timedelta(days=SALES_LOOKBACK_DAYS)
     results = []
 
-    active_products = Product.objects.filter(is_active=True).select_related()
+    active_products = list(Product.objects.filter(is_active=True).select_related())
+    product_ids = [product.id for product in active_products]
+
+    sales_by_product = {
+        row['product_id']: row['total'] or 0
+        for row in ItemSalesRecord.objects.filter(
+            product_id__in=product_ids,
+            sale_date__gte=since,
+            sale_date__lte=today,
+        ).values('product_id').annotate(total=Sum('quantity_sold'))
+    }
+    stock_by_product = {
+        row['product_id']: row['total'] or 0
+        for row in PurchaseBatch.objects.filter(
+            product_id__in=product_ids,
+            status__in=['ACTIVE', 'PENDING_EXPIRY'],
+            remaining_quantity__gt=0,
+        ).values('product_id').annotate(total=Sum('remaining_quantity'))
+    }
+    latest_supplier_by_product = {}
+    for batch in PurchaseBatch.objects.filter(
+        product_id__in=product_ids,
+        status='ACTIVE',
+    ).select_related('purchase__supplier').order_by('product_id', '-id'):
+        latest_supplier_by_product.setdefault(batch.product_id, batch)
 
     for product in active_products:
 
         # ── 1. avg_daily_sales ────────────────────────────────────────────────
         # [LR] "avg_daily_sales = SUM(quantity_sold last 30 days) ÷ 30"
-        sales_agg = ItemSalesRecord.objects.filter(
-            product=product,
-            sale_date__gte=since,
-            sale_date__lte=today,
-        ).aggregate(total_sold=Sum('quantity_sold'))
-
-        total_sold      = sales_agg['total_sold'] or 0
+        total_sold      = sales_by_product.get(product.id, 0)
         avg_daily_sales = Decimal(str(total_sold)) / Decimal(str(SALES_LOOKBACK_DAYS))
 
         # ── 2. Skip SLOW_MOVING ───────────────────────────────────────────────
@@ -203,20 +224,19 @@ def check_reorder_needs(as_of: date = None) -> list:
 
         # ── 3. Current stock ──────────────────────────────────────────────────
         # [LR] "current_stock = SUM(remaining_quantity) from ACTIVE batches"
-        stock_agg = PurchaseBatch.objects.filter(
-            product=product,
-            status__in=['ACTIVE', 'PENDING_EXPIRY'],   # ← was status='ACTIVE'
-            remaining_quantity__gt=0,
-        ).aggregate(total_stock=Sum('remaining_quantity'))
-
-        current_stock = stock_agg['total_stock'] or 0
+        current_stock = stock_by_product.get(product.id, 0)
 
         # ── 4. days_of_stock ──────────────────────────────────────────────────
         # [LR] "days_of_stock = current_stock ÷ avg_daily_sales"
         days_of_stock = float(current_stock) / float(avg_daily_sales)
 
         # ── 5. Lead time ──────────────────────────────────────────────────────
-        supplier_id, lead_time_days = _get_supplier_lead_time(product)
+        latest_batch = latest_supplier_by_product.get(product.id)
+        if latest_batch and latest_batch.purchase and latest_batch.purchase.supplier:
+            supplier_id = latest_batch.purchase.supplier_id
+            lead_time_days = latest_batch.purchase.supplier.lead_time_days or DEFAULT_LEAD_TIME
+        else:
+            supplier_id, lead_time_days = None, DEFAULT_LEAD_TIME
 
         # ── 6. Skip if no reorder needed ──────────────────────────────────────
         # [LR] "IF days_of_stock > lead_time_days × 2 → no recommendation needed"

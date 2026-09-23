@@ -44,11 +44,14 @@ WHY return_policy AFFECTS recovery_return:
 """
 
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from purchases.models import PurchaseBatch
 from inventory.models import DiscountRule, DiscountRecommendation
 from users.models import SystemConfig
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 def _get_config_value(key, default, cast=str):
@@ -187,7 +190,7 @@ def calculate_discounts():
                same pattern as HealthScoreCalculateView /
                LifecycleCalculateView)
     """
-    today = date.today()
+    today = datetime.now(LOCAL_TZ).date()
     expiry_alert_days = _get_config_value('expiry_alert_days', 30, cast=int)
     min_margin_pct     = _get_config_value('min_margin_pct', 10, cast=int)
 

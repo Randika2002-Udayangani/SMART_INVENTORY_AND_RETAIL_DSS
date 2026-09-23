@@ -35,7 +35,8 @@ USAGE:
     python manage.py top_up_opening_stock --buffer 15      # override default buffer (10 units)
 """
 
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -48,6 +49,7 @@ from sales.models import ItemSalesRecord
 DEFAULT_BUFFER = 10  # flat units added on top of the exact deficit, so
                       # reconciliation doesn't land a product at exactly
                       # zero remaining stock.
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 class Command(BaseCommand):
@@ -171,11 +173,12 @@ class Command(BaseCommand):
             return
 
         # ── Apply for real ──────────────────────────────────────────────────
+        today = datetime.now(LOCAL_TZ).date()
         with transaction.atomic():
             new_purchase = Purchase.objects.create(
                 supplier=supplier,
-                purchase_date=date.today(),
-                invoice_number=f'OPENING-STOCK-RECONCILE-{date.today().isoformat()}',
+            purchase_date=today,
+            invoice_number=f'OPENING-STOCK-RECONCILE-{today.isoformat()}',
                 total_amount=sum(
                     qty * cost for _, qty, cost in batch_plan
                 ),

@@ -1032,18 +1032,21 @@ class LossAutoDetectView(APIView):
 
     def post(self, request):
         today   = datetime.now(LOCAL_TZ).date()
-        expired = PurchaseBatch.objects.filter(
+        expired = list(PurchaseBatch.objects.filter(
             status='ACTIVE',
             expiry_date__lt=today,
             remaining_quantity__gt=0
+        ).select_related('product'))
+        existing_batch_ids = set(
+            LossRecord.objects.filter(
+                batch_id__in=[batch.id for batch in expired],
+                loss_type='EXPIRY',
+            ).values_list('batch_id', flat=True)
         )
         created = 0
 
         for batch in expired:
-            already = LossRecord.objects.filter(
-                batch=batch, loss_type='EXPIRY'
-            ).exists()
-            if already:
+            if batch.id in existing_batch_ids:
                 continue
 
             LossRecord.objects.create(
@@ -1713,16 +1716,29 @@ class HealthScoreSummaryView(APIView):
  
     def get(self, request):
         from django.db.models import Count, OuterRef, Subquery
+        from products.models import Product
+
+        active_product_count = Product.objects.filter(is_active=True).count()
  
         latest_ids = (
             InventoryHealthScore.objects
-            .filter(product_id=OuterRef('product_id'))
+            .filter(product_id=OuterRef('product_id'), product__is_active=True)
             .order_by('-calculated_date', '-id')
             .values('id')[:1]
         )
         latest_qs = InventoryHealthScore.objects.filter(
             id__in=Subquery(latest_ids)
         )
+
+        # A partial calculation must not make the KPI cards look like they
+        # describe the whole catalogue. Generate the missing active-product
+        # scores before counting statuses, then rebuild the latest queryset.
+        if latest_qs.count() < active_product_count:
+            from inventory.services.health_score import calculate_health_scores
+            calculate_health_scores()
+            latest_qs = InventoryHealthScore.objects.filter(
+                id__in=Subquery(latest_ids)
+            )
  
         counts = latest_qs.values('status').annotate(count=Count('id'))
         latest_record = latest_qs.order_by('-calculated_at', '-calculated_date', '-id').first()
@@ -1744,6 +1760,7 @@ class HealthScoreSummaryView(APIView):
         return Response({
             'summary': summary,
             'total':   sum(summary.values()),
+            'active_product_count': active_product_count,
             'last_calculated_at': last_calculated_at,
             'note': (
                 'Call POST /api/health-scores/calculate/ first if all counts '

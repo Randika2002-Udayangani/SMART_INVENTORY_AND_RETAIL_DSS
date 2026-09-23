@@ -575,9 +575,8 @@
     };
   }
 
-  function updateHealthBands(rows) {
-    const counts = { HEALTHY: 0, WATCH: 0, 'AT RISK': 0, CRITICAL: 0 };
-    rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+  function updateHealthBands(summary) {
+    const counts = summary || { HEALTHY: 0, WATCH: 0, 'AT RISK': 0, CRITICAL: 0 };
     document.getElementById('hbHealthy').innerText = counts.HEALTHY;
     document.getElementById('hbWatch').innerText   = counts.WATCH;
     document.getElementById('hbAtRisk').innerText  = counts['AT RISK'];
@@ -586,10 +585,13 @@
 
   async function fetchHealthScores() {
     try {
-      const data = await apiFetch('/api/health-scores/');
+      const [data, summaryData] = await Promise.all([
+        apiFetch('/api/health-scores/'),
+        apiFetch('/api/health-scores/summary/')
+      ]);
       const rows = Array.isArray(data) ? data : (data.results ?? []);
       hsData = rows.map(mapHealthRow);
-      updateHealthBands(hsData);
+      updateHealthBands(summaryData.summary);
       renderHS(currentHsFilter);
     } catch(e) {
       console.error('fetchHealthScores failed:', e);

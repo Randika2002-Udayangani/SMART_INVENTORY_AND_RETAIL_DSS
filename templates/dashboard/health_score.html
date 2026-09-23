@@ -486,12 +486,9 @@ async function refreshCategories() {
     setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 900);
 }
 
-// KPI counts now come from GET /api/health-scores/summary/ — a proper
-// aggregate query on the backend (HealthScoreSummaryView, previously
-// built but never routed — see urls.py). Previously these counts were
-// computed by counting every row client-side, which only worked because
-// the full list was fetched unpaginated; now that the list is paginated,
-// counting the current page would have given silently wrong totals.
+// KPI counts now come from GET /api/health-scores/summary/. The backend
+// ensures every active product has a latest score before aggregating, so
+// partial historical score rows cannot produce misleading card totals.
 async function updateSummaryCounts() {
     try {
         const data = await apiFetch('/api/health-scores/summary/');
@@ -590,8 +587,6 @@ async function runCalculation() {
 // (username/role). No financial gating on this page (see note above), so
 // data loads unconditionally rather than waiting on the role to resolve.
 fetchCurrentUser();
-loadHealthScores();
-loadCritical();
-loadCategories();
+loadHealthScores().then(() => Promise.all([loadCritical(), loadCategories()]));
 </script>
 {% endblock %}
