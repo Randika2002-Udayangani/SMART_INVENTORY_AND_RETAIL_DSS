@@ -50,10 +50,10 @@
   <div class="mb-3 d-flex gap-2 flex-wrap">
     <select id="urgencyFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadRecommendations()">
       <option value="">All Urgency</option>
-      <option value="CRITICAL">CRITICAL</option>
-      <option value="HIGH">HIGH</option>
-      <option value="MEDIUM">MEDIUM</option>
-      <option value="LOW">LOW</option>
+      <option value="CRITICAL" data-reorder-label="CRITICAL"></option>
+      <option value="HIGH" data-reorder-label="HIGH"></option>
+      <option value="MEDIUM" data-reorder-label="MEDIUM"></option>
+      <option value="LOW" data-reorder-label="LOW"></option>
     </select>
     <select id="statusFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadRecommendations()">
       <option value="">All Status</option>
@@ -86,6 +86,10 @@
   let reorderPage = 1;
   const reorderPageSize = 25;
 
+  document.querySelectorAll('[data-reorder-label]').forEach(option => {
+    option.textContent = REORDER_LABELS[option.dataset.reorderLabel];
+  });
+
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>'"]/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
@@ -95,7 +99,7 @@
   function urgencyBadge(urgency) {
     const map = { CRITICAL: 'badge-critical', HIGH: 'badge-high', MEDIUM: 'badge-medium', LOW: 'badge-low' };
     const safeUrgency = String(urgency ?? '—');
-    return `<span class="${map[safeUrgency] || 'badge-low'}">${escapeHtml(safeUrgency)}</span>`;
+    return `<span class="${map[safeUrgency] || 'badge-low'}">${escapeHtml(displayLabel(REORDER_LABELS, safeUrgency))}</span>`;
   }
 
   function showError(message) {

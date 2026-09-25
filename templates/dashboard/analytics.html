@@ -179,9 +179,9 @@
           <th>Rank</th><th>Product</th><th>Brand</th><th>Category</th>
           <th class="sortable" data-sort="qty">Units <span class="sort-arrow">↕</span></th>
           <th class="sortable" data-sort="revenue">Revenue <span class="sort-arrow">↕</span></th>
-          <th>WAC</th><th>Cost</th>
+          <th>WAC <span class="tooltip-icon" title="Weighted Average Cost — the average price paid per unit based on all purchases">ⓘ</span></th><th>Cost</th>
           <th class="sortable" data-sort="profit">Profit <span class="sort-arrow">↕</span></th>
-          <th class="sortable" data-sort="margin">Margin % <span class="sort-arrow">↕</span></th>
+          <th class="sortable" data-sort="margin">Margin % <span class="tooltip-icon" title="Margin percentage — the share of each sale left after the product cost">ⓘ</span> <span class="sort-arrow">↕</span></th>
           <th>Flag</th><th>Action</th>
         </tr>
       </thead>
@@ -244,7 +244,7 @@
 <script>
 (function () {
   const $ = id => document.getElementById(id);
-  const money = v => 'Rs ' + Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const money = formatMoney;
 
   // Formats a raw backend timestamp/date string (e.g. "2026-09-11
   // 13:36:33.247517+05:30" or "2026-09-11") into something readable

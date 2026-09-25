@@ -468,7 +468,7 @@ function renderProducts() {
             <td>${escapeHtml(p.category_name ?? '—')}</td>
             <td>${escapeHtml(p.brand_name ?? '—')}</td>
             <td>${escapeHtml(p.sku_code ?? '—')}</td>
-            <td>Rs ${Number(p.unit_price ?? 0).toLocaleString()}</td>
+            <td>${formatMoney(p.unit_price)}</td>
             <td>
                 <div class="d-flex gap-2 flex-wrap">
                     <button class="btn btn-sm btn-outline-secondary" onclick="openEditFormPayload('${encodePayload(p)}')">Edit</button>
@@ -588,7 +588,7 @@ function hideEditForm() {
 function formatCurrency(value) {
     const num = Number(value ?? 0);
     if (!Number.isFinite(num)) return '—';
-    return 'Rs ' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return formatMoney(num);
 }
 
 function getAvailabilityBadgeClass(status) {

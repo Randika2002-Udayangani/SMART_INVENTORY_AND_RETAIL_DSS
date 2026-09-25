@@ -90,6 +90,52 @@
     }
     .topbar h1 { font-size: 19px; font-weight: 700; }
     .topbar .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    .tooltip-icon { display:inline-block; margin-left:3px; color:var(--sidebar); cursor:help; font-size:.9em; }
+
+    /* ── NOTIFICATION NAVBAR ─────────────────────────────── */
+    .notification-nav { position:fixed; top:18px; right:100px; z-index:260; }
+    .notification-bell {
+      position:relative; width:36px; height:36px; border:1px solid var(--border);
+      border-radius:8px; background:var(--card); color:var(--sidebar); cursor:pointer;
+      box-shadow:0 1px 4px rgba(0,0,0,.06); font-size:18px; line-height:1;
+    }
+    .notification-bell:hover, .notification-bell[aria-expanded="true"] { background:var(--card2); }
+    .notification-count {
+      position:absolute; top:-7px; right:-7px; min-width:18px; height:18px; padding:0 4px;
+      border-radius:10px; background:var(--red); color:#fff; font-size:10px; font-weight:700;
+      display:flex; align-items:center; justify-content:center; border:2px solid var(--bg);
+    }
+    .notification-count.is-empty { display:none; }
+    .notification-dropdown {
+      position:absolute; top:44px; right:0; width:min(390px, calc(100vw - 24px));
+      background:var(--card); border:1px solid var(--border); border-radius:10px;
+      box-shadow:0 8px 28px rgba(15,61,62,.18); overflow:hidden; display:none;
+    }
+    .notification-nav.is-open .notification-dropdown { display:block; }
+    .notification-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px 10px; }
+    .notification-header strong { font-size:15px; }
+    .notification-mark-read { border:0; background:transparent; color:var(--sidebar); cursor:pointer; font-size:11px; padding:3px 0; }
+    .notification-mark-read:hover { text-decoration:underline; }
+    .notification-tabs { display:flex; gap:4px; padding:0 12px 8px; border-bottom:1px solid var(--border); }
+    .notification-tab { border:0; border-radius:5px; background:transparent; color:var(--muted); cursor:pointer; font-size:11px; padding:6px 8px; }
+    .notification-tab.active { background:var(--card2); color:var(--sidebar); font-weight:700; }
+    .notification-list { max-height:365px; overflow-y:auto; }
+    .notification-item { display:flex; gap:9px; align-items:flex-start; padding:11px 12px; border-bottom:1px solid rgba(184,223,194,.65); }
+    .notification-item.unread { border-left:3px solid var(--green2); padding-left:9px; background:rgba(234,246,237,.55); }
+    .notification-dot { flex:0 0 auto; width:9px; height:9px; margin-top:5px; border-radius:50%; }
+    .notification-dot.critical { background:#ef4444; } .notification-dot.high { background:#f97316; }
+    .notification-dot.medium { background:#eab308; } .notification-dot.low { background:#3b82f6; }
+    .notification-dot.read { background:#9ca3af; }
+    .notification-content { min-width:0; flex:1; }
+    .notification-title { font-size:12px; font-weight:700; line-height:1.3; }
+    .notification-text { color:var(--muted); font-size:11px; line-height:1.35; margin-top:2px; }
+    .notification-time { color:var(--muted); font-size:10px; margin-top:4px; }
+    .notification-dismiss { flex:0 0 auto; border:0; background:transparent; color:var(--muted); cursor:pointer; font-size:15px; line-height:1; padding:1px 2px; }
+    .notification-dismiss:hover { color:var(--red); }
+    .notification-empty { color:var(--muted); font-size:12px; padding:24px 16px; text-align:center; }
+    .notification-footer { border-top:1px solid var(--border); padding:10px 16px; text-align:center; }
+    .notification-footer a { color:var(--sidebar); font-size:11px; font-weight:700; text-decoration:none; }
+    .notification-footer a:hover { text-decoration:underline; }
 
     /* ── RESPONSIVE — on small screens default to collapsed ── */
     @media (max-width: 960px) {
@@ -104,6 +150,25 @@
 <button class="sb-toggle" id="sbToggle" title="Toggle sidebar" aria-label="Toggle sidebar">
   <i class="bi bi-list"></i>
 </button>
+
+<div class="notification-nav" id="notificationNav">
+  <button class="notification-bell" id="notificationBell" type="button" aria-label="Notifications" aria-expanded="false" aria-controls="notificationDropdown">
+    🔔<span class="notification-count is-empty" id="notificationCount" aria-label="0 unread notifications">0</span>
+  </button>
+  <section class="notification-dropdown" id="notificationDropdown" aria-label="Notifications">
+    <div class="notification-header">
+      <strong>Notifications</strong>
+      <button class="notification-mark-read" id="markAllNotifications" type="button">Mark all as read</button>
+    </div>
+    <div class="notification-tabs" role="tablist" aria-label="Notification filter">
+      <button class="notification-tab active" type="button" data-notification-filter="all" role="tab">All (<span id="notificationAllCount">0</span>)</button>
+      <button class="notification-tab" type="button" data-notification-filter="unread" role="tab">Unread (<span id="notificationUnreadCount">0</span>)</button>
+      <button class="notification-tab" type="button" data-notification-filter="read" role="tab">Read</button>
+    </div>
+    <div class="notification-list" id="notificationList"><div class="notification-empty">Loading notifications...</div></div>
+    <div class="notification-footer"><a href="/dashboard/notifications/">View all notifications &rarr;</a></div>
+  </section>
+</div>
 
 <!-- ── SIDEBAR — shared across every dashboard page ─────────
      Include this partial and set request.resolver_match.url_name
@@ -161,6 +226,37 @@
 <!-- ── SHARED SCRIPTS ────────────────────────────────────── -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
 <script>
+  const HEALTH_LABELS = {
+    'HEALTHY': '🟢 Healthy',
+    'WATCH': '🟡 Watch',
+    'AT_RISK': '🟠 At Risk',
+    'CRITICAL': '🔴 Act Now'
+  };
+
+  const REORDER_LABELS = {
+    'CRITICAL': '🔴 Order Today',
+    'HIGH': '🟠 Order This Week',
+    'MEDIUM': '🟡 Order Soon',
+    'LOW': '⚪ No Rush'
+  };
+
+  const LIFECYCLE_LABELS = {
+    'NEW': '🔵 New',
+    'GROWING': '🟢 Growing',
+    'STABLE': '⚪ Stable',
+    'SLOW_MOVING': '🟡 Slow Moving',
+    'DECLINING': '🟠 Declining'
+  };
+
+  function displayLabel(labels, value) {
+    const key = String(value ?? '').replaceAll(' ', '_');
+    return labels[key] || String(value ?? '—');
+  }
+
+  function formatMoney(amount) {
+    return 'Rs. ' + parseFloat(amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+
   // ── SIDEBAR TOGGLE — persists collapsed/open state across pages ──
   (function() {
     const STORAGE_KEY = 'sidebar_collapsed';
@@ -262,6 +358,154 @@
       return null;
     }
   }
+
+  // ── NAVBAR NOTIFICATIONS ─────────────────────────────────
+  // Notification requests intentionally read the JWT from sessionStorage,
+  // as required by the notification API contract.
+  (function() {
+    const nav = document.getElementById('notificationNav');
+    const bell = document.getElementById('notificationBell');
+    const list = document.getElementById('notificationList');
+    const countBadge = document.getElementById('notificationCount');
+    const allCount = document.getElementById('notificationAllCount');
+    const unreadCount = document.getElementById('notificationUnreadCount');
+    let notifications = [];
+    let activeFilter = 'all';
+
+    function notificationHeaders() {
+      const token = sessionStorage.getItem('access_token');
+      return token ? { 'Authorization': 'Bearer ' + token } : {};
+    }
+
+    async function notificationFetch(url, options = {}) {
+      const response = await fetch(url, { ...options, headers: { ...notificationHeaders(), ...(options.headers || {}) } });
+      if (response.status === 401) {
+        sessionStorage.removeItem('access_token');
+        sessionStorage.removeItem('refresh_token');
+        window.location.href = '/dashboard/login/';
+        throw new Error('Authentication expired');
+      }
+      if (!response.ok) throw new Error(`Notification request failed (${response.status})`);
+      return response.status === 204 ? null : response.json();
+    }
+
+    function getNotificationArray(data) {
+      return Array.isArray(data) ? data : (data.results || data.notifications || []);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>'"]/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[character]);
+    }
+
+    function timeAgo(value) {
+      const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+      if (seconds < 60) return 'Just now';
+      const units = [[86400, 'day'], [3600, 'hour'], [60, 'minute']];
+      for (const [size, label] of units) {
+        if (seconds >= size) {
+          const amount = Math.floor(seconds / size);
+          return `${amount} ${label}${amount === 1 ? '' : 's'} ago`;
+        }
+      }
+      return 'Just now';
+    }
+
+    function updateCounts(unreadOverride) {
+      const unread = unreadOverride ?? notifications.filter(item => !item.is_read).length;
+      countBadge.textContent = unread > 99 ? '99+' : unread;
+      countBadge.classList.toggle('is-empty', unread === 0);
+      countBadge.setAttribute('aria-label', `${unread} unread notifications`);
+      allCount.textContent = notifications.length;
+      unreadCount.textContent = unread;
+      const sidebarBadge = document.getElementById('sidebarAlertCount');
+      const dashBadge = document.getElementById('dashboardNavBadge');
+      if (sidebarBadge) sidebarBadge.textContent = unread;
+      if (dashBadge) dashBadge.textContent = unread;
+    }
+
+    function renderNotifications() {
+      const visible = notifications.filter(item => activeFilter === 'all' || (activeFilter === 'unread' ? !item.is_read : item.is_read)).slice(0, 5);
+      if (!visible.length) {
+        list.innerHTML = '<div class="notification-empty">No notifications to show.</div>';
+        return;
+      }
+      list.innerHTML = visible.map(item => {
+        const priority = String(item.priority || 'LOW').toLowerCase();
+        const dotClass = item.is_read ? 'read' : (['critical', 'high', 'medium', 'low'].includes(priority) ? priority : 'low');
+        return `<article class="notification-item${item.is_read ? '' : ' unread'}">
+          <span class="notification-dot ${dotClass}" aria-hidden="true"></span>
+          <div class="notification-content">
+            <div class="notification-title">${escapeHtml(item.title)}</div>
+            <div class="notification-text">${escapeHtml(item.message)}</div>
+            <div class="notification-time">${escapeHtml(timeAgo(item.created_at))}</div>
+          </div>
+          <button class="notification-dismiss" type="button" data-notification-dismiss="${escapeHtml(item.id)}" aria-label="Dismiss notification">&times;</button>
+        </article>`;
+      }).join('');
+    }
+
+    async function refreshUnreadCount() {
+      try {
+        const data = await notificationFetch('/api/notifications/?status=unread');
+        updateCounts(getNotificationArray(data).length);
+      } catch (error) {
+        console.error('refreshUnreadCount failed:', error);
+      }
+    }
+
+    async function loadNotifications() {
+      try {
+        notifications = getNotificationArray(await notificationFetch('/api/notifications/?status=all'));
+        updateCounts(notifications.filter(item => !item.is_read).length);
+        renderNotifications();
+      } catch (error) {
+        list.innerHTML = '<div class="notification-empty">Notifications could not be loaded.</div>';
+        console.error('loadNotifications failed:', error);
+      }
+    }
+
+    bell.addEventListener('click', function() {
+      const isOpen = nav.classList.toggle('is-open');
+      bell.setAttribute('aria-expanded', isOpen);
+      if (isOpen) loadNotifications();
+    });
+
+    document.addEventListener('click', function(event) {
+      if (!nav.contains(event.target)) {
+        nav.classList.remove('is-open');
+        bell.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    document.querySelectorAll('[data-notification-filter]').forEach(tab => tab.addEventListener('click', function() {
+      activeFilter = this.dataset.notificationFilter;
+      document.querySelectorAll('[data-notification-filter]').forEach(item => item.classList.toggle('active', item === this));
+      renderNotifications();
+    }));
+
+    list.addEventListener('click', async function(event) {
+      const dismissButton = event.target.closest('[data-notification-dismiss]');
+      if (!dismissButton) return;
+      const id = dismissButton.dataset.notificationDismiss;
+      try {
+        await notificationFetch(`/api/notifications/${id}/`, { method: 'DELETE' });
+        notifications = notifications.filter(item => String(item.id) !== String(id));
+        updateCounts(notifications.filter(item => !item.is_read).length);
+        renderNotifications();
+      } catch (error) { console.error('dismiss notification failed:', error); }
+    });
+
+    document.getElementById('markAllNotifications').addEventListener('click', async function() {
+      const unread = notifications.filter(item => !item.is_read);
+      await Promise.all(unread.map(item => notificationFetch(`/api/notifications/${item.id}/read/`, { method: 'PATCH' })));
+      notifications = notifications.map(item => ({ ...item, is_read: true }));
+      updateCounts(0);
+      renderNotifications();
+    });
+
+    refreshUnreadCount();
+    window.setInterval(refreshUnreadCount, 60000);
+  })();
 
   // ── SIDEBAR ALERT BADGES — shared across every dashboard page ──
   // #dashboardNavBadge and #sidebarAlertCount live in THIS shared sidebar

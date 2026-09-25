@@ -115,7 +115,7 @@
   function showError(message) { const el = document.getElementById('errorState'); el.innerText = message; el.hidden = false; }
   function clearError() { document.getElementById('errorState').hidden = true; }
   function displayDate(value) { return value ? escapeHtml(String(value).slice(0, 10)) : '—'; }
-  function money(value) { return value == null ? '—' : Number(value).toFixed(2); }
+  function money(value) { return value == null ? '—' : formatMoney(value); }
   function statusBadge(value) { return `<span class="badge bg-secondary">${escapeHtml(value || '—')}</span>`; }
   function loadOrdersDebounced() { clearTimeout(searchTimer); searchTimer = setTimeout(loadOrders, 250); }
 

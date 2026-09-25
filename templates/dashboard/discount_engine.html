@@ -224,7 +224,7 @@ function showDiscountMessage(text, type) {
 }
 
 function showRecommendationDetails(r) {
-    const money = v => (v !== null && v !== undefined) ? `Rs ${Number(v).toFixed(2)}` : '—';
+    const money = v => (v !== null && v !== undefined) ? formatMoney(v) : '—';
     const lines = [
         `Product: ${r.product_name ?? '—'}`,
         `Batch: ${r.batch != null ? '#' + r.batch : '—'}`,

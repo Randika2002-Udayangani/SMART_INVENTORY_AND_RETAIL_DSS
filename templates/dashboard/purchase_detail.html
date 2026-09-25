@@ -158,7 +158,7 @@ async function loadDetail() {
         document.getElementById('sSupplier').textContent = p.supplier_name ?? '—';
         document.getElementById('sDate').textContent = p.purchase_date ?? '—';
         document.getElementById('sTotal').textContent = canSeeFinancials
-            ? 'Rs ' + Number(p.total_amount ?? 0).toLocaleString()
+            ? formatMoney(p.total_amount)
             : 'Restricted';
         document.getElementById('sOrderDate').textContent = p.order_date ?? '—';
         document.getElementById('sExpectedDays').textContent = p.expected_days ?? '—';
@@ -173,7 +173,7 @@ async function loadDetail() {
                     <td>${escapeHtml(b.product_name) || '—'}</td>
                     <td>${b.quantity_received ?? '—'}</td>
                     <td>${b.remaining_quantity ?? '—'}</td>
-                    <td>${canSeeFinancials ? 'Rs ' + Number(b.cost_price ?? 0).toLocaleString() : '<span class="restricted-cell">Restricted</span>'}</td>
+                    <td>${canSeeFinancials ? formatMoney(b.cost_price) : '<span class="restricted-cell">Restricted</span>'}</td>
                     <td>${b.expiry_date ?? '—'}</td>
                     <td>${daysLeftCell(b.expiry_date)}</td>
                     <td>${batchStatusBadge(b.status)}</td>

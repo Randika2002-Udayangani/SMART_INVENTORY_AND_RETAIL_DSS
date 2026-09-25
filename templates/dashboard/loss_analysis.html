@@ -267,9 +267,9 @@ document.getElementById('dmgProductSearch').addEventListener('input', (e) => {
 async function loadSummary() {
     try {
         const data = await apiFetch('/api/losses/summary/');
-        document.getElementById('grossLoss').innerText = 'Rs ' + Number(data.gross_expiry_loss ?? 0).toLocaleString();
-        document.getElementById('recovered').innerText = 'Rs ' + Number(data.recovered_amount ?? 0).toLocaleString();
-        document.getElementById('netLoss').innerText = 'Rs ' + Number(data.total_net_loss ?? 0).toLocaleString();
+        document.getElementById('grossLoss').innerText = formatMoney(data.gross_expiry_loss);
+        document.getElementById('recovered').innerText = formatMoney(data.recovered_amount);
+        document.getElementById('netLoss').innerText = formatMoney(data.total_net_loss);
     } catch(e) {
         console.error('loadSummary failed:', e);
         showPageError('Loss summary could not be loaded.');
@@ -324,7 +324,7 @@ function renderLosses() {
             <td>${escapeHtml(r.product_name ?? r['product__product_name'] ?? '—')}</td>
             <td><span class="badge bg-secondary">${escapeHtml(r.loss_type)}</span></td>
             <td>${escapeHtml(r.loss_quantity ?? r.quantity ?? '—')}</td>
-            <td>Rs ${Number(r.loss_value ?? 0).toLocaleString()}</td>
+            <td>${formatMoney(r.loss_value)}</td>
             <td>${escapeHtml(r.loss_date ?? r.date ?? r.created_at ?? '—')}</td>
         </tr>`;
     }).join('');
@@ -358,7 +358,7 @@ function showLossDetails(key) {
             ${field('Product', record.product_name ?? record['product__product_name'])}
             ${field('Loss Type', record.loss_type)}
             ${field('Quantity', record.loss_quantity ?? record.quantity)}
-            ${field('Loss Value', record.loss_value != null ? 'Rs ' + Number(record.loss_value).toLocaleString() : null)}
+                    ${field('Loss Value', record.loss_value != null ? formatMoney(record.loss_value) : null)}
             ${field('Date', record.loss_date ?? record.date ?? record.created_at)}
             ${field('Recorded By', record.recorded_by__username ?? (record.recorded_by ? 'User #' + record.recorded_by : null))}
             ${field('Batch', record.batch_number ?? record.batch_id ?? record.batch)}

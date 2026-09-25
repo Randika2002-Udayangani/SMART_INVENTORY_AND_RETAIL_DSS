@@ -350,7 +350,7 @@ function renderPurchasesTable() {
             <td><a href="/dashboard/purchases/detail/${p.id}/">${p.invoice_number ?? '—'}</a></td>
             <td>${p.supplier_name ?? (typeof p.supplier === 'object' ? p.supplier?.name : p.supplier) ?? '—'}</td>
             <td>${p.purchase_date ?? '—'}</td>
-            <td>${canSeeFinancials ? 'Rs ' + Number(p.total_amount ?? 0).toLocaleString() : '<span class="restricted-cell">Restricted</span>'}</td>
+            <td>${canSeeFinancials ? formatMoney(p.total_amount) : '<span class="restricted-cell">Restricted</span>'}</td>
             <td>${(p.batches ?? []).length || p.batch_count || '—'}</td>
         </tr>
     `).join('');
@@ -421,7 +421,7 @@ function renderBatches() {
         // below separately filters down to only the pending ones it cares about.
         const selectCell = `<input type="checkbox" class="batch-select" data-batch-id="${b.id}" aria-label="Select batch ${b.id}">`;
         const costCell = canSeeFinancials
-            ? 'Rs ' + Number(b.cost_price ?? 0).toLocaleString()
+            ? formatMoney(b.cost_price)
             : '<span class="restricted-cell">Restricted</span>';
         return `
         <tr>

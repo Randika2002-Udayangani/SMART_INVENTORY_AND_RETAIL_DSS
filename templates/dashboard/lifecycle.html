@@ -55,11 +55,11 @@
   </div>
 
   <div class="row g-3 mb-4">
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl">NEW</div><div class="kpi-val text-primary" id="countNew">—</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl">GROWING</div><div class="kpi-val text-success" id="countGrowing">—</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl">STABLE</div><div class="kpi-val text-secondary" id="countStable">—</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl">DECLINING</div><div class="kpi-val text-warning" id="countDeclining">—</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl">SLOW MOVING</div><div class="kpi-val text-danger" id="countSlow">—</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="NEW"></div><div class="kpi-val text-primary" id="countNew">—</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="GROWING"></div><div class="kpi-val text-success" id="countGrowing">—</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="STABLE"></div><div class="kpi-val text-secondary" id="countStable">—</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="DECLINING"></div><div class="kpi-val text-warning" id="countDeclining">—</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="SLOW_MOVING"></div><div class="kpi-val text-danger" id="countSlow">—</div></div></div>
   </div>
 
   <div class="mb-3">
@@ -142,6 +142,10 @@
     }[char]));
   }
 
+  document.querySelectorAll('[data-lifecycle-label]').forEach(element => {
+    element.textContent = LIFECYCLE_LABELS[element.dataset.lifecycleLabel];
+  });
+
   function formatLifecycleDate(value) {
     const date = new Date(`${value}T00:00:00`);
     if (Number.isNaN(date.getTime())) return value || '—';
@@ -157,7 +161,7 @@
       SLOW_MOVING: '#fee2e2;color:#dc2626'
     };
     const safeStatus = String(status ?? '—');
-    return `<span class="pill" style="background:${map[safeStatus] || '#f3f4f6;color:#374151'}">${escapeHtml(safeStatus)}</span>`;
+    return `<span class="pill" style="background:${map[safeStatus] || '#f3f4f6;color:#374151'}">${escapeHtml(displayLabel(LIFECYCLE_LABELS, safeStatus))}</span>`;
   }
 
   function recPill(recommendation) {

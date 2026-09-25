@@ -56,7 +56,7 @@
     <div class="col-12 col-lg-6 fin-restricted">
         <div class="card report-card p-4">
             <div class="d-flex justify-content-between"><h5>Profit Report</h5><span class="report-icon">↗</span></div>
-            <p class="description">WAC-based revenue, cost, gross profit, and margin results.</p>
+            <p class="description">Revenue, cost, gross profit, and margin results using <span title="Weighted Average Cost — the average price paid per unit based on all purchases">WAC <span class="tooltip-icon">ⓘ</span></span> and <span title="Margin percentage — the share of each sale left after the product cost">Margin % <span class="tooltip-icon">ⓘ</span></span>.</p>
             <div class="row g-2 mb-3">
                 <div class="col"><label class="date-label" for="profitFrom">From</label><input type="date" id="profitFrom" class="form-control form-control-sm"></div>
                 <div class="col"><label class="date-label" for="profitTo">To</label><input type="date" id="profitTo" class="form-control form-control-sm"></div>
@@ -94,6 +94,8 @@
             <div class="report-message" aria-live="polite"></div>
         </div>
     </div>
+
+    
 
     <!-- Supplier Report — purchasing activity. Financial: hidden from STAFF. -->
     <div class="col-12 col-lg-6 col-xl-4 fin-restricted">
@@ -138,7 +140,7 @@
     <div class="col-12 col-lg-6 col-xl-4 fin-restricted">
         <div class="card report-card p-4">
             <div class="d-flex justify-content-between"><h5>Reorder Report</h5><span class="report-icon">⟳</span></div>
-            <p class="description">Reorder recommendations, urgency, quantities, and costs.</p>
+            <p class="description">Restocking recommendations, urgency, quantities, and estimated costs.</p>
             <div class="download-actions">
                 <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/reorder/','reorder_report','excel',{},this)">Download Excel</button>
                 <button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/reorder/','reorder_report','pdf',{},this)">Download PDF</button>

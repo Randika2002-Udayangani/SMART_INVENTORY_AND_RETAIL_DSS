@@ -81,28 +81,28 @@
 <div class="row g-3 mb-4">
     <div class="col-md-3">
         <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#16a34a;">HEALTHY · 80–100</div>
+            <div class="kpi-lbl" style="color:#16a34a;" data-health-label="HEALTHY"></div>
             <div class="kpi-val" style="color:#16a34a;" id="countHealthy">0</div>
             <small class="text-muted">Monitor normally</small>
         </div>
     </div>
     <div class="col-md-3">
         <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#854d0e;">WATCH · 60–79</div>
+            <div class="kpi-lbl" style="color:#854d0e;" data-health-label="WATCH"></div>
             <div class="kpi-val" style="color:#ca8a04;" id="countWatch">0</div>
             <small class="text-muted">Keep an eye on these</small>
         </div>
     </div>
     <div class="col-md-3">
         <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#c2410c;">AT RISK · 40–59</div>
+            <div class="kpi-lbl" style="color:#c2410c;" data-health-label="AT_RISK"></div>
             <div class="kpi-val" style="color:#ea580c;" id="countAtRisk">0</div>
             <small class="text-muted">Needs attention soon</small>
         </div>
     </div>
     <div class="col-md-3">
         <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#b91c1c;">CRITICAL · 0–39</div>
+            <div class="kpi-lbl" style="color:#b91c1c;" data-health-label="CRITICAL"></div>
             <div class="kpi-val" style="color:#dc2626;" id="countCritical">0</div>
             <small class="text-muted">Immediate action required</small>
         </div>
@@ -169,7 +169,7 @@
                     <th>Product</th>
                     <th>Category</th>
                     <th>Velocity</th>
-                    <th>Margin</th>
+                    <th>Margin % <span class="tooltip-icon" title="Margin percentage — the share of each sale left after the product cost">ⓘ</span></th>
                     <th>Expiry Risk</th>
                     <th>Stock Duration</th>
                     <th>Overall Score</th>
@@ -232,7 +232,7 @@ function statusBadge(s) {
         'AT RISK': 'badge-atrisk',
         'CRITICAL': 'badge-critical'
     };
-    return `<span class="${map[s] || 'badge-watch'}">${s}</span>`;
+    return `<span class="${map[s] || 'badge-watch'}">${displayLabel(HEALTH_LABELS, s)}</span>`;
 }
 
 function numberCell(value) {
@@ -377,7 +377,7 @@ async function showProductDetails(productId) {
                 ${field('SKU', detail.sku_code)}
                 ${field('Overall Score', `${numberCell(detail.overall_score)} (${detail.status ?? '—'})`)}
                 ${field('Velocity', numberCell(detail.velocity_score))}
-                ${field('Margin', numberCell(detail.margin_score))}
+                ${field('Margin %', numberCell(detail.margin_score))}
                 ${field('Expiry Risk', numberCell(detail.expiry_risk_score))}
                 ${field('Stock Duration', numberCell(detail.stock_duration_score))}
                 ${field('Rating Score', detail.rating_sufficient ? numberCell(detail.rating_score) : 'Not enough ratings yet')}
