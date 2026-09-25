@@ -240,9 +240,13 @@ class F08HealthScoreListTest(F08TestSetup):
         response = self.client.get('/api/health-scores/', **self.auth_header)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertIsInstance(data, list)
-        self.assertGreater(len(data), 0)
-        print(f"\n✅ GET /api/health-scores/ → {len(data)} records")
+        # FIX: /api/health-scores/ is now paginated — response is
+        # {results, count, page, page_size, total_pages}, not a bare list.
+        self.assertIn('results', data)
+        self.assertIsInstance(data['results'], list)
+        self.assertGreater(data['count'], 0)
+        print(f"\n✅ GET /api/health-scores/ → {data['count']} records "
+              f"({len(data['results'])} on this page)")
 
     def test_filter_by_status_critical(self):
         """Filter ?status=CRITICAL should return only CRITICAL records."""
@@ -250,9 +254,9 @@ class F08HealthScoreListTest(F08TestSetup):
             '/api/health-scores/?status=CRITICAL', **self.auth_header)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        for item in data:
+        for item in data['results']:
             self.assertEqual(item['status'], 'CRITICAL')
-        print(f"\n✅ Filter CRITICAL → {len(data)} records")
+        print(f"\n✅ Filter CRITICAL → {data['count']} records")
 
     def test_filter_by_status_healthy(self):
         """Filter ?status=HEALTHY should return only HEALTHY records."""
@@ -260,16 +264,16 @@ class F08HealthScoreListTest(F08TestSetup):
             '/api/health-scores/?status=HEALTHY', **self.auth_header)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        for item in data:
+        for item in data['results']:
             self.assertEqual(item['status'], 'HEALTHY')
-        print(f"\n✅ Filter HEALTHY → {len(data)} records")
+        print(f"\n✅ Filter HEALTHY → {data['count']} records")
 
     def test_response_has_required_fields(self):
         """Each record must have all required fields."""
         response = self.client.get('/api/health-scores/', **self.auth_header)
         data     = response.json()
-        self.assertGreater(len(data), 0)
-        record = data[0]
+        self.assertGreater(len(data['results']), 0)
+        record = data['results'][0]
         for field in ['id', 'product', 'overall_score', 'status',
                       'recommended_action', 'weighting_mode',
                       'calculated_date']:
