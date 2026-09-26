@@ -1713,13 +1713,34 @@ class HealthScoreListView(APIView):
 
 
 class HealthScoreSummaryView(APIView):
- 
+    """
+    GET /api/health-scores/summary/
+
+    KPI counts (HEALTHY/WATCH/AT RISK/CRITICAL) for the health_score.html
+    dashboard cards, computed with a proper aggregate query — independent
+    of whatever page of the paginated /api/health-scores/ list is
+    currently being viewed.
+
+    IMPORTANT: this is a read-only endpoint. It must NEVER trigger
+    calculate_health_scores() (or any other write) as a side effect of a
+    GET request — that was flagged as the one genuine pre-merge blocker,
+    was reintroduced once already in this file, and must not come back a
+    second time. If `total` is less than `active_product_count` below,
+    that means the last calculation run was partial or none has run yet —
+    the caller (frontend) is expected to show that as-is (e.g. via the
+    `note` field), not have this endpoint silently recalculate to paper
+    over it. A manager who wants a complete picture calls
+    POST /api/health-scores/calculate/ themselves, same as every other
+    calculate-then-view pattern in this project (lifecycle, reorder,
+    discounts).
+    """
+
     def get(self, request):
         from django.db.models import Count, OuterRef, Subquery
         from products.models import Product
 
         active_product_count = Product.objects.filter(is_active=True).count()
- 
+
         latest_ids = (
             InventoryHealthScore.objects
             .filter(product_id=OuterRef('product_id'), product__is_active=True)
@@ -1730,19 +1751,9 @@ class HealthScoreSummaryView(APIView):
             id__in=Subquery(latest_ids)
         )
 
-        # A partial calculation must not make the KPI cards look like they
-        # describe the whole catalogue. Generate the missing active-product
-        # scores before counting statuses, then rebuild the latest queryset.
-        if latest_qs.count() < active_product_count:
-            from inventory.services.health_score import calculate_health_scores
-            calculate_health_scores()
-            latest_qs = InventoryHealthScore.objects.filter(
-                id__in=Subquery(latest_ids)
-            )
- 
         counts = latest_qs.values('status').annotate(count=Count('id'))
         latest_record = latest_qs.order_by('-calculated_at', '-calculated_date', '-id').first()
- 
+
         summary = {
             'HEALTHY':  0,
             'WATCH':    0,
@@ -1756,18 +1767,32 @@ class HealthScoreSummaryView(APIView):
         last_calculated_at = None
         if latest_record is not None:
             last_calculated_at = latest_record.calculated_at.isoformat() if latest_record.calculated_at else latest_record.calculated_date.isoformat()
- 
-        return Response({
-            'summary': summary,
-            'total':   sum(summary.values()),
-            'active_product_count': active_product_count,
-            'last_calculated_at': last_calculated_at,
-            'note': (
+
+        total = sum(summary.values())
+        is_partial = total < active_product_count
+
+        if total == 0:
+            note = (
                 'Call POST /api/health-scores/calculate/ first if all counts '
                 'are 0. For the full product list use GET /api/health-scores/.'
             )
-        })
+        elif is_partial:
+            note = (
+                f'Only {total} of {active_product_count} active products have '
+                'a health score — call POST /api/health-scores/calculate/ to '
+                'cover the rest.'
+            )
+        else:
+            note = 'For the full product list use GET /api/health-scores/.'
 
+        return Response({
+            'summary': summary,
+            'total':   total,
+            'active_product_count': active_product_count,
+            'is_partial': is_partial,
+            'last_calculated_at': last_calculated_at,
+            'note': note,
+        })
 
 # ─────────────────────────────────────────────────────────────────
 # GET /api/health-scores/categories/
