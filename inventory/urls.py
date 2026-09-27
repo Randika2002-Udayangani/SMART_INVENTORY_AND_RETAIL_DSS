@@ -48,6 +48,7 @@ urlpatterns = [
     path('discount-rules/<int:pk>/', views.DiscountRuleDetailView.as_view(), name='discount-rule-detail'),
 
     # ── F09 Discount Recommendations (read + review only) ──
+    path('discounts/public/', views.PublicDiscountRecommendationListView.as_view(), name='discount-public-list'),
     path('discounts/recommendations/', views.DiscountRecommendationListView.as_view(), name='discount-recommendation-list'),
     path('discounts/recommendations/<int:pk>/', views.DiscountRecommendationDetailView.as_view(), name='discount-recommendation-detail'),
 

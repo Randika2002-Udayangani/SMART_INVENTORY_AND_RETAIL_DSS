@@ -6,12 +6,13 @@ from datetime import datetime
 from users.permissions import IsManagerOrAdmin  
 from decimal import Decimal
 from users.audit import log_action
+from core.authentication import LenientJWTAuthentication
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import F, Sum
 from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -28,9 +29,9 @@ from .models import (
     ReorderRecommendation,
 )
 from .serializers import (
-    StockLedgerSerializer, StockAdjustmentSerializer, CurrentStockSerializer, 
-    DiscountRuleSerializer, DiscountRecommendationSerializer, 
-    ReorderRecommendationSerializer,
+    StockLedgerSerializer, StockAdjustmentSerializer, CurrentStockSerializer,
+    DiscountRuleSerializer, DiscountRecommendationSerializer,
+    PublicDiscountRecommendationSerializer, ReorderRecommendationSerializer,
 )
 from sales.models import ItemSalesRecord
 from sales.models import UploadLog
@@ -1941,6 +1942,29 @@ class DiscountRuleDetailView(APIView):
 # a recommendation APPLIED/IGNORED.
 # ═════════════════════════════════════════════════════════════════
  
+class PublicDiscountRecommendationListView(generics.ListAPIView):
+    """Customer-safe list of currently active discount recommendations."""
+    serializer_class = PublicDiscountRecommendationSerializer
+    authentication_classes = [LenientJWTAuthentication]
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        return (
+            DiscountRecommendation.objects
+            .filter(
+                status='PENDING',
+                best_action='DISCOUNT',
+                recommended_discount_pct__gt=0,
+                recommended_price__gt=0,
+                recommended_price__lt=F('current_price'),
+                batch__status='ACTIVE',
+                batch__remaining_quantity__gt=0,
+            )
+            .select_related('product')
+            .order_by('days_until_expiry', '-calculated_date', '-id')
+        )
+
+
 class DiscountRecommendationListView(generics.ListAPIView):
     """
     GET /api/discounts/recommendations/
