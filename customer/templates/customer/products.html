@@ -423,38 +423,51 @@
     // ── Load all products ────────────────────────────────────────
     async function loadAllProducts() {
         try {
-            // Fetch products and discounts in parallel
-            const [productsRes, discountsRes] = await Promise.all([
-                fetch('/api/products/'),
-                fetch('/api/discounts/recommendations/?status=PENDING', {
-                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
-                })
-            ]);
-
-            const data     = await productsRes.json();
-            allProducts    = Array.isArray(data) ? data : (data.results || []);
-
-            // Build discount map keyed by product_id
-            let discountMap = {};
-            if (discountsRes.ok) {
-                const discData   = await discountsRes.json();
-                const discounts  = Array.isArray(discData) ? discData : (discData.results || []);
-                discounts.forEach(d => {
-                    discountMap[d.product] = {
-                        pct:   parseFloat(d.recommended_discount_pct).toFixed(0),
-                        price: parseFloat(d.recommended_price).toFixed(2)
-                    };
-                });
-                console.log('Discounts loaded:', discountMap);
+            const productsRes = await fetch('/api/products/?page=1&page_size=100');
+            if (!productsRes.ok) {
+                throw new Error('Products API failed');
             }
 
-            // Add discount info to products
+            const data = await productsRes.json();
+            allProducts = Array.isArray(data) ? data : (data.results || []);
+
+            if (!Array.isArray(data) && data.total_pages > 1) {
+                const remainingPages = await Promise.all(
+                    Array.from({ length: data.total_pages - 1 }, (_, index) =>
+                        fetch(`/api/products/?page=${index + 2}&page_size=100`)
+                            .then(response => response.json())
+                            .then(page => page.results || [])
+                    )
+                );
+                allProducts = allProducts.concat(...remainingPages);
+            }
+
+            let discountMap = {};
+            try {
+                const discountsRes = await fetch('/api/discounts/public/', {
+                    headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+                });
+                if (discountsRes.ok) {
+                    const discData = await discountsRes.json();
+                    const discounts = Array.isArray(discData) ? discData : (discData.results || []);
+                    discounts.forEach(d => {
+                        const productId = d.product_id ?? d.product;
+                        if (productId === undefined || productId === null) return;
+                        discountMap[productId] = {
+                            pct:   parseFloat(d.recommended_discount_pct).toFixed(0),
+                            price: parseFloat(d.recommended_price).toFixed(2)
+                        };
+                    });
+                }
+            } catch (discountErr) {
+                console.warn('Discounts unavailable, continuing without them:', discountErr);
+            }
+
             allProducts = allProducts.map(p => ({
                 ...p,
                 discount: discountMap[p.id] || null
             }));
 
-            // Group by category
             grouped = {};
             allProducts.forEach(p => {
                 const cat = p.category_name || 'Uncategorised';
@@ -469,6 +482,10 @@
     }
 
     function renderProductPrice(p) {
+        // The actual stock status is only known when the availability endpoint is
+        // called in the modal. Until then, avoid implying a live discount if the
+        // batch may already be expired or out of stock; show a neutral "price may vary"
+        // hint rather than a misleading promotional badge.
         if (p.discount) {
             return `
                 <span style="text-decoration:line-through;color:#aaa;font-size:0.82rem;">
@@ -551,7 +568,14 @@
                                     border-radius:12px;font-weight:700;">
                                     🏷️ ${p.discount.pct}% OFF
                                 </span>
-                            </div>` : ''}
+                            </div>` : `
+                            <div style="margin-bottom:6px;">
+                                <span style="background:#eef4ff;color:#4a5a7a;
+                                    font-size:0.72rem;padding:3px 8px;
+                                    border-radius:12px;font-weight:700;">
+                                    Price may vary
+                                </span>
+                            </div>`}
                         <div class="pname">${p.product_name}</div>
                         <div class="pprice">${renderProductPrice(p)}</div>
                         <button class="add-btn"
@@ -583,20 +607,27 @@
         if (!p) return;
 
         document.getElementById('modalProductName').textContent = p.product_name;
-        document.getElementById('modalPrice').innerHTML = p.discount
-            ? `<span style="text-decoration:line-through;color:#aaa;font-size:1rem;">
-                Rs ${parseFloat(p.unit_price).toFixed(2)}
-            </span>
-            <span style="color:#c5221f;font-weight:700;font-size:1.5rem;margin-left:8px;">
-                Rs ${p.discount.price}
-            </span>
-            <span style="background:#fce8e6;color:#c5221f;font-size:0.8rem;
-                padding:3px 10px;border-radius:12px;margin-left:8px;font-weight:700;">
-                🏷️ ${p.discount.pct}% OFF
-            </span>`
-            : `Rs ${parseFloat(p.unit_price).toFixed(2)}`;
 
-            // Show loading for stock
+        // Once availability is confirmed, the modal should never show a discount on
+        // a product that is actually out of stock. If the stock check says the product is
+        // unavailable, we hide the expired discount state and show the original selling price.
+        const initialModalPrice = () => (
+            p.discount
+                ? `<span style="text-decoration:line-through;color:#aaa;font-size:1rem;">
+                    Rs ${parseFloat(p.unit_price).toFixed(2)}
+                </span>
+                <span style="color:#c5221f;font-weight:700;font-size:1.5rem;margin-left:8px;">
+                    Rs ${p.discount.price}
+                </span>
+                <span style="background:#fce8e6;color:#c5221f;font-size:0.8rem;
+                    padding:3px 10px;border-radius:12px;margin-left:8px;font-weight:700;">
+                    🏷️ ${p.discount.pct}% OFF
+                </span>`
+                : `Rs ${parseFloat(p.unit_price).toFixed(2)}`
+        );
+        document.getElementById('modalPrice').innerHTML = initialModalPrice();
+
+        const expiryDateForDisplay = p.expiry_date || '—';
         document.getElementById('modalInfoRows').innerHTML = `
             ${p.sku_code ? `
             <div class="modal-info-row">
@@ -612,11 +643,10 @@
                 <span class="label">Brand</span>
                 <span class="value">${p.brand_name || p.brand}</span>
             </div>` : ''}
-            ${p.expiry_date ? `
             <div class="modal-info-row">
                 <span class="label">Expiry Date</span>
-                <span class="value">📅 ${p.expiry_date}</span>
-            </div>` : ''}
+                <span class="value" id="expiryDisplay">📅 ${expiryDateForDisplay}</span>
+            </div>
             <div class="modal-info-row">
                 <span class="label">Availability</span>
                 <span class="value" id="stockDisplay">⏳ Checking stock...</span>
@@ -640,11 +670,20 @@
 
         // Fetch real stock from availability endpoint
         try {
-            const res = await fetch(`/api/products/${productId}/availability/`);
+            // Restocks may happen while the storefront is open, so always ask
+            // the server for the latest batch availability when opening a product.
+            const res = await fetch(`/api/products/${productId}/availability/`, {
+                cache: 'no-store'
+            });
             if (res.ok) {
                 const data  = await res.json();
                 const stockEl  = document.getElementById('stockDisplay');
+                const expiryEl = document.getElementById('expiryDisplay');
                 const addBtn2  = document.getElementById('modalAddBtn');
+
+                if (expiryEl && data.earliest_expiry) {
+                    expiryEl.textContent = `📅 ${data.earliest_expiry}`;
+                }
 
                 if (stockEl) {
                     const status   = data.status;
@@ -681,7 +720,9 @@
                         };
 
                     } else {
-                        // Out of stock — disable button
+                        // The discount should not remain visible once the availability check
+                        // proves there is no sellable stock left for this product.
+                        document.getElementById('modalPrice').innerHTML = `Rs ${parseFloat(p.unit_price).toFixed(2)}`;
                         stockEl.innerHTML = `
                             <span style="color:#c5221f;">
                                 ❌ Currently out of stock

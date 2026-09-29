@@ -1,7 +1,9 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from inventory.models import DiscountRecommendation
 from purchases.models import Purchase, PurchaseBatch
@@ -72,3 +74,65 @@ class ProductDiscountSerializerTests(TestCase):
 
 		self.assertIsNone(data['discounted_price'])
 		self.assertIsNone(data['discount_percentage'])
+
+
+class ProductAvailabilityRestockTests(TestCase):
+	def test_future_pending_expiry_restock_is_available_to_customers(self):
+		product = Product.objects.create(
+			product_name='Restocked Product',
+			unit_price=Decimal('50.00'),
+			cost_price=Decimal('30.00'),
+		)
+		supplier = Supplier.objects.create(supplier_name='Restock Supplier')
+		purchase = Purchase.objects.create(
+			supplier=supplier,
+			purchase_date=date.today(),
+		)
+		expiry_date = date.today() + timedelta(days=60)
+		PurchaseBatch.objects.create(
+			purchase=purchase,
+			product=product,
+			quantity_received=20,
+			cost_price=Decimal('30.00'),
+			expiry_date=date.today() - timedelta(days=1),
+			remaining_quantity=20,
+			status='ACTIVE',
+		)
+		PurchaseBatch.objects.create(
+			purchase=purchase,
+			product=product,
+			quantity_received=12,
+			cost_price=Decimal('30.00'),
+			expiry_date=expiry_date,
+			remaining_quantity=12,
+			status='PENDING_EXPIRY',
+		)
+
+		response = APIClient().get(f'/api/products/{product.id}/availability/')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data['status'], 'AVAILABLE')
+		self.assertEqual(response.data['stock'], 12)
+		self.assertEqual(response.data['earliest_expiry'], expiry_date.isoformat())
+		self.assertEqual(
+			ProductPublicSerializer(product).data['expiry_date'],
+			expiry_date.isoformat(),
+		)
+
+		client = APIClient()
+		client.force_authenticate(
+			user=get_user_model().objects.create_user(username='inventory-test-user')
+		)
+		inventory_response = client.get('/api/inventory/stock/')
+		product_stock = next(
+			row for row in inventory_response.data['stock']
+			if row['product_id'] == product.id
+		)
+		detail_response = client.get(f'/api/inventory/stock/{product.id}/')
+
+		self.assertEqual(inventory_response.status_code, 200)
+		self.assertEqual(detail_response.status_code, 200)
+		self.assertEqual(product_stock['current_stock'], response.data['stock'])
+		self.assertEqual(
+			detail_response.data['total_current_stock'], response.data['stock']
+		)

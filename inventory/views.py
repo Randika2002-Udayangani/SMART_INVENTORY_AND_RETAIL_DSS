@@ -37,6 +37,7 @@ from sales.models import ItemSalesRecord
 from sales.models import UploadLog
 from inventory.services.reorder_logic import get_urgency
 from inventory.services.fefo import deduct_stock_fefo
+from inventory.services.stock import get_sellable_batches
 
 
 from inventory.services.reorder_logic import check_reorder_needs
@@ -62,11 +63,15 @@ class StockSnapshotView(APIView):
         last_sync = get_last_sync_date()
         products  = Product.objects.filter(is_active=True).select_related('category', 'brand')
         result    = []
+        stock_by_product = dict(
+            get_sellable_batches()
+            .values('product_id')
+            .annotate(total=Sum('remaining_quantity'))
+            .values_list('product_id', 'total')
+        )
 
         for product in products:
-            current_stock = PurchaseBatch.objects.filter(
-                product=product, status='ACTIVE'
-            ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
+            current_stock = stock_by_product.get(product.id, 0)
 
             reorder = product.reorder_threshold or 0
             if current_stock == 0:
@@ -228,9 +233,7 @@ class ProductStockDetailView(APIView):
             return Response({'error': 'Product not found'},
                             status=status.HTTP_404_NOT_FOUND)
 
-        batches     = PurchaseBatch.objects.filter(
-            product=product, status='ACTIVE'
-        ).order_by('expiry_date')
+        batches = get_sellable_batches(product.id).order_by('expiry_date')
         total_stock = batches.aggregate(
             total=Sum('remaining_quantity'))['total'] or 0
 
@@ -461,13 +464,13 @@ class LowStockView(APIView):
  
         products = Product.objects.filter(is_active=True)
  
-        # Bulk-fetch all active batch stock in one query (avoid N+1)
+        # Use the same future-expiry batch set as the inventory snapshot and
+        # customer availability so alert counts describe sellable stock.
         stock_by_product = {
-            row['product']: row['total']
-            for row in PurchaseBatch.objects.filter(
-                status__in=['ACTIVE', 'PENDING_EXPIRY'],
-                remaining_quantity__gt=0,
-            ).values('product').annotate(total=Sum('remaining_quantity'))
+            row['product_id']: row['total']
+            for row in get_sellable_batches()
+            .values('product_id')
+            .annotate(total=Sum('remaining_quantity'))
         }
  
         # Bulk-fetch 30-day sales per product (avoid N+1)
@@ -531,19 +534,21 @@ class LowStockView(APIView):
 class OutOfStockView(APIView):
     def get(self, request):
         products = Product.objects.filter(is_active=True)
-        out      = []
-
-        for product in products:
-            current = PurchaseBatch.objects.filter(
-                product=product, status='ACTIVE'
-            ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
-
-            if current == 0:
-                out.append({
-                    'product_id'  : product.id,
-                    'product_name': product.product_name,
-                    'sku_code'    : product.sku_code,
-                })
+        stock_by_product = {
+            row['product_id']: row['total']
+            for row in get_sellable_batches()
+            .values('product_id')
+            .annotate(total=Sum('remaining_quantity'))
+        }
+        out = [
+            {
+                'product_id': product.id,
+                'product_name': product.product_name,
+                'sku_code': product.sku_code,
+            }
+            for product in products
+            if stock_by_product.get(product.id, 0) == 0
+        ]
 
         return Response({'count': len(out), 'out_of_stock': out})
 
