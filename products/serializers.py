@@ -63,9 +63,10 @@ class CategorySerializer(serializers.ModelSerializer):
 # until staff assigns a category.
 # ─────────────────────────────────────────────
 class ProductPublicSerializer(serializers.ModelSerializer):
-    expiry_date = serializers.DateField(
-        source='earliest_expiry', read_only=True, allow_null=True
-    )
+    # Customer-facing expiry should reflect the nearest valid batch, not a stale
+    # product-level field. If every active batch is expired, return None so the
+    # frontend treats the product as unavailable rather than showing a dead date.
+    expiry_date = serializers.SerializerMethodField()
     category_name = serializers.CharField(
         source='category.category_name',
         read_only=True,
@@ -98,11 +99,22 @@ class ProductPublicSerializer(serializers.ModelSerializer):
         ]
 
     def get_is_near_expiry(self, obj):
-        expiry_date = getattr(obj, 'earliest_expiry', None)
+        expiry_date = self.get_expiry_date(obj)
+        if not expiry_date:
+            return False
         return bool(
-            expiry_date
-            and date.today() <= expiry_date <= date.today() + timedelta(days=30)
+            date.today() <= date.fromisoformat(expiry_date) <= date.today() + timedelta(days=30)
         )
+
+    def get_expiry_date(self, obj):
+        from inventory.services.stock import get_sellable_batches
+
+        batch = (
+            get_sellable_batches(obj.id)
+            .order_by('expiry_date')
+            .first()
+        )
+        return batch.expiry_date.isoformat() if batch and batch.expiry_date else None
 
     def _get_customer_discount(self, obj):
         from inventory.models import DiscountRecommendation
@@ -178,11 +190,22 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
 
     def get_is_near_expiry(self, obj):
-        expiry_date = getattr(obj, 'earliest_expiry', None)
+        expiry_date = self.get_expiry_date(obj)
+        if not expiry_date:
+            return False
         return bool(
-            expiry_date
-            and date.today() <= expiry_date <= date.today() + timedelta(days=30)
+            date.today() <= date.fromisoformat(expiry_date) <= date.today() + timedelta(days=30)
         )
+
+    def get_expiry_date(self, obj):
+        from inventory.services.stock import get_sellable_batches
+
+        batch = (
+            get_sellable_batches(obj.id)
+            .order_by('expiry_date')
+            .first()
+        )
+        return batch.expiry_date.isoformat() if batch and batch.expiry_date else None
 
     def _get_customer_discount(self, obj):
         from inventory.models import DiscountRecommendation
