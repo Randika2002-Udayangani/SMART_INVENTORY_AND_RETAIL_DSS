@@ -28,6 +28,31 @@ def product_list(request):
     return render(request, "customer/products.html")
 
 
+class ProductPickerOptionsView(APIView):
+    """
+    GET /api/products/picker/
+
+    Scoped fix for a real regression the audit found: loss_analysis.html,
+    purchases.html, and zone_recommendations.html all populate a product
+    datalist by calling /api/products/ and assuming it returns every
+    active product. Since ProductListCreateView is paginated
+    (StandardResultsPagination, page_size=25), any store with more than
+    25 active products silently lost everything past whatever the default
+    ordering puts in position 26+ — no crash (extractArray() defends
+    against the shape change), just missing products in the picker.
+
+    This is deliberately a separate, lightweight endpoint rather than
+    reverting ProductListCreateView's pagination or giving it a special
+    unpaginated mode — same pattern already used for the inventory Stock
+    Levels tab (see InventoryProductOptionsView in inventory/views.py).
+    Returns {id, name} only, no annotations/joins, so it stays cheap
+    regardless of catalogue size.
+    """
+    def get(self, request):
+        products = Product.objects.filter(is_active=True).values('id', 'product_name').order_by('product_name')
+        return Response({'products': list(products)})
+
+
 # ─────────────────────────────────────────────
 # Brand
 # ─────────────────────────────────────────────

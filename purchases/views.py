@@ -652,7 +652,7 @@ class PurchaseInvoicePDFUploadView(APIView):
                 )
 
             # ── R3: date missing / unparseable / future -> REJECT, LOG_ERROR ──
-            today = datetime.date.today()
+            today = timezone.now().date()
             if not purchase_date:
                 upload_log.status = 'FAILED'
                 upload_log.error_message = 'R3: Invoice date missing or unparseable'

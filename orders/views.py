@@ -1,6 +1,7 @@
 import json
 
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from django.db.models import Avg, Count, OuterRef, Prefetch, Q, Subquery
 from django.db import IntegrityError, transaction
 from core.authentication import LenientJWTAuthentication
@@ -30,6 +31,8 @@ from users.permissions import IsManagerOrAdmin
 from rest_framework_simplejwt.tokens import RefreshToken
 from .services.agent import AgentUnavailable, run_agent
 from .services.rate_limit import consume_chatbot_request, get_client_ip
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 class CustomerRegisterView(APIView):
 
@@ -536,9 +539,12 @@ class OrderListView(APIView):
 
 
         orders = OnlineOrder.objects.filter(
-
             customer=customer
-
+        ).prefetch_related(
+            Prefetch(
+                "onlineorderitem_set",
+                queryset=OnlineOrderItem.objects.select_related("product"),
+            )
         ).order_by("-id")
 
 
@@ -550,18 +556,11 @@ class OrderListView(APIView):
         for order in orders:
 
 
-            items = OnlineOrderItem.objects.filter(
-
-                order=order
-
-            )
-
-
             item_list = []
 
 
 
-            for item in items:
+            for item in order.onlineorderitem_set.all():
 
 
                 item_list.append(
@@ -968,7 +967,7 @@ class RatingSummaryCalculateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        period = date.today().strftime("%Y-%m")
+        period = datetime.now(LOCAL_TZ).strftime("%Y-%m")
 
         product_ids = (
             ProductRating.objects.filter(is_active=True)
@@ -1313,7 +1312,7 @@ class OrderOverdueView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        today = date.today()
+        today = datetime.now(LOCAL_TZ).date()
         overdue_orders = OnlineOrder.objects.filter(
             status="READY",
             collection_deadline__lt=today,
@@ -1342,7 +1341,7 @@ class OrderOverdueProcessView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        today = date.today()
+        today = datetime.now(LOCAL_TZ).date()
         overdue_orders = OnlineOrder.objects.filter(
             status="READY",
             collection_deadline__lt=today,

@@ -1,6 +1,7 @@
 import os
 from django.test import TestCase, Client
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from products.models import Product, Brand, Category
 from suppliers.models import Supplier
@@ -240,9 +241,13 @@ class F08HealthScoreListTest(F08TestSetup):
         response = self.client.get('/api/health-scores/', **self.auth_header)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertIsInstance(data, list)
-        self.assertGreater(len(data), 0)
-        print(f"\n✅ GET /api/health-scores/ → {len(data)} records")
+        # FIX: /api/health-scores/ is now paginated — response is
+        # {results, count, page, page_size, total_pages}, not a bare list.
+        self.assertIn('results', data)
+        self.assertIsInstance(data['results'], list)
+        self.assertGreater(data['count'], 0)
+        print(f"\n✅ GET /api/health-scores/ → {data['count']} records "
+              f"({len(data['results'])} on this page)")
 
     def test_filter_by_status_critical(self):
         """Filter ?status=CRITICAL should return only CRITICAL records."""
@@ -250,9 +255,9 @@ class F08HealthScoreListTest(F08TestSetup):
             '/api/health-scores/?status=CRITICAL', **self.auth_header)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        for item in data:
+        for item in data['results']:
             self.assertEqual(item['status'], 'CRITICAL')
-        print(f"\n✅ Filter CRITICAL → {len(data)} records")
+        print(f"\n✅ Filter CRITICAL → {data['count']} records")
 
     def test_filter_by_status_healthy(self):
         """Filter ?status=HEALTHY should return only HEALTHY records."""
@@ -260,16 +265,16 @@ class F08HealthScoreListTest(F08TestSetup):
             '/api/health-scores/?status=HEALTHY', **self.auth_header)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        for item in data:
+        for item in data['results']:
             self.assertEqual(item['status'], 'HEALTHY')
-        print(f"\n✅ Filter HEALTHY → {len(data)} records")
+        print(f"\n✅ Filter HEALTHY → {data['count']} records")
 
     def test_response_has_required_fields(self):
         """Each record must have all required fields."""
         response = self.client.get('/api/health-scores/', **self.auth_header)
         data     = response.json()
-        self.assertGreater(len(data), 0)
-        record = data[0]
+        self.assertGreater(len(data['results']), 0)
+        record = data['results'][0]
         for field in ['id', 'product', 'overall_score', 'status',
                       'recommended_action', 'weighting_mode',
                       'calculated_date']:
@@ -422,3 +427,65 @@ class F08HealthScoreDetailTest(F08TestSetup):
                       'calculated_date']:
             self.assertIn(field, record, f"Missing field: {field}")
         print(f"\n✅ Detail fields OK: {list(record.keys())}")
+
+
+# ============================================================
+# Regression test — HealthScoreSummaryView must stay read-only
+# ============================================================
+# This is the exact bug flagged as "the only genuine pre-merge blocker"
+# during PR review, and it has already been reintroduced once by a
+# well-intentioned but incorrect fix. No other test in this file
+# exercises /api/health-scores/summary/ directly, so nothing here would
+# have caught either occurrence. These two tests exist specifically so
+# a third reintroduction fails CI instead of being found by hand again.
+#
+# Uses F08TestSetup directly (not F08CalculateTest or similar) because
+# HealthScoreSummaryView has no permission_classes override — it relies
+# on the project's default IsAuthenticated, not IsManagerOrAdmin — and
+# F08TestSetup's product_healthy/product_critical are created active
+# with zero InventoryHealthScore records, which is exactly the partial/
+# empty state that triggers the bug when it's present.
+class F08HealthScoreSummaryNoSideEffectTest(F08TestSetup):
+
+    def test_summary_get_creates_no_health_score_records(self):
+        """
+        GET /api/health-scores/summary/ must never write. Calling it on a
+        catalogue with zero existing InventoryHealthScore records — the
+        most partial state possible — must not create any.
+        """
+        self.assertEqual(
+            InventoryHealthScore.objects.count(), 0,
+            "Test setup assumption violated: expected zero health score "
+            "records before calling the summary endpoint."
+        )
+
+        response = self.client.get(
+            '/api/health-scores/summary/', **self.auth_header)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            InventoryHealthScore.objects.count(), 0,
+            "GET /api/health-scores/summary/ created InventoryHealthScore "
+            "record(s) — the GET-triggers-calculate side effect has been "
+            "reintroduced. This endpoint must stay read-only; see "
+            "HealthScoreSummaryView's docstring."
+        )
+        print("\n✅ GET /api/health-scores/summary/ created zero "
+              "InventoryHealthScore records, as required")
+
+    def test_summary_get_never_calls_calculate_health_scores(self):
+        """
+        Direct guard on the function call itself, not just its side
+        effect — catches a reintroduction even if some future version
+        writes through a different path than the one flagged originally.
+        """
+        with patch(
+            'inventory.services.health_score.calculate_health_scores'
+        ) as mock_calculate:
+            response = self.client.get(
+                '/api/health-scores/summary/', **self.auth_header)
+
+            self.assertEqual(response.status_code, 200)
+            mock_calculate.assert_not_called()
+        print("\n✅ GET /api/health-scores/summary/ never called "
+              "calculate_health_scores()")

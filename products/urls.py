@@ -24,6 +24,7 @@ urlpatterns = [
 
     # Products
     path('products/', views.ProductListCreateView.as_view(), name='product-list'),
+    path('products/picker/', views.ProductPickerOptionsView.as_view(), name='product-picker'),
     path('products/import/', views.ItemMasterUploadView.as_view(), name='item-master-upload'),
     path('products/reclassify/', views.ReclassifyProductsView.as_view(), name='products-reclassify'),
     path('products/<int:pk>/recalculate-wac/', views.RecalculateWACView.as_view(), name='product-recalculate-wac'),

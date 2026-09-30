@@ -121,24 +121,17 @@ def calculate_health_scores():
         )
     }
     # ── Query 5: Category avg daily sales (velocity denominator) ──────────────
-    # Pre-compute once per category — avoids recalculating inside the loop
-    category_ids = list({p.category_id for p in active_products})
-    cat_sales_map = {}
-
-    for cat_id in category_ids:
-        cat_product_ids = [
-            p.id for p in active_products if p.category_id == cat_id
-        ]
-        cat_total = (
-            ItemSalesRecord.objects
-            .filter(
-                product_id__in=cat_product_ids,
-                sale_date__gte=today - timedelta(days=30)
-            )
-            .aggregate(t=Sum('quantity_sold'))['t'] or 0
-        )
-        count = len(cat_product_ids) or 1
-        cat_sales_map[cat_id] = (cat_total / 30) / count
+    # Product sales were already grouped above; roll those values up by
+    # category in Python instead of issuing one aggregate query per category.
+    category_counts = {}
+    category_sales = {}
+    for product in active_products:
+        category_counts[product.category_id] = category_counts.get(product.category_id, 0) + 1
+        category_sales[product.category_id] = category_sales.get(product.category_id, 0) + sales_map.get(product.id, 0)
+    cat_sales_map = {
+        category_id: (category_sales.get(category_id, 0) / 30) / count
+        for category_id, count in category_counts.items()
+    }
 
     # ── Query 6: Product ratings (if available) ───────────────────────────────
     rating_map = {}    # {product_id: {'count': int, 'avg': float}}

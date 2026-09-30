@@ -17,11 +17,14 @@
 #            removes the Decimal → float → Decimal(str()) round-trip
 
 from decimal import Decimal
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from django.db.models import Sum, Count
 from sales.models import ItemSalesRecord, DailyBillSummary
 from products.models import Product
 from django.db.models.functions import TruncMonth
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -412,7 +415,7 @@ def sales_trend(period='daily', months=6, start_date=None, end_date=None):
     trunc_fn = trunc_map.get(period, TruncDate)
 
     if start_date is None or end_date is None:
-        end_date   = date.today()
+        end_date   = datetime.now(LOCAL_TZ).date()
         start_date = end_date - timedelta(days=months * 30)
 
     # ── Query 1: bucket + product grouped totals (one query) ──────────────────
@@ -616,7 +619,7 @@ def product_monthly_trend(product_id, months=6):
     calculate_sales_and_profit() already uses; historical months are priced
     at today's WAC, not the WAC that was in effect that month.
     """
-    today = date.today()
+    today = datetime.now(LOCAL_TZ).date()
     year, month = today.year, today.month - (months - 1)
     while month <= 0:
         month += 12

@@ -270,8 +270,12 @@ let productLookup = {};
 
 async function loadProductsForAutocomplete() {
     try {
-        const data = await apiFetch('/api/products/');
-        const products = extractArray(data);
+        // Scoped fix: /api/products/ is now paginated (25/page) — this
+        // autocomplete needs every active product, so it uses the
+        // dedicated lightweight picker endpoint instead (see
+        // ProductPickerOptionsView in products/views.py).
+        const data = await apiFetch('/api/products/picker/');
+        const products = data.products ?? [];
         const datalist = document.getElementById('productOptions');
 
         datalist.innerHTML = '';
