@@ -24,6 +24,7 @@ urlpatterns = [
 
     # Products
     path('products/', views.ProductListCreateView.as_view(), name='product-list'),
+    path('products/picker/', views.ProductPickerOptionsView.as_view(), name='product-picker'),
     path('products/import/', views.ItemMasterUploadView.as_view(), name='item-master-upload'),
     path('products/reclassify/', views.ReclassifyProductsView.as_view(), name='products-reclassify'),
     path('products/<int:pk>/recalculate-wac/', views.RecalculateWACView.as_view(), name='product-recalculate-wac'),
@@ -31,5 +32,5 @@ urlpatterns = [
     path('products/<int:pk>/', views.ProductDetailView.as_view(), name='product-detail'),
 
     # Customer availability remains intentionally disabled until its route is needed.
-    # path('products/<int:pk>/availability/', views.ProductAvailabilityView.as_view(), name='product-availability'),
+    path('products/<int:pk>/availability/', views.ProductAvailabilityView.as_view(), name='product-availability'),
 ]

@@ -125,10 +125,12 @@ class OnlineOrderItem(models.Model):
 class ChatbotLog(models.Model):
 
     INTENT_CHOICES = [
+        ('AGENT_QUERY', 'Agent Query'),
         ('BUDGET_QUERY', 'Budget Query'),
         ('BRAND_QUERY', 'Brand Query'),
         ('PRICE_QUERY', 'Price Query'),
         ('AVAILABILITY_QUERY', 'Availability Query'),
+        ('EXPIRY_QUERY', 'Expiry Query'),
         ('PACK_SIZE_QUERY', 'Pack Size Query'),
         ('UNKNOWN', 'Unknown'),
     ]
@@ -139,6 +141,11 @@ class ChatbotLog(models.Model):
         null=True,
         blank=True,
         db_column='customer_id'
+    )
+
+    staff_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='chatbot_logs'
     )
 
     session_id = models.CharField(max_length=50)
@@ -153,11 +160,23 @@ class ChatbotLog(models.Model):
     )
 
     query_success = models.BooleanField(default=False)
+    tool_calls = models.JSONField(default=list, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'chatbot_log'
+
+
+class ChatbotRateLimit(models.Model):
+    """Database-backed per-actor window counter for the Gemini chatbot."""
+
+    actor_key = models.CharField(max_length=100, unique=True)
+    window_started_at = models.DateTimeField()
+    request_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'chatbot_rate_limit'
 
 class ProductRating(models.Model):
 

@@ -21,10 +21,15 @@ HOW TO RUN
 2. Download a matching chromedriver (or use Selenium Manager, which ships with
    selenium >= 4.10 and downloads the driver automatically — no extra setup needed)
 3. Make sure your Django dev server is running: python manage.py runserver
-4. Update BASE_URL, MANAGER_USERNAME, MANAGER_PASSWORD below
+4. Set the required environment variable before running (PowerShell example):
+       $env:TEST_MANAGER_PASSWORD = "Admin123@"
+   Optionally override BASE_URL / username too:
+       $env:TEST_BASE_URL = "http://127.0.0.1:8000"
+       $env:TEST_MANAGER_USERNAME = "admin"
 5. Run: python test_lavanya_dashboard.py
 """
 
+import os
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -32,11 +37,18 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
-# ---------------- CONFIG — EDIT THESE ----------------
-BASE_URL = "http://127.0.0.1:8000"
-MANAGER_USERNAME = "admin"
-MANAGER_PASSWORD = "Admin123@"
-# ------------------------------------------------------
+# ---------------- CONFIG — set via environment variables ----------------
+BASE_URL = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:8000")
+MANAGER_USERNAME = os.environ.get("TEST_MANAGER_USERNAME", "admin")
+MANAGER_PASSWORD = os.environ.get("TEST_MANAGER_PASSWORD")
+
+if not MANAGER_PASSWORD:
+    raise RuntimeError(
+        "TEST_MANAGER_PASSWORD environment variable is not set.\n"
+        "Set it before running this script, e.g. in PowerShell:\n"
+        '  $env:TEST_MANAGER_PASSWORD = "Admin123@"'
+    )
+# --------------------------------------------------------------------------
 
 # Real routes confirmed by grepping dashboard/urls.py on week6/lavanya
 DASHBOARD_PAGES = [
@@ -92,7 +104,7 @@ def login(driver):
         if error_msg.is_displayed():
             raise RuntimeError(
                 "Login form showed 'Invalid username or password' — check "
-                "MANAGER_USERNAME / MANAGER_PASSWORD at the top of this script."
+                "TEST_MANAGER_USERNAME / TEST_MANAGER_PASSWORD environment variables."
             )
     except NoSuchElementException:
         pass
@@ -100,8 +112,9 @@ def login(driver):
     if "/dashboard/login/" in driver.current_url:
         raise RuntimeError(
             "Still on login page after submitting credentials — login likely failed. "
-            "Check MANAGER_USERNAME / MANAGER_PASSWORD, or check the login form field names "
-            "match what this script expects (input[name='username'], input[type='password'])."
+            "Check TEST_MANAGER_USERNAME / TEST_MANAGER_PASSWORD, or check the login form "
+            "field names match what this script expects (input[name='username'], "
+            "input[type='password'])."
         )
     print(f"[OK] Logged in. Redirected to: {driver.current_url}")
 

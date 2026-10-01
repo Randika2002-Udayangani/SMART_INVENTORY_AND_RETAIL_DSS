@@ -3,9 +3,16 @@ Staged batch upload script for item ledger PDFs.
 Uploads a batch, logs successes/failures, saves failure list to JSON.
 
 USAGE:
-    1. Edit LEDGER_FOLDER and TOKEN below.
-    2. Adjust BATCH_SIZE if you want more/fewer files in this run.
-    3. Run: python upload_ledgers.py
+    Option A (quick, manual token):
+        1. Get a fresh access token.
+        2. Set it as an environment variable before running:
+               PowerShell: $env:LEDGER_UPLOAD_TOKEN = "<paste token>"
+        3. Edit LEDGER_FOLDER, BATCH_SIZE, START_INDEX below.
+        4. Run: python upload_ledgers.py
+
+    Option B (recommended, auto-login):
+        Set LEDGER_UPLOAD_USERNAME and LEDGER_UPLOAD_PASSWORD env vars instead,
+        and the script will log in and fetch its own token automatically.
 """
 
 import requests
@@ -14,12 +21,34 @@ import json
 
 # ── EDIT THESE ────────────────────────────────────────────────────────────
 BASE_URL      = "http://localhost:8000/api/sales/upload/item-ledger/"
-TOKEN         = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzg0NDU4NTk2LCJpYXQiOjE3ODQ0Mjk3OTYsImp0aSI6ImU1OGE4MWU5ODlmODQ2Yzc4NjZkNjBiZmM2OGFhOGQwIiwidXNlcl9pZCI6IjEifQ.VQhOiAFebdb152Sm5QDDmQc3wumQTP3UksAb7eCnviM"
+LOGIN_URL     = "http://localhost:8000/api/auth/login/"
 LEDGER_FOLDER = r"C:\Users\HP\Desktop\3rd Year\2nd SEM\CSC311S3 - Machine Learning\Item_Ledgers"  # folder containing all 400 PDFs
 BATCH_SIZE    = 20                          # how many to upload this run
-START_INDEX   = 480                      # change this to resume later batches
+START_INDEX   = 480                         # change this to resume later batches
 # ─────────────────────────────────────────────────────────────────────────
 
+
+def get_token():
+    """Get an access token from env var, or log in fresh if credentials are set."""
+    token = os.environ.get("LEDGER_UPLOAD_TOKEN")
+    if token:
+        return token
+
+    username = os.environ.get("LEDGER_UPLOAD_USERNAME")
+    password = os.environ.get("LEDGER_UPLOAD_PASSWORD")
+    if username and password:
+        resp = requests.post(LOGIN_URL, json={"username": username, "password": password})
+        resp.raise_for_status()
+        return resp.json()["access"]
+
+    raise RuntimeError(
+        "No token found. Either set LEDGER_UPLOAD_TOKEN directly, or set "
+        "LEDGER_UPLOAD_USERNAME and LEDGER_UPLOAD_PASSWORD so the script can log in itself.\n"
+        'PowerShell example: $env:LEDGER_UPLOAD_TOKEN = "<paste fresh token>"'
+    )
+
+
+TOKEN = get_token()
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
 all_pdfs = sorted(

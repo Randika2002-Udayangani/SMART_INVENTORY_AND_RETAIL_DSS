@@ -538,7 +538,6 @@
     }
   });
 
-  let hsData = [];
   let currentHsFilter = 'CRITICAL';
 
   function scoreCol(s) { return s>=80?'#16A34A':s>=60?'#CA8A04':s>=40?'#F97316':'#DC2626'; }
@@ -551,9 +550,18 @@
     return `<div class="bar-wrap"><div class="bar-track"><div class="bar-fill" style="width:${v}%;background:${col}"></div></div><span class="bar-num" style="color:${col}">${v}</span></div>`;
   }
 
-  function renderHS(filter) {
-    const filtered = filter === 'all' ? hsData : hsData.filter(r => r.status === filter);
-    const rows = filtered.slice(0, 10);
+  // FIX: this used to fetch ONE page of /api/health-scores/ (sorted
+  // overall_score ascending — worst first) and then filter that same
+  // page client-side for every button (All/Healthy/Watch/At Risk/
+  // Critical). That worked by coincidence for the default CRITICAL
+  // filter (low scores happen to sort onto page 1), but Healthy/Watch
+  // products are almost never on that first page once the catalogue
+  // is bigger than one page (494 products in this project's real
+  // dataset) — so those buttons silently showed empty/wrong results.
+  // Since this widget only ever displays 10 rows, the fix is to ask
+  // the server for exactly the 10 rows for the selected status
+  // instead of filtering an already-too-small local slice.
+  function renderHS(rows) {
     document.getElementById('hsTbody').innerHTML = rows.length ? rows.map(r=>`
       <tr>
         <td style="font-weight:600">${escapeHtml(r.name)}</td>
@@ -567,13 +575,6 @@
       </tr>`).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">No health scores match this filter.</td></tr>';
   }
 
-  function fhs(filter, btn) {
-    document.querySelectorAll('.hf-btn').forEach(b=>b.classList.remove('on'));
-    btn.classList.add('on');
-    currentHsFilter = filter;
-    renderHS(filter);
-  }
-
   function mapHealthRow(r) {
     return {
       name: r.product__product_name ?? '—', cat: r.product__category__category_name ?? '—',
@@ -582,9 +583,29 @@
     };
   }
 
-  function updateHealthBands(rows) {
-    const counts = { HEALTHY: 0, WATCH: 0, 'AT RISK': 0, CRITICAL: 0 };
-    rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+  async function loadHsPreview(filter) {
+    document.getElementById('hsTbody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">Loading...</td></tr>';
+    try {
+      const params = new URLSearchParams({ page: 1, page_size: 10 });
+      if (filter !== 'all') params.set('status', filter);
+      const data = await apiFetch(`/api/health-scores/?${params.toString()}`);
+      const rows = Array.isArray(data) ? data : (data.results ?? []);
+      renderHS(rows.map(mapHealthRow));
+    } catch (e) {
+      console.error('loadHsPreview failed:', e);
+      showInlineError('hsTbody', 'Health scores could not be loaded.');
+    }
+  }
+
+  function fhs(filter, btn) {
+    document.querySelectorAll('.hf-btn').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    currentHsFilter = filter;
+    loadHsPreview(filter);
+  }
+
+  function updateHealthBands(summary) {
+    const counts = summary || { HEALTHY: 0, WATCH: 0, 'AT RISK': 0, CRITICAL: 0 };
     document.getElementById('hbHealthy').innerText = counts.HEALTHY;
     document.getElementById('hbWatch').innerText   = counts.WATCH;
     document.getElementById('hbAtRisk').innerText  = counts['AT RISK'];
@@ -593,11 +614,9 @@
 
   async function fetchHealthScores() {
     try {
-      const data = await apiFetch('/api/health-scores/');
-      const rows = Array.isArray(data) ? data : (data.results ?? []);
-      hsData = rows.map(mapHealthRow);
-      updateHealthBands(hsData);
-      renderHS(currentHsFilter);
+      const summaryData = await apiFetch('/api/health-scores/summary/');
+      updateHealthBands(summaryData.summary);
+      await loadHsPreview(currentHsFilter);
     } catch(e) {
       console.error('fetchHealthScores failed:', e);
       showInlineError('hsTbody', 'Health scores could not be loaded.');

@@ -10,6 +10,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 import os
 from datetime import date, timedelta, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -30,6 +31,8 @@ from users.models import SystemConfig
 from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore, ReorderRecommendation
 from inventory.services.fefo import deduct_stock_fefo
 
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
+
 from .models import (
     UploadLog,
     DailyBillSummary,
@@ -44,12 +47,13 @@ from .serializers import (
 
 from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore
 from suppliers.models import Supplier
-from suppliers.views import _compute_scorecard
+from suppliers.views import _compute_scorecards_bulk, _format_scorecard
 
 from inventory.services.lifecycle import get_latest_lifecycle
 from inventory.services.reorder_logic import check_reorder_needs
 
 from core.utils import get_last_sync_date
+from core.pagination import StandardResultsPagination
 
 # =========================================================
 # HELPERS
@@ -688,12 +692,18 @@ class DailyBillsUploadView(APIView):
 # =========================================================
 
 class UploadLogListView(generics.ListAPIView):
+    """
+    GET /api/sales/upload-log/
+    Paginated — was previously unpaginated, returning every upload log
+    row ever created on every page load. See core.pagination.
+    """
 
     queryset = UploadLog.objects.all().order_by(
         '-upload_date'
     )
 
     serializer_class = UploadLogSerializer
+    pagination_class = StandardResultsPagination
 
 
 class UploadLogDetailView(generics.RetrieveAPIView):
@@ -708,8 +718,22 @@ class UploadLogDetailView(generics.RetrieveAPIView):
 # =========================================================
 
 class ItemSalesListView(generics.ListAPIView):
+    """
+    GET /api/sales/item-sales/
+    Paginated — was previously unpaginated. This is likely the
+    fastest-growing table in the project (every ledger PDF upload adds
+    rows), so this was the most urgent of the three list views fixed
+    here. See core.pagination.
+
+    NOTE: no known frontend caller was found across the dashboard pages
+    reviewed (inventory, purchases, suppliers, analytics, reports,
+    sales_upload). If something else in the app calls this endpoint
+    expecting a bare array, it will need the same frontend treatment
+    as sales_upload.html (upload-log) before this ships.
+    """
 
     serializer_class = ItemSalesSerializer
+    pagination_class = StandardResultsPagination
 
     def get_queryset(self):
 
@@ -757,7 +781,7 @@ def sales_summary(request):
     date_from_str = request.query_params.get('date_from')
 
     try:
-        date_to   = date.fromisoformat(date_to_str)  if date_to_str   else date.today()
+        date_to   = date.fromisoformat(date_to_str)  if date_to_str   else datetime.now(LOCAL_TZ).date()
         date_from = date.fromisoformat(date_from_str) if date_from_str else date_to - timedelta(days=30)
     except ValueError:
         return Response(
@@ -903,7 +927,7 @@ def expiry_summary(request):
     Auth: Staff JWT required
     """
 
-    today = date.today()
+    today = datetime.now(LOCAL_TZ).date()
     d7    = today + timedelta(days=7)
     d14   = today + timedelta(days=14)
     d30   = today + timedelta(days=30)
@@ -962,9 +986,17 @@ class DailyBillsListView(generics.ListAPIView):
     Optional query params:
         ?date_from=YYYY-MM-DD
         ?date_to=YYYY-MM-DD
+
+    Paginated — was previously unpaginated. See core.pagination.
+
+    NOTE: no known frontend caller was found across the dashboard pages
+    reviewed. sales_upload.html only calls the POST upload endpoint at
+    this same path, never GET. If something else calls this expecting
+    a bare array, it needs the same frontend treatment before this ships.
     """
 
     serializer_class = DailyBillSerializer
+    pagination_class = StandardResultsPagination
 
     def get_queryset(self):
 
@@ -1009,7 +1041,7 @@ def profit_summary(request):
     raw_from = request.query_params.get('date_from')
 
     try:
-        date_to = datetime.strptime(raw_to, '%Y-%m-%d').date() if raw_to else date.today()
+        date_to = datetime.strptime(raw_to, '%Y-%m-%d').date() if raw_to else datetime.now(LOCAL_TZ).date()
     except ValueError:
         return Response({'error': 'Invalid date_to format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1090,7 +1122,7 @@ def _report_date_range(request):
     to_str = request.query_params.get('date_to')
     from_str = request.query_params.get('date_from')
 
-    date_to = date.fromisoformat(to_str) if to_str else date.today()
+    date_to = date.fromisoformat(to_str) if to_str else datetime.now(LOCAL_TZ).date()
     date_from = date.fromisoformat(from_str) if from_str else date_to - timedelta(days=30)
 
     if date_from > date_to:
@@ -1144,12 +1176,28 @@ def _sales_and_profit_rows(date_from, date_to):
 
 
 def _inventory_rows():
-    """Same current-stock logic as StockSnapshotView (inventory app)."""
+    """
+    Same current-stock logic as StockSnapshotView (inventory app).
+
+    Previously ran one PurchaseBatch aggregate query PER product inside
+    the loop (N+1 — e.g. 500 products = 500 extra queries on every
+    inventory export). Fixed to run ONE aggregate query for every
+    product's stock up front, then look values up from a dict inside
+    the loop — 2 queries total regardless of product count.
+    """
+    products = list(Product.objects.filter(is_active=True))
+
+    stock_agg = (
+        PurchaseBatch.objects
+        .filter(product__in=products, status='ACTIVE')
+        .values('product_id')
+        .annotate(total=Sum('remaining_quantity'))
+    )
+    stock_map = {row['product_id']: row['total'] or 0 for row in stock_agg}
+
     rows = []
-    for product in Product.objects.filter(is_active=True):
-        current_stock = PurchaseBatch.objects.filter(
-            product=product, status='ACTIVE'
-        ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
+    for product in products:
+        current_stock = stock_map.get(product.id, 0)
 
         reorder = product.reorder_threshold or 0
         if current_stock == 0:
@@ -1205,32 +1253,31 @@ def _excel_response(filename, headers, rows, summary=None):
     Excel cells do not need HTML escaping: values are written as raw text,
     including ampersands, so we intentionally do not call html.escape() here.
     """
+    from openpyxl.cell import WriteOnlyCell
     from openpyxl.styles import Font
 
-    wb = Workbook()
-    ws = wb.active
+    # Write-only mode prevents openpyxl from retaining a cell object for the
+    # entire worksheet. Export callers may still provide their row data as an
+    # iterable, but the workbook itself remains bounded by the current row.
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet()
 
     if summary:
         for label, value in summary:
-            ws.append([label, value])
+            label_cell = WriteOnlyCell(ws, value=label)
+            label_cell.font = Font(bold=True)
+            ws.append([label_cell, value])
         ws.append([])  # blank separator row
-        for i in range(1, len(summary) + 1):
-            ws.cell(row=i, column=1).font = Font(bold=True)
 
-    header_row_idx = ws.max_row + 1
-    ws.append(headers)
-    for cell in ws[header_row_idx]:
+    header_cells = []
+    for header in headers:
+        cell = WriteOnlyCell(ws, value=header)
         cell.font = Font(bold=True)
+        header_cells.append(cell)
+    ws.append(header_cells)
 
     for row in rows:
         ws.append(list(row))
-
-    for i, header in enumerate(headers, start=1):
-        col_letter = ws.cell(row=header_row_idx, column=i).column_letter
-        widths = [len(str(header))] + [len(str(r[i - 1])) for r in rows]
-        if summary and i <= 2:
-            widths += [len(str(s[i - 1])) for s in summary]
-        ws.column_dimensions[col_letter].width = min(max(widths) + 2, 40)
 
     buffer = io.BytesIO()
     wb.save(buffer)
@@ -1531,7 +1578,7 @@ def inventory_report_export(request):
         ('Total Stock Value', f'Rs. {total_stock_value:,.2f}'),
     ]
 
-    today = date.today()
+    today = datetime.now(LOCAL_TZ).date()
     filename_base = f'inventory_report_{today}'
     if fmt == 'excel':
         response = _excel_response(f'{filename_base}.xlsx', headers, rows, summary=summary)
@@ -1592,12 +1639,13 @@ def health_score_report_export(request):
         for r in queryset
     ]
 
-    filename_base = f'health_score_report_{date.today()}'
+    report_date = datetime.now(LOCAL_TZ).date()
+    filename_base = f'health_score_report_{report_date}'
     if fmt == 'excel':
         response = _excel_response(f'{filename_base}.xlsx', headers, rows)
         logged_name = f'{filename_base}.xlsx'
     else:
-        response = _pdf_response(f'{filename_base}.pdf', f'Health Score Report ({date.today()})', headers, rows)
+        response = _pdf_response(f'{filename_base}.pdf', f'Health Score Report ({report_date})', headers, rows)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
@@ -1606,10 +1654,16 @@ def health_score_report_export(request):
 # ─────────────────────────────────────────────────────────────────
 # GET /api/reports/supplier/?format=excel|pdf
 #
-# Reuses _compute_scorecard() from suppliers app directly — same
-# logic already tested via GET /api/suppliers/scorecard-summary/,
-# not reimplemented here. Missing components (no data yet for that
-# supplier) show as 'N/A', same convention as the Health Score export.
+# Reuses _compute_scorecards_bulk()/_format_scorecard() from the
+# suppliers app directly — same logic already tested via GET
+# /api/suppliers/scorecard-summary/, not reimplemented here. Missing
+# components (no data yet for that supplier) show as 'N/A', same
+# convention as the Health Score export.
+#
+# Was previously calling _compute_scorecard() once per supplier in a
+# loop — 4 queries PER supplier (N+1: 200 queries for 50 suppliers).
+# Now uses the bulk version: 4 queries total for every supplier,
+# same fix already applied to SupplierScorecardSummaryView.
 # ─────────────────────────────────────────────────────────────────
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -1618,7 +1672,12 @@ def supplier_report_export(request):
     if fmt not in ('excel', 'pdf'):
         return Response({'error': 'format must be excel or pdf'}, status=status.HTTP_400_BAD_REQUEST)
 
-    scores = [_compute_scorecard(s) for s in Supplier.objects.all()]
+    suppliers = list(Supplier.objects.all())
+    components_by_supplier = _compute_scorecards_bulk(suppliers)
+    scores = [
+        _format_scorecard(s, components_by_supplier.get(s.id, {}))
+        for s in suppliers
+    ]
     scores.sort(key=lambda s: (s['overall_score'] is None, -(s['overall_score'] or 0)))
 
     headers = [
@@ -1637,12 +1696,13 @@ def supplier_report_export(request):
             s['overall_score'] if s['overall_score'] is not None else 'N/A',
         ))
 
-    filename_base = f'supplier_report_{date.today()}'
+    report_date = datetime.now(LOCAL_TZ).date()
+    filename_base = f'supplier_report_{report_date}'
     if fmt == 'excel':
         response = _excel_response(f'{filename_base}.xlsx', headers, rows)
         logged_name = f'{filename_base}.xlsx'
     else:
-        response = _pdf_response(f'{filename_base}.pdf', f'Supplier Performance Report ({date.today()})', headers, rows)
+        response = _pdf_response(f'{filename_base}.pdf', f'Supplier Performance Report ({report_date})', headers, rows)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
@@ -1672,12 +1732,13 @@ def lifecycle_report_export(request):
         for r in data
     ]
 
-    filename_base = f'lifecycle_report_{date.today()}'
+    report_date = datetime.now(LOCAL_TZ).date()
+    filename_base = f'lifecycle_report_{report_date}'
     if fmt == 'excel':
         response = _excel_response(f'{filename_base}.xlsx', headers, rows)
         logged_name = f'{filename_base}.xlsx'
     else:
-        response = _pdf_response(f'{filename_base}.pdf', f'Product Lifecycle Report ({date.today()})', headers, rows)
+        response = _pdf_response(f'{filename_base}.pdf', f'Product Lifecycle Report ({report_date})', headers, rows)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
@@ -1838,12 +1899,13 @@ def reorder_report_export(request):
         for r in queryset
     ]
 
-    filename_base = f'reorder_report_{date.today()}'
+    report_date = datetime.now(LOCAL_TZ).date()
+    filename_base = f'reorder_report_{report_date}'
     if fmt == 'excel':
         response = _excel_response(f'{filename_base}.xlsx', headers, rows, summary=summary)
         logged_name = f'{filename_base}.xlsx'
     else:
-        response = _pdf_response(f'{filename_base}.pdf', f'Reorder Recommendations Report ({date.today()})', headers, rows, summary=summary)
+        response = _pdf_response(f'{filename_base}.pdf', f'Reorder Recommendations Report ({report_date})', headers, rows, summary=summary)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)

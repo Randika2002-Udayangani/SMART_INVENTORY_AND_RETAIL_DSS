@@ -67,6 +67,7 @@
 
 
 from datetime import date, timedelta
+from django.utils import timezone
 from django.db.models import Sum, Max, Count, Subquery, OuterRef
 from products.models import Product
 from sales.models import ItemSalesRecord
@@ -165,8 +166,9 @@ def run_lifecycle_calculation():
             ]
         }
     """
-
-    today = date.today()
+    from zoneinfo import ZoneInfo
+    today = timezone.now().astimezone(ZoneInfo("Asia/Colombo")).date()
+    
 
     # ── Define date boundaries ─────────────────────────────────────────────────
     current_start     = today - timedelta(days=30)

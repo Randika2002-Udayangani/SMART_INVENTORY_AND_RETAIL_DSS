@@ -233,8 +233,11 @@ function showPageError(message) {
 
 async function loadProductsForDamageForm() {
     try {
-        const data = await apiFetch('/api/products/');
-        const products = Array.isArray(data) ? data : (data.results ?? []);
+        // Scoped fix: /api/products/ is now paginated (25/page) — this
+        // picker needs every active product, so it uses the dedicated
+        // lightweight picker endpoint instead (see ProductPickerOptionsView).
+        const data = await apiFetch('/api/products/picker/');
+        const products = data.products ?? [];
         const datalist = document.getElementById('dmgProductOptions');
         datalist.innerHTML = '';
         dmgProductLookup = {};

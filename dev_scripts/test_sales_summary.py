@@ -4,17 +4,28 @@ test_sales_summary.py
 Test GET /api/reports/sales-summary/  — no Postman needed.
 
 USAGE:
-    1. Set STAFF_USERNAME / STAFF_PASSWORD below
+    1. Set the STAFF_USERNAME / STAFF_PASSWORD environment variables before running
+       (PowerShell example):
+           $env:STAFF_USERNAME = "admin"
+           $env:STAFF_PASSWORD = "Admin123"
     2. python manage.py runserver   (in another terminal)
     3. python test_sales_summary.py
 """
 
+import os
 import sys
 import requests
 
-BASE_URL       = 'http://127.0.0.1:8000'
-STAFF_USERNAME = 'admin'
-STAFF_PASSWORD = 'Admin123'
+BASE_URL       = os.environ.get('SALES_SUMMARY_BASE_URL', 'http://127.0.0.1:8000')
+STAFF_USERNAME = os.environ.get('STAFF_USERNAME')
+STAFF_PASSWORD = os.environ.get('STAFF_PASSWORD')
+
+if not STAFF_USERNAME or not STAFF_PASSWORD:
+    print('STAFF_USERNAME / STAFF_PASSWORD environment variables are not set.')
+    print('Set them before running this script, e.g. in PowerShell:')
+    print('  $env:STAFF_USERNAME = "admin"')
+    print('  $env:STAFF_PASSWORD = "<your password>"')
+    sys.exit(1)
 
 PASS, FAIL, INFO = '\033[92m✓\033[0m', '\033[91m✗\033[0m', '\033[94m→\033[0m'
 

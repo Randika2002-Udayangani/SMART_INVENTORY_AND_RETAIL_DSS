@@ -1,6 +1,7 @@
 import json
 
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from django.db.models import Avg, Count, OuterRef, Prefetch, Q, Subquery
 from django.db import IntegrityError, transaction
 from core.authentication import LenientJWTAuthentication
@@ -8,8 +9,6 @@ from .models import ChatbotLog, ProductRating, ProductRatingSummary
 from .serializers import RatingCreateSerializer, ProductRatingPublicSerializer
 from products.serializers import ProductSerializer 
 from django.contrib.auth.hashers import make_password, check_password
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -26,11 +25,14 @@ from purchases.models import PurchaseBatch
 
 from .models import Customer, OnlineOrder, OnlineOrderItem
 from .tokens import get_tokens_for_customer
-from .authentication import CustomerJWTAuthentication
+from .authentication import CustomerJWTAuthentication, LenientCustomerJWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from users.permissions import IsManagerOrAdmin
 from rest_framework_simplejwt.tokens import RefreshToken
-from .chatbot import chatbot_response
+from .services.agent import AgentUnavailable, run_agent
+from .services.rate_limit import consume_chatbot_request, get_client_ip
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 class CustomerRegisterView(APIView):
 
@@ -39,7 +41,6 @@ class CustomerRegisterView(APIView):
 
 
     def post(self, request):
-        print("========== CUSTOMER REGISTER HIT ==========")
         name = request.data.get("name")
         email = request.data.get("email")
         password = request.data.get("password")
@@ -425,12 +426,26 @@ class OrderListCreateView(APIView):
             if quantity > available_stock:
                 return Response(
                     {
-                        "error": f"Insufficient stock for {product.product_name}",
+                        "error": f"Only {available_stock} left in stock for {product.product_name}",
                         "requested_quantity": quantity,
                         "available_stock": available_stock
                     },
                     status=status.HTTP_400_BAD_REQUEST
                 )
+
+            # added for notification system, review when back
+            LARGE_ORDER_THRESHOLD = 1000
+            if quantity > LARGE_ORDER_THRESHOLD:
+                try:
+                    from inventory.services.notifications import create_notification
+                    create_notification(
+                        type='LARGE_ORDER_REVIEW', priority='MEDIUM',
+                        title='Unusually large order needs review',
+                        message=f'{quantity} units of {product.product_name} requested.',
+                        reference_table='product', reference_id=product.id,
+                    )
+                except Exception:
+                    pass
 
             validated_items.append((product, quantity))
 
@@ -483,6 +498,14 @@ class OrderListCreateView(APIView):
                 {"error": str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        
+        from inventory.services.notifications import create_notification
+        create_notification(
+            type='NEW_ORDER', priority='MEDIUM',
+            title='New online order placed',
+            message=f'{order.order_reference} placed by {customer.full_name if hasattr(customer, "full_name") else customer}.',
+            reference_table='online_order', reference_id=order.id,
+        )
 
         return Response(
             {
@@ -516,9 +539,12 @@ class OrderListView(APIView):
 
 
         orders = OnlineOrder.objects.filter(
-
             customer=customer
-
+        ).prefetch_related(
+            Prefetch(
+                "onlineorderitem_set",
+                queryset=OnlineOrderItem.objects.select_related("product"),
+            )
         ).order_by("-id")
 
 
@@ -530,18 +556,11 @@ class OrderListView(APIView):
         for order in orders:
 
 
-            items = OnlineOrderItem.objects.filter(
-
-                order=order
-
-            )
-
-
             item_list = []
 
 
 
-            for item in items:
+            for item in order.onlineorderitem_set.all():
 
 
                 item_list.append(
@@ -660,6 +679,27 @@ class OrderStatusUpdateView(APIView):
             request=request,
         )
 
+        #added for notification system, review when back
+        try:
+            from inventory.services.notifications import create_notification
+            from django.core.mail import send_mail
+
+            create_notification(
+                customer=order.customer, type='ORDER_STATUS', priority='LOW',
+                title=f'Order {order.order_reference} updated',
+                message=f'Your order is now {new_status}.',
+                reference_table='online_order', reference_id=order.id,
+            )
+            send_mail(
+                subject=f'Order {order.order_reference} — {new_status}',
+                message=f'Your order status changed to {new_status}.',
+                from_email=None,
+                recipient_list=[order.customer.email],
+                fail_silently=True,
+            )
+        except Exception:
+            pass
+
         return Response({
             "message": "Order updated successfully",
             "order_reference": order.order_reference,
@@ -718,40 +758,69 @@ class OrderDetailView(APIView):
         })
 
 
-@csrf_exempt
-def chatbot(request):
+class ChatbotQueryView(APIView):
+    """Public chatbot endpoint.
 
-    if request.method != "POST":
-        return JsonResponse({"error": "POST required"}, status=405)
+    Anonymous website visitors may use the public read-only tools only.
+    Identity is still derived from the JWT when supplied: customer JWTs
+    get customer-scoped behaviour, staff JWTs get manager-gated tools,
+    and tool-level authorization in orders.services.agent remains the
+    security boundary regardless of endpoint visibility.
+    """
+    authentication_classes = [LenientJWTAuthentication, LenientCustomerJWTAuthentication]
+    permission_classes = [AllowAny]
 
-    try:
-        body = json.loads(request.body)
-    except Exception:
-        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+    def post(self, request):
+        message = str(request.data.get('message', '')).strip()
+        if not message:
+            return Response({'error': 'message field is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(message) > 2000:
+            return Response({'error': 'message must be 2000 characters or fewer'}, status=status.HTTP_400_BAD_REQUEST)
 
-    message = body.get("message")
-    customer_id = body.get("customer_id")
-    session_id = body.get("session_id") or "anonymous"
+        actor = request.user
+        allowed, retry_after = consume_chatbot_request(actor, request)
+        if not allowed:
+            message = "Chatbot request limit reached. Please wait a few minutes and try again."
+            return Response(
+                {'error': message, 'bot_response': message},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+                headers={'Retry-After': str(retry_after)},
+            )
 
-    if not message:
-        return JsonResponse({"error": "message field is required"}, status=400)
+        customer = actor if isinstance(actor, Customer) else None
+        anonymous = not getattr(actor, 'is_authenticated', False)
+        if customer:
+            default_session = f"customer-{actor.pk}"
+        elif not anonymous:
+            default_session = f"staff-{actor.pk}"
+        else:
+            default_session = f"anonymous-{get_client_ip(request)}"
+        session_id = str(request.data.get('session_id') or default_session)[:50]
+        if customer:
+            log_filter = {'session_id': session_id, 'customer': customer}
+        elif not anonymous:
+            log_filter = {'session_id': session_id, 'staff_user': actor}
+        else:
+            log_filter = {'session_id': session_id, 'customer__isnull': True, 'staff_user__isnull': True}
+        history = []
+        for log in reversed(list(ChatbotLog.objects.filter(**log_filter).order_by('-created_at')[:6])):
+            history.extend([{'role': 'user', 'content': log.user_message}, {'role': 'assistant', 'content': log.bot_response}])
+        try:
+            result = run_agent(message, actor, history)
+        except AgentUnavailable as exc:
+            return Response(
+                {'error': str(exc), 'bot_response': str(exc)},
+                status=exc.status_code,
+            )
 
-    result = chatbot_response(message, customer_id)
-
-    intent = result["intent"]
-    if intent not in dict(ChatbotLog.INTENT_CHOICES):
-        intent = "UNKNOWN"
-
-    ChatbotLog.objects.create(
-        customer_id=customer_id if customer_id else None,
-        session_id=session_id,
-        user_message=message,
-        bot_response=result["bot_response"],
-        intent_detected=intent,
-        query_success=result["query_success"],
-    )
-
-    return JsonResponse(result, safe=True)
+        ChatbotLog.objects.create(
+            customer=customer,
+            staff_user=None if customer or anonymous else actor,
+            session_id=session_id,
+            user_message=message, bot_response=result['bot_response'], intent_detected='AGENT_QUERY',
+            query_success=result['query_success'], tool_calls=result['tool_calls'],
+        )
+        return Response({**result, 'session_id': session_id})
 
 
 class RatingCreateView(APIView):
@@ -898,7 +967,7 @@ class RatingSummaryCalculateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        period = date.today().strftime("%Y-%m")
+        period = datetime.now(LOCAL_TZ).strftime("%Y-%m")
 
         product_ids = (
             ProductRating.objects.filter(is_active=True)
@@ -1243,7 +1312,7 @@ class OrderOverdueView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        today = date.today()
+        today = datetime.now(LOCAL_TZ).date()
         overdue_orders = OnlineOrder.objects.filter(
             status="READY",
             collection_deadline__lt=today,
@@ -1272,7 +1341,7 @@ class OrderOverdueProcessView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        today = date.today()
+        today = datetime.now(LOCAL_TZ).date()
         overdue_orders = OnlineOrder.objects.filter(
             status="READY",
             collection_deadline__lt=today,
@@ -1300,4 +1369,70 @@ class OrderOverdueProcessView(APIView):
         return Response({
             "message": f"{len(expired_refs)} order(s) auto-expired and stock released.",
             "expired_orders": expired_refs,
+        })
+
+
+
+class ChatbotLogListView(APIView):
+    authentication_classes = [LenientJWTAuthentication, CustomerJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        params = request.query_params
+        logs = ChatbotLog.objects.filter(customer=request.user) if isinstance(request.user, Customer) else ChatbotLog.objects.filter(staff_user=request.user)
+
+        date_from = params.get("date_from")
+        date_to = params.get("date_to")
+        if date_from:
+            logs = logs.filter(created_at__date__gte=date_from)
+        if date_to:
+            logs = logs.filter(created_at__date__lte=date_to)
+
+        intent = params.get("intent_detected")
+        if intent:
+            logs = logs.filter(intent_detected=intent.upper())
+
+        query_success = params.get("query_success")
+        if query_success is not None:
+            logs = logs.filter(query_success=query_success.lower() == "true")
+
+        return Response([
+            {
+                "id": log.id,
+                "session_id": log.session_id,
+                "customer_id": log.customer_id,
+                "user_message": log.user_message,
+                "bot_response": log.bot_response,
+                "intent_detected": log.intent_detected,
+                "query_success": log.query_success,
+                "tool_calls": log.tool_calls,
+                "created_at": log.created_at,
+            }
+            for log in logs.order_by("-created_at")
+        ])
+
+
+class ChatbotSessionDetailView(APIView):
+    authentication_classes = [LenientJWTAuthentication, CustomerJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id):
+        scope = {'customer': request.user} if isinstance(request.user, Customer) else {'staff_user': request.user}
+        logs = ChatbotLog.objects.filter(session_id=session_id, **scope).order_by("created_at")
+        if not logs.exists():
+            return Response({"error": "Session not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            "session_id": session_id,
+            "messages": [
+                {
+                    "user_message": log.user_message,
+                    "bot_response": log.bot_response,
+                    "intent_detected": log.intent_detected,
+                    "query_success": log.query_success,
+                    "tool_calls": log.tool_calls,
+                    "created_at": log.created_at,
+                }
+                for log in logs
+            ]
         })

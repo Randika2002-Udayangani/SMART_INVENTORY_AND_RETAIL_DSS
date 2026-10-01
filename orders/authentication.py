@@ -76,4 +76,23 @@ class CustomerJWTAuthentication(BaseAuthentication):
             raise AuthenticationFailed('Customer not found or inactive')
  
         return (customer, token)
- 
+
+
+class LenientCustomerJWTAuthentication(CustomerJWTAuthentication):
+    """
+    Same as CustomerJWTAuthentication, but a bad/expired/garbage token is
+    treated as *no credentials given* instead of raising a 401. Used only
+    by the public ChatbotQueryView: anonymous visitors (whose browser
+    sends 'Bearer null' or a stale token) fall through to anonymous
+    access, while a valid customer token still authenticates normally.
+    Permission classes and tool-level authorization still enforce
+    security exactly as before — this only changes how a *bad* token is
+    interpreted, not whether access is granted.
+    """
+
+    def authenticate(self, request):
+        try:
+            return super().authenticate(request)
+        except Exception:
+            return None
+

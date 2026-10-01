@@ -3,10 +3,18 @@ Batch upload script for purchase invoice PDFs.
 Uploads all invoices in a folder, logs successes/failures, saves results to JSON.
 
 USAGE:
-    1. Edit INVOICE_FOLDER and TOKEN below.
-    2. Run: python upload_invoices.py
-    3. If a token expires mid-run, re-login, update TOKEN, set START_INDEX
-       to resume where it stopped.
+    Option A (quick, manual token):
+        1. Get a fresh access token (log in via the API or admin).
+        2. Set it as an environment variable before running:
+               PowerShell: $env:INVOICE_UPLOAD_TOKEN = "<paste token>"
+        3. Edit INVOICE_FOLDER below.
+        4. Run: python upload_invoices.py
+        5. If a token expires mid-run, get a fresh one, update the env var,
+           set START_INDEX to resume where it stopped.
+
+    Option B (recommended, auto-login):
+        Set INVOICE_UPLOAD_USERNAME and INVOICE_UPLOAD_PASSWORD env vars instead,
+        and the script will log in and fetch its own token automatically.
 """
 
 import requests
@@ -15,11 +23,33 @@ import json
 
 # ── EDIT THESE ────────────────────────────────────────────────────────────
 BASE_URL        = "http://localhost:8000/api/purchases/upload/invoice/"
-TOKEN           = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzg0NDc5MTg2LCJpYXQiOjE3ODQ0NTAzODYsImp0aSI6ImYwNWMwZWNmNmJiNTQ2MWM4YjU3YzI5NmI4MWNkMjEyIiwidXNlcl9pZCI6IjEifQ.frA0tkv3LjLoobS2Psx4NLW9X31CWJiwuyCF3gM-gpQ"
+LOGIN_URL       = "http://localhost:8000/api/auth/login/"
 INVOICE_FOLDER  = r"C:\Users\HP\Desktop\3rd Year\2nd SEM\CSC311S3 - Machine Learning\suppliers"
 START_INDEX     = 0
 # ─────────────────────────────────────────────────────────────────────────
 
+
+def get_token():
+    """Get an access token from env var, or log in fresh if credentials are set."""
+    token = os.environ.get("INVOICE_UPLOAD_TOKEN")
+    if token:
+        return token
+
+    username = os.environ.get("INVOICE_UPLOAD_USERNAME")
+    password = os.environ.get("INVOICE_UPLOAD_PASSWORD")
+    if username and password:
+        resp = requests.post(LOGIN_URL, json={"username": username, "password": password})
+        resp.raise_for_status()
+        return resp.json()["access"]
+
+    raise RuntimeError(
+        "No token found. Either set INVOICE_UPLOAD_TOKEN directly, or set "
+        "INVOICE_UPLOAD_USERNAME and INVOICE_UPLOAD_PASSWORD so the script can log in itself.\n"
+        'PowerShell example: $env:INVOICE_UPLOAD_TOKEN = "<paste fresh token>"'
+    )
+
+
+TOKEN = get_token()
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
 all_pdfs = sorted(

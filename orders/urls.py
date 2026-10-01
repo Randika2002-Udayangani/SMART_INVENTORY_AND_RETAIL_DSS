@@ -26,7 +26,9 @@ from .views import (
     RatingSummaryListView,
     RatingSummaryCalculateView,
     RatingDeactivateView,
-    chatbot,
+    ChatbotQueryView,
+    ChatbotLogListView,
+    ChatbotSessionDetailView,
 )
 
 urlpatterns = [
@@ -49,7 +51,9 @@ urlpatterns = [
     path("orders/<int:pk>/", OrderCancelView.as_view(), name="order-cancel"),
 
     # ── Chatbot (F13) ──────────────────────────────────────
-    path("chatbot/query/", chatbot, name="chatbot"),
+    path("chatbot/query/", ChatbotQueryView.as_view(), name="chatbot"),
+    path("chatbot/logs/", ChatbotLogListView.as_view(), name="chatbot-logs"),
+    path("chatbot/logs/<str:session_id>/", ChatbotSessionDetailView.as_view(), name="chatbot-session-detail"),
 
     # ── Ratings (F14) ──────────────────────────────────────
     path("ratings/product/<int:product_id>/", ProductRatingListView.as_view(), name="ratings-by-product"),

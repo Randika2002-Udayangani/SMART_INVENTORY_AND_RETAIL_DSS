@@ -1,10 +1,13 @@
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from django.db.models import Sum
 from products.models import Product
 from purchases.models import PurchaseBatch
 from inventory.models import LossRecord
 from inventory.services.lifecycle import get_latest_lifecycle
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -317,7 +320,7 @@ def record_damage(product_id, quantity, reason, loss_type='DAMAGE', batch_id=Non
         loss_type     = loss_type,
         loss_quantity = quantity,
         loss_value    = loss_value,
-        loss_date     = date.today(),
+        loss_date     = datetime.now(LOCAL_TZ).date(),
         notes         = reason or '',
     )
  
