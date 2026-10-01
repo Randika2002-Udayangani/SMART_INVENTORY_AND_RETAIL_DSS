@@ -1,6 +1,6 @@
-{% extends "dashboard/base.html" %}
+﻿{% extends "dashboard/base.html" %}
 
-{% block title %}Product Lifecycle — Smart Inventory DSS{% endblock %}
+{% block title %}Product Lifecycle â€” Smart Inventory DSS{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -18,7 +18,7 @@
     background: var(--card2) !important;
     box-shadow: 0 1px 0 var(--border);
   }
-  .lifecycle-error { color: #b91c1c; }
+  .lifecycle-error { color: #DC2626; }
   .lifecycle-row { cursor: pointer; }
   .lifecycle-row:hover { background-color: var(--card2); }
   .threshold-control { display:flex; align-items:center; gap:6px; min-width:170px; }
@@ -47,19 +47,19 @@
   <div class="topbar lifecycle-page-header">
     <div>
       <h1>Product Lifecycle</h1>
-      <div class="sub">Samanala Super Mart — Decision Support System</div>
+      <div class="sub">Samanala Super Mart â€” Decision Support System</div>
     </div>
-    <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+    <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
       <i class="bi bi-box-arrow-right"></i> Logout
     </button>
   </div>
 
   <div class="row g-3 mb-4">
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="NEW"></div><div class="kpi-val text-primary" id="countNew">—</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="GROWING"></div><div class="kpi-val text-success" id="countGrowing">—</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="STABLE"></div><div class="kpi-val text-secondary" id="countStable">—</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="DECLINING"></div><div class="kpi-val text-warning" id="countDeclining">—</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="SLOW_MOVING"></div><div class="kpi-val text-danger" id="countSlow">—</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="NEW"></div><div class="kpi-val text-primary" id="countNew">â€”</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="GROWING"></div><div class="kpi-val text-success" id="countGrowing">â€”</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="STABLE"></div><div class="kpi-val text-secondary" id="countStable">â€”</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="DECLINING"></div><div class="kpi-val text-warning" id="countDeclining">â€”</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="SLOW_MOVING"></div><div class="kpi-val text-danger" id="countSlow">â€”</div></div></div>
   </div>
 
   <div class="mb-3">
@@ -148,7 +148,7 @@
 
   function formatLifecycleDate(value) {
     const date = new Date(`${value}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return value || '—';
+    if (Number.isNaN(date.getTime())) return value || 'â€”';
     return date.toLocaleDateString('en-GB', {
       day: '2-digit', month: 'short', year: 'numeric'
     });
@@ -156,27 +156,27 @@
 
   function statusBadge(status) {
     const map = {
-      NEW: '#dbeafe;color:#1d4ed8', GROWING: '#dcfce7;color:#16a34a',
-      STABLE: '#f3f4f6;color:#374151', DECLINING: '#fed7aa;color:#c2410c',
-      SLOW_MOVING: '#fee2e2;color:#dc2626'
+      NEW: '#EFF6FF;color:#1D4ED8', GROWING: '#F0FDF4;color:#16A34A',
+      STABLE: '#F1F5F9;color:#64748B', DECLINING: '#FFF7ED;color:#EA580C',
+      SLOW_MOVING: '#FEFCE8;color:#CA8A04'
     };
-    const safeStatus = String(status ?? '—');
-    return `<span class="pill" style="background:${map[safeStatus] || '#f3f4f6;color:#374151'}">${escapeHtml(displayLabel(LIFECYCLE_LABELS, safeStatus))}</span>`;
+    const safeStatus = String(status ?? 'â€”');
+    return `<span class="pill" style="background:${map[safeStatus] || '#F1F5F9;color:#64748B'}">${escapeHtml(displayLabel(LIFECYCLE_LABELS, safeStatus))}</span>`;
   }
 
   function recPill(recommendation) {
     // CLEARANCE / PHASE_OUT added: SLOW_MOVING no longer auto-recommends
     // DISCONTINUE off a single period (see inventory/services/lifecycle.py).
     // CLEARANCE = first/non-consecutive slow period, discount candidate.
-    // PHASE_OUT = SLOW_MOVING for 3 consecutive monthly runs — review to
+    // PHASE_OUT = SLOW_MOVING for 3 consecutive monthly runs â€” review to
     // discontinue. DISCONTINUE kept in the map for any old/legacy rows.
     const map = {
-      RETAIN: '#dcfce7;color:#16a34a', MONITOR: '#dbeafe;color:#1d4ed8',
-      DISCOUNT: '#fef9c3;color:#854d0e', CLEARANCE: '#fef9c3;color:#a16207',
-      PHASE_OUT: '#fed7aa;color:#c2410c', DISCONTINUE: '#fee2e2;color:#dc2626'
+      RETAIN: '#F0FDF4;color:#16A34A', MONITOR: '#EFF6FF;color:#1D4ED8',
+      DISCOUNT: '#FEFCE8;color:#CA8A04', CLEARANCE: '#FEFCE8;color:#CA8A04',
+      PHASE_OUT: '#FFF7ED;color:#EA580C', DISCONTINUE: '#FEF2F2;color:#DC2626'
     };
-    const safeRecommendation = String(recommendation ?? '—');
-    return `<span class="pill" style="background:${map[safeRecommendation] || '#f3f4f6;color:#374151'}">${escapeHtml(safeRecommendation)}</span>`;
+    const safeRecommendation = String(recommendation ?? 'â€”');
+    return `<span class="pill" style="background:${map[safeRecommendation] || '#F1F5F9;color:#64748B'}">${escapeHtml(safeRecommendation)}</span>`;
   }
 
   function showError(message) {
@@ -251,7 +251,7 @@
     }
   }
 
-  // Pagination — same pattern used elsewhere (Stock Levels in
+  // Pagination â€” same pattern used elsewhere (Stock Levels in
   // inventory.html, Purchases, Batches, Reorder, Notifications): 10
   // rows/page, client-side slice, Previous / "Page X of Y" / Next.
   function renderLifecycleTable() {
@@ -320,14 +320,14 @@
       const current = history[history.length - 1];
       const previous = history.length > 1 ? history[history.length - 2] : null;
       const statusColors = {
-        NEW: '#bfdbfe', GROWING: '#bbf7d0', STABLE: '#e5e7eb',
-        DECLINING: '#fed7aa', SLOW_MOVING: '#fecaca'
+        NEW: '#BFDBFE', GROWING: '#86EFAC', STABLE: '#CBD5E1',
+        DECLINING: '#FFF7ED', SLOW_MOVING: '#FEFCE8'
       };
 
       document.getElementById('historySummary').innerHTML = `
         <div class="row g-3">
           <div class="col-md-3"><div class="label">Current</div><div>${statusBadge(current?.status)}</div></div>
-          <div class="col-md-3"><div class="label">Previous</div><div>${statusBadge(previous?.status || '—')}</div></div>
+          <div class="col-md-3"><div class="label">Previous</div><div>${statusBadge(previous?.status || 'â€”')}</div></div>
           <div class="col-md-3"><div class="label">Pattern</div><div class="history-timeline">${history.length ? history.map((record, index) => `${index ? '<span class="history-arrow">&#8594;</span>' : ''}${statusBadge(record.status)}`).join('') : '<span class="text-muted small">No lifecycle calculation yet</span>'}</div></div>
           <div class="col-md-3"><div class="label">Recommendation</div><div>${recPill(current?.recommendation)}</div></div>
         </div>`;
@@ -350,10 +350,10 @@
             {
               label: 'Sales velocity (units/day)',
               data: velocities,
-              borderColor: '#15803d',
+              borderColor: '#16A34A',
               backgroundColor: 'rgba(34, 197, 94, 0.22)',
-              pointBackgroundColor: '#15803d',
-              pointBorderColor: '#ffffff',
+              pointBackgroundColor: '#16A34A',
+              pointBorderColor: '#fff',
               pointBorderWidth: 2,
               pointRadius: 4,
               borderWidth: 3,
@@ -376,8 +376,8 @@
         options: {
           responsive: true, maintainAspectRatio: false,
           scales: {
-            x: { title: { display: true, text: 'Lifecycle calculation date' }, grid: { color: '#e5e7eb' }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, callback: value => formatLifecycleDate(dates[value]) } },
-            y: { beginAtZero: true, title: { display: true, text: 'Units sold per day' }, grid: { color: '#dbe4df' }, ticks: { precision: 2 } }
+            x: { title: { display: true, text: 'Lifecycle calculation date' }, grid: { color: '#CBD5E1' }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, callback: value => formatLifecycleDate(dates[value]) } },
+            y: { beginAtZero: true, title: { display: true, text: 'Units sold per day' }, grid: { color: '#CBD5E1' }, ticks: { precision: 2 } }
           },
           plugins: { legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 18 } }, tooltip: { callbacks: { label: context => context.datasetIndex === 0 ? `Sales velocity: ${context.parsed.y ?? '0'} units/day` : 'Below this line, the product is in the slow-moving range.' } } }
         }
@@ -454,3 +454,5 @@
   initializeLifecyclePage();
 </script>
 {% endblock %}
+
+

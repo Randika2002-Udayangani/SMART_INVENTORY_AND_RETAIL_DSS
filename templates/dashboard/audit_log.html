@@ -1,6 +1,6 @@
-{% extends "dashboard/base.html" %}
+﻿{% extends "dashboard/base.html" %}
 
-{% block title %}Audit Log — Smart Inventory DSS{% endblock %}
+{% block title %}Audit Log â€” Smart Inventory DSS{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -8,7 +8,7 @@
   .audit-table-wrap { overflow: visible; }
   .audit-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
   .audit-table thead th { position: sticky; top: calc(var(--topbar-height, 58px) + 1px); z-index: 10; background: var(--card2) !important; box-shadow: 0 1px 0 var(--border); }
-  .audit-detail { white-space: pre-wrap; word-break: break-word; font-family: 'DM Mono', monospace; font-size: 12px; background: var(--card2); border-radius: 6px; padding: 10px; max-height: 220px; overflow: auto; }
+  .audit-detail { white-space: pre-wrap; word-break: break-word; font-family: 'Inter', monospace; font-size: 12px; background: var(--card2); border-radius: 6px; padding: 10px; max-height: 220px; overflow: auto; }
   .access-denied { max-width: 620px; margin: 36px auto; text-align: center; }
   @media (max-width: 960px) { .audit-table-wrap { overflow-x: auto; } .audit-table { min-width: 900px; } }
 </style>
@@ -19,7 +19,7 @@
 {% block content %}
   <div class="topbar audit-page-header">
     <div><h1>Audit Log</h1><div class="sub">Administrative activity history</div></div>
-    <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;"><i class="bi bi-box-arrow-right"></i> Logout</button>
+    <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;"><i class="bi bi-box-arrow-right"></i> Logout</button>
   </div>
 
   <div id="accessDenied" class="card p-4 access-denied" hidden>
@@ -68,7 +68,7 @@
   const auditPageSize = 25;
   // Tracks the last-applied filter query string. This page auto-polls
   // every 30s (see setInterval below), so unlike the other paginated
-  // pages we can't just reset to page 1 on every load — that would yank
+  // pages we can't just reset to page 1 on every load â€” that would yank
   // a manager reading page 3 back to page 1 every 30 seconds. Instead we
   // only reset when the filters actually changed (Apply/Clear with new
   // values); a same-filter reload (auto-poll, or Refresh with unchanged
@@ -84,7 +84,7 @@
       const rows = await apiFetch(`/api/audit-log/${query ? `?${query}` : ''}`);
       allAuditLogs = Array.isArray(rows) ? rows : (rows.results ?? []);
       if (query !== lastAuditQuery) {
-        auditPage = 1; // filters actually changed — back to page 1
+        auditPage = 1; // filters actually changed â€” back to page 1
         lastAuditQuery = query;
       }
       renderAuditLogs();
@@ -96,7 +96,7 @@
     }
   }
 
-  // Pagination — same pattern used elsewhere (Stock Levels in
+  // Pagination â€” same pattern used elsewhere (Stock Levels in
   // inventory.html, Purchases, Batches, Reorder, Lifecycle, Loss Analysis,
   // Discount Engine, Health Score, Notifications): 25 rows/page,
   // client-side slice, Previous / "Page X of Y" / Next.
@@ -146,3 +146,5 @@
   initializeAuditLog();
 </script>
 {% endblock %}
+
+

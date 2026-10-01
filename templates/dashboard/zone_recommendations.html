@@ -1,12 +1,12 @@
-{% extends "dashboard/base.html" %}
+﻿{% extends "dashboard/base.html" %}
 
-{% block title %}Store Zone Recommendations — Smart Inventory DSS{% endblock %}
+{% block title %}Store Zone Recommendations â€” Smart Inventory DSS{% endblock %}
 {% block nav_zone_recommendations %}active{% endblock %}
 {% block extra_css %}
     <style>
         .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
         .btn-primary { background:var(--sidebar); border:none; }
-        .btn-primary:hover { background:#0a2b2c; }
+        .btn-primary:hover { background:#14532d; }
         .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
         .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
         .nav-tabs .nav-link { color:var(--txt); }
@@ -27,10 +27,10 @@
         .zone-tile .sub { font-size:11.5px; color:var(--muted); }
 
         .status-pill { font-size:10.5px; font-weight:700; padding:2px 9px; border-radius:20px; text-transform:uppercase; letter-spacing:.03em; }
-        .status-PENDING { background:rgba(245,158,11,0.15); color:var(--amber); }
-        .status-ACCEPTED { background:rgba(52,209,122,0.15); color:var(--green2); }
-        .status-REJECTED { background:rgba(239,68,68,0.15); color:var(--red); }
-        .status-APPLIED { background:rgba(139,92,246,0.15); color:var(--purple); }
+        .status-PENDING { background:#FEFCE8; color:var(--amber); }
+        .status-ACCEPTED { background:#F0FDF4; color:var(--green2); }
+        .status-REJECTED { background:#FEF2F2; color:var(--red); }
+        .status-APPLIED { background:#EFF6FF; color:var(--purple); }
 
         .score-bar-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
         .score-bar-row .lbl { width:110px; font-size:12px; color:var(--muted); flex-shrink:0; }
@@ -38,7 +38,7 @@
         .score-bar-fill { height:100%; border-radius:5px; background:var(--sidebar); }
         .score-bar-row .num { width:44px; text-align:right; font-size:12px; font-weight:600; flex-shrink:0; }
 
-        .unmapped-banner { background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); color:#92620a; border-radius:8px; padding:10px 14px; font-size:13px; }
+        .unmapped-banner { background:#FEFCE8; border:1px solid #FDE047; color:#CA8A04; border-radius:8px; padding:10px 14px; font-size:13px; }
     </style>
 {% endblock %}
 
@@ -46,12 +46,12 @@
 <div class="topbar">
     <div>
         <h1>Store Zone Recommendations</h1>
-        <div class="sub">Placement recommendations based on sales speed, <span title="Margin percentage — the share of each sale left after the product cost">margin <span class="tooltip-icon">ⓘ</span></span>, and expiry risk.</div>
-        <div class="zone-last-calculated" id="lastCalculated">Last calculated: —</div>
+        <div class="sub">Placement recommendations based on sales speed, <span title="Margin percentage â€” the share of each sale left after the product cost">margin <span class="tooltip-icon">â“˜</span></span>, and expiry risk.</div>
+        <div class="zone-last-calculated" id="lastCalculated">Last calculated: â€”</div>
     </div>
     <div class="zone-header-actions">
         <button class="btn btn-primary btn-sm" onclick="calculateRecommendations()" id="calcBtn">Calculate Recommendations</button>
-        <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+        <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
             <i class="bi bi-box-arrow-right"></i> Logout
         </button>
     </div>
@@ -63,10 +63,10 @@
 
     <!-- KPI strip -->
     <div class="kpi-strip">
-        <div class="kpi-card"><div class="val" id="kpiEvaluated">—</div><div class="lbl">Products Checked</div></div>
-        <div class="kpi-card warn"><div class="val" id="kpiHighPriority">—</div><div class="lbl">High Priority</div></div>
-        <div class="kpi-card risk"><div class="val" id="kpiNearExpiry">—</div><div class="lbl">Near Expiry</div></div>
-        <div class="kpi-card warn"><div class="val" id="kpiUnmapped">—</div><div class="lbl">Unmapped Categories</div></div>
+        <div class="kpi-card"><div class="val" id="kpiEvaluated">â€”</div><div class="lbl">Products Checked</div></div>
+        <div class="kpi-card warn"><div class="val" id="kpiHighPriority">â€”</div><div class="lbl">High Priority</div></div>
+        <div class="kpi-card risk"><div class="val" id="kpiNearExpiry">â€”</div><div class="lbl">Near Expiry</div></div>
+        <div class="kpi-card warn"><div class="val" id="kpiUnmapped">â€”</div><div class="lbl">Unmapped Categories</div></div>
     </div>
 
     <ul class="nav nav-tabs mb-3 flex-wrap" id="zoneTabs">
@@ -162,7 +162,7 @@
             <div id="ovMsg" class="mt-3"></div>
         </div>
 
-        <!-- Existing overrides — visible to all staff now that the
+        <!-- Existing overrides â€” visible to all staff now that the
              backend GET is open to everyone; only creating one and
              seeing this card at all when not yet manager/admin is
              still restricted (see fetchCurrentUser block below). -->
@@ -199,16 +199,16 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h6 class="modal-title fw-bold" id="detailProductName">—</h6>
+        <h6 class="modal-title fw-bold" id="detailProductName">â€”</h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="d-flex justify-content-between mb-3">
-            <div><div class="small text-muted">Current placement</div><div class="fw-semibold" id="detailCurrentZone">—</div></div>
-            <div><div class="small text-muted">Recommended placement</div><div class="fw-semibold" id="detailSuggestedZone">—</div></div>
+            <div><div class="small text-muted">Current placement</div><div class="fw-semibold" id="detailCurrentZone">â€”</div></div>
+            <div><div class="small text-muted">Recommended placement</div><div class="fw-semibold" id="detailSuggestedZone">â€”</div></div>
         </div>
         <div class="small text-muted mb-1">Why?</div>
-        <div class="mb-3" id="detailReason">—</div>
+        <div class="mb-3" id="detailReason">â€”</div>
         <div id="detailScores"></div>
       </div>
       <div class="modal-footer" id="detailActions"></div>
@@ -288,14 +288,14 @@ async function loadRecommendations() {
         const res = await request('/api/zones/recommendations/');
         const data = await res.json();
         allRecommendations = extractArray(data);
-        recPage = 1; // fresh data — back to page 1
+        recPage = 1; // fresh data â€” back to page 1
         renderRecommendations();
     } catch (e) {
         tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Could not load recommendations.</td></tr>';
     }
 }
 
-// Bound to the search box and status filter — a changed filter is a new
+// Bound to the search box and status filter â€” a changed filter is a new
 // result set, so always jump back to page 1 rather than staying on
 // whatever page number happened to be showing before.
 function filterRecommendations() {
@@ -334,11 +334,11 @@ function renderRecommendations() {
     tbody.innerHTML = pageRows.map(r => `
         <tr>
             <td>${escapeHtml(r.product_name)}</td>
-            <td>${escapeHtml(r.category_name ?? '—')}</td>
+            <td>${escapeHtml(r.category_name ?? 'â€”')}</td>
             <td>${escapeHtml(r.current_zone_name)}</td>
             <td>${escapeHtml(r.suggested_zone_name)}</td>
             <td class="small">${escapeHtml(triggerLabel(r.reason))}</td>
-            <td>${r.performance_score != null ? Math.round(r.performance_score) : '—'}</td>
+            <td>${r.performance_score != null ? Math.round(r.performance_score) : 'â€”'}</td>
             <td><span class="status-pill status-${r.status}">${r.status}</span></td>
             <td><button class="btn btn-outline-secondary btn-sm" onclick="openDetail(${r.id})">View Analysis</button></td>
         </tr>
@@ -359,11 +359,11 @@ function changeRecPage(delta) {
 }
 
 function triggerLabel(reason) {
-    if (!reason) return '—';
+    if (!reason) return 'â€”';
     // Reason strings are pre-formatted by the backend, e.g.
-    // "High velocity (94.0) + high margin (82.0) — recommend ..."
+    // "High velocity (94.0) + high margin (82.0) â€” recommend ..."
     // Show just the trigger part, before the em-dash explanation.
-    return reason.split('—')[0].trim();
+    return reason.split('â€”')[0].trim();
 }
 
 function updateKpis(rows) {
@@ -383,7 +383,7 @@ async function loadLastRun() {
         document.getElementById('lastCalculated').textContent =
             'Last calculated: ' + new Date(run.run_at).toLocaleString();
     } catch (e) {
-        // leave placeholders as-is — not worth surfacing an error for this
+        // leave placeholders as-is â€” not worth surfacing an error for this
     }
 }
 
@@ -396,13 +396,13 @@ async function calculateRecommendations() {
         const res = await request('/api/zones/recommendations/calculate/', { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
-            document.getElementById('kpiEvaluated').textContent = data.products_evaluated ?? '—';
+            document.getElementById('kpiEvaluated').textContent = data.products_evaluated ?? 'â€”';
             document.getElementById('lastCalculated').textContent =
                 'Last calculated: ' + new Date(data.run_at).toLocaleString();
             const unmapped = data.zone_assignment?.categories_unmapped ?? [];
             document.getElementById('kpiUnmapped').textContent = unmapped.length;
             showMsg(
-                `Calculation complete — ${data.recommendations_created} new recommendation(s), ` +
+                `Calculation complete â€” ${data.recommendations_created} new recommendation(s), ` +
                 `${data.skipped_duplicate ?? 0} already pending, ${data.skipped_no_health_score} skipped (no health score).`,
                 'success'
             );
@@ -428,7 +428,7 @@ function openDetail(id) {
     document.getElementById('detailProductName').textContent = r.product_name;
     document.getElementById('detailCurrentZone').textContent = r.current_zone_name;
     document.getElementById('detailSuggestedZone').textContent = r.suggested_zone_name;
-    document.getElementById('detailReason').textContent = r.reason || '—';
+    document.getElementById('detailReason').textContent = r.reason || 'â€”';
 
     const actorLabel = { PENDING: null, ACCEPTED: 'Accepted by', REJECTED: 'Rejected by', APPLIED: 'Applied by' }[r.status];
     const existing = document.getElementById('detailActorLine');
@@ -488,7 +488,7 @@ async function setStatus(id, status) {
             bootstrap.Modal.getInstance(document.getElementById('detailModal'))?.hide();
             loadRecommendations();
             // Every transition here (accept/reject/apply) creates a shared
-            // notification on the backend — refresh the sidebar badge
+            // notification on the backend â€” refresh the sidebar badge
             // immediately, same as reorder.html does after ORDERED.
             if (typeof refreshSidebarAlertBadge === 'function') {
                 refreshSidebarAlertBadge();
@@ -543,7 +543,7 @@ async function loadCategoryMapping() {
         const unmapped = data.categories_unmapped || [];
         if (unmapped.length > 0) {
             banner.classList.remove('d-none');
-            banner.innerHTML = `⚠ ${unmapped.length} categor${unmapped.length === 1 ? 'y is' : 'ies are'} unmapped: ${escapeHtml(unmapped.join(', '))}`;
+            banner.innerHTML = `âš  ${unmapped.length} categor${unmapped.length === 1 ? 'y is' : 'ies are'} unmapped: ${escapeHtml(unmapped.join(', '))}`;
         } else {
             banner.classList.add('d-none');
         }
@@ -553,7 +553,7 @@ async function loadCategoryMapping() {
 }
 
 // Maps the exact product name shown in the search box to its real product
-// id — same pattern as the New Purchase form in purchases.html, since the
+// id â€” same pattern as the New Purchase form in purchases.html, since the
 // override payload needs to POST product_id, not a name.
 let ovProductLookup = {};
 
@@ -601,14 +601,14 @@ async function loadOverridesList() {
         const res = await request('/api/zones/overrides/');
         const data = await res.json();
         allOverrides = extractArray(data);
-        ovPage = 1; // fresh data — back to page 1
+        ovPage = 1; // fresh data â€” back to page 1
         renderOverridesList();
     } catch (e) {
         tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Could not load overrides.</td></tr>';
     }
 }
 
-// Bound to the search box and status filter — same pattern as
+// Bound to the search box and status filter â€” same pattern as
 // filterRecommendations() above: a changed filter is a new result set,
 // so always jump back to page 1.
 function filterOverrides() {
@@ -640,11 +640,11 @@ function renderOverridesList() {
 
     tbody.innerHTML = pageRows.map(o => `
         <tr>
-            <td>${escapeHtml(o.product_name ?? '—')}</td>
-            <td>${escapeHtml(o.zone_name ?? '—')}</td>
-            <td>${escapeHtml(o.start_date ?? '—')}</td>
+            <td>${escapeHtml(o.product_name ?? 'â€”')}</td>
+            <td>${escapeHtml(o.zone_name ?? 'â€”')}</td>
+            <td>${escapeHtml(o.start_date ?? 'â€”')}</td>
             <td>${escapeHtml(o.end_date ?? 'Open-ended')}</td>
-            <td>${escapeHtml(o.reason ?? '—')}</td>
+            <td>${escapeHtml(o.reason ?? 'â€”')}</td>
             <td><span class="status-pill status-${o.status}">${o.status}</span></td>
             <td>${o.status === 'PENDING'
                 ? `<button class="btn btn-outline-primary btn-sm" onclick="setOverrideStatus(${o.id})">Mark as Applied</button>`
@@ -663,8 +663,8 @@ function changeOvPage(delta) {
     renderOverridesList();
 }
 
-// Same shape as setStatus() for recommendations — staff can call this on
-// a PENDING row (backend enforces PENDING→APPLIED only for non-managers).
+// Same shape as setStatus() for recommendations â€” staff can call this on
+// a PENDING row (backend enforces PENDINGâ†’APPLIED only for non-managers).
 async function setOverrideStatus(id) {
     try {
         const res = await request(`/api/zones/overrides/${id}/status/`, {
@@ -675,7 +675,7 @@ async function setOverrideStatus(id) {
         if (res.ok) {
             showMsg('Override marked as applied.', 'success');
             loadOverridesList();
-            // Now creates a shared notification on the backend too —
+            // Now creates a shared notification on the backend too â€”
             // refresh the badge immediately, same as setStatus() above.
             if (typeof refreshSidebarAlertBadge === 'function') {
                 refreshSidebarAlertBadge();
@@ -739,15 +739,17 @@ fetchCurrentUser().then(() => {
         // Fix: the Overrides list used to be hidden for staff entirely,
         // matching a backend that blocked GET for non-managers too. Now
         // that GET is open to any authenticated user (see views.py), staff
-        // can see this list and mark PENDING rows as Applied — only
+        // can see this list and mark PENDING rows as Applied â€” only
         // creating a new override stays manager/admin-only above.
     }
     // Recommendations is the default open tab, so load it immediately.
-    // Zone Overview / Category Mapping / Product Override load lazily —
-    // see switchZoneTab() — the same pattern products.html uses for its
+    // Zone Overview / Category Mapping / Product Override load lazily â€”
+    // see switchZoneTab() â€” the same pattern products.html uses for its
     // Brands/Categories/Store Zones tabs.
     loadRecommendations();
     loadLastRun();
 });
 </script>
 {% endblock %}
+
+

@@ -1,16 +1,16 @@
-{% extends "dashboard/base.html" %}
+﻿{% extends "dashboard/base.html" %}
 
-{% block title %}Discount Engine — Smart Inventory DSS{% endblock %}
+{% block title %}Discount Engine â€” Smart Inventory DSS{% endblock %}
 {% block nav_discount %}active{% endblock %}
 
 {% block extra_css %}
     <style>
-        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
-        .btn-primary { background:#2d6a4f; border:none; }
-        .badge-pending { background:#fef9c3; color:#854d0e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-applied { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-ignored { background:#f3f4f6; color:#374151; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .rule-form { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }
+        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #CBD5E1; margin-bottom:24px; }
+        .btn-primary { background:#14532d; border:none; }
+        .badge-pending { background:#FEFCE8; color:#CA8A04; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .badge-applied { background:#F0FDF4; color:#16A34A; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .badge-ignored { background:#F1F5F9; color:#64748B; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .rule-form { background:#F1F5F9; border:1px solid #CBD5E1; border-radius:8px; }
     </style>
 {% endblock %}
 
@@ -21,9 +21,9 @@
         <small class="text-muted">Near-expiry discount recommendations · Samanala Super Mart</small>
     </div>
     <div>
-        <button class="btn btn-primary btn-sm me-2" id="calcBtn" onclick="runCalculate()">▶ Calculate Discounts</button>
-        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
-        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+        <button class="btn btn-primary btn-sm me-2" id="calcBtn" onclick="runCalculate()">â–¶ Calculate Discounts</button>
+        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">â† Dashboard</a>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#EF4444;color:white;">Logout</button>
     </div>
 </div>
 
@@ -167,7 +167,7 @@ async function loadDiscounts() {
         });
         const data = await res.json();
         allDiscounts = Array.isArray(data) ? data : (data.results ?? []);
-        discountPage = 1; // fresh data — back to page 1
+        discountPage = 1; // fresh data â€” back to page 1
         renderDiscounts();
     } catch(e) {
         document.getElementById('discountBody').innerHTML = '<tr><td colspan="7" class="text-center text-muted">Could not load data.</td></tr>';
@@ -175,7 +175,7 @@ async function loadDiscounts() {
     }
 }
 
-// Pagination — same pattern used elsewhere (Stock Levels in inventory.html,
+// Pagination â€” same pattern used elsewhere (Stock Levels in inventory.html,
 // Purchases, Batches, Reorder, Lifecycle, Loss Analysis, Notifications):
 // 25 rows/page, client-side slice, Previous / "Page X of Y" / Next.
 function renderDiscounts() {
@@ -193,10 +193,10 @@ function renderDiscounts() {
 
     tbody.innerHTML = pageRows.map(r => `
         <tr>
-            <td>${r.product_name ?? '—'}</td>
-            <td>${r.batch != null ? `Batch #${r.batch}` : '—'}</td>
-            <td>${r.days_until_expiry ?? '—'}</td>
-            <td><strong>${r.recommended_discount_pct ?? '—'}%</strong></td>
+            <td>${r.product_name ?? 'â€”'}</td>
+            <td>${r.batch != null ? `Batch #${r.batch}` : 'â€”'}</td>
+            <td>${r.days_until_expiry ?? 'â€”'}</td>
+            <td><strong>${r.recommended_discount_pct ?? 'â€”'}%</strong></td>
             <td>${statusBadge(r.status)}</td>
             <td><button class="btn btn-sm btn-outline-secondary" onclick='showRecommendationDetails(${JSON.stringify(r)})'>Details</button></td>
             <td class="recommendation-actions-cell">
@@ -224,22 +224,22 @@ function showDiscountMessage(text, type) {
 }
 
 function showRecommendationDetails(r) {
-    const money = v => (v !== null && v !== undefined) ? formatMoney(v) : '—';
+    const money = v => (v !== null && v !== undefined) ? formatMoney(v) : 'â€”';
     const lines = [
-        `Product: ${r.product_name ?? '—'}`,
-        `Batch: ${r.batch != null ? '#' + r.batch : '—'}`,
-        `Days to expiry: ${r.days_until_expiry ?? '—'}`,
+        `Product: ${r.product_name ?? 'â€”'}`,
+        `Batch: ${r.batch != null ? '#' + r.batch : 'â€”'}`,
+        `Days to expiry: ${r.days_until_expiry ?? 'â€”'}`,
         `Current price: ${money(r.current_price)}`,
-        `Recommended discount: ${r.recommended_discount_pct ?? '—'}%`,
+        `Recommended discount: ${r.recommended_discount_pct ?? 'â€”'}%`,
         `Recommended price: ${money(r.recommended_price)}`,
         `Profit protected: ${r.profit_protected ? 'Yes' : 'No'}`,
-        `Recovery — sell at discount: ${money(r.recovery_sell)}`,
-        `Recovery — return to supplier: ${money(r.recovery_return)}`,
-        `Recovery — discard: ${money(r.recovery_discard)}`,
-        `System-suggested best action: ${r.best_action ?? '—'}`,
-        `Status: ${r.status ?? '—'}`,
-        `Reviewed by: ${r.reviewed_by_username ?? '—'}`,
-        `Reviewed at: ${r.reviewed_at ? new Date(r.reviewed_at).toLocaleString() : '—'}`
+        `Recovery â€” sell at discount: ${money(r.recovery_sell)}`,
+        `Recovery â€” return to supplier: ${money(r.recovery_return)}`,
+        `Recovery â€” discard: ${money(r.recovery_discard)}`,
+        `System-suggested best action: ${r.best_action ?? 'â€”'}`,
+        `Status: ${r.status ?? 'â€”'}`,
+        `Reviewed by: ${r.reviewed_by_username ?? 'â€”'}`,
+        `Reviewed at: ${r.reviewed_at ? new Date(r.reviewed_at).toLocaleString() : 'â€”'}`
     ];
     alert(lines.join('\n'));
 }
@@ -257,18 +257,18 @@ async function updateStatus(id, status) {
                 `Could not update recommendation: ${data.error || data.detail || 'request failed (' + res.status + ')'}`,
                 'danger'
             );
-            return; // do NOT refresh — the row still reflects the real server state
+            return; // do NOT refresh â€” the row still reflects the real server state
         }
         showDiscountMessage(`Recommendation marked ${status}.`, 'success');
         await loadDiscounts();
     } catch (e) {
-        showDiscountMessage('Network error — recommendation was not updated. Please try again.', 'danger');
+        showDiscountMessage('Network error â€” recommendation was not updated. Please try again.', 'danger');
     }
 }
 
 async function runCalculate() {
     const btn = document.getElementById('calcBtn');
-    btn.innerHTML = '⏳ Calculating...';
+    btn.innerHTML = 'â³ Calculating...';
     btn.disabled = true;
     try {
         await fetch('/api/discounts/calculate/', {
@@ -277,7 +277,7 @@ async function runCalculate() {
         });
         await loadDiscounts();
     } catch(e) {}
-    btn.innerHTML = '▶ Calculate Discounts';
+    btn.innerHTML = 'â–¶ Calculate Discounts';
     btn.disabled = false;
 }
 
@@ -311,7 +311,7 @@ async function loadRules() {
         }
         if (!res.ok) throw new Error('Could not load rules');
         allRules = ruleArray(await res.json());
-        rulePage = 1; // fresh data — back to page 1
+        rulePage = 1; // fresh data â€” back to page 1
         renderRules();
     } catch (error) {
         if (error.status === 403) showRuleAccessMessage();
@@ -343,7 +343,7 @@ function renderRules() {
             <td>${rule.created_at ? new Date(rule.created_at).toLocaleString('en-GB', {
                 day: '2-digit', month: 'short', year: 'numeric',
                 hour: '2-digit', minute: '2-digit'
-            }) : '—'}</td>
+            }) : 'â€”'}</td>
             <td class="rule-actions-cell">
                 ${canManageRules() ? `<button class="btn btn-sm btn-outline-primary me-1" onclick='editRule(${JSON.stringify(rule)})'>Edit</button>
                 ${rule.is_active ? `<button class="btn btn-sm btn-outline-danger" onclick="deactivateRule(${rule.id})">Deactivate</button>` : ''}` : ''}
@@ -375,7 +375,7 @@ async function refreshRules() {
     btn.disabled = true;
     btn.textContent = 'Refreshing...';
     await loadRules();
-    btn.textContent = 'Refreshed ✓';
+    btn.textContent = 'Refreshed âœ“';
     setTimeout(() => {
         btn.textContent = original;
         btn.disabled = false;
@@ -470,3 +470,5 @@ fetchCurrentUser();
 loadDiscounts();
 </script>
 {% endblock %}
+
+

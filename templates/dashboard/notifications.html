@@ -1,42 +1,42 @@
-{% extends "dashboard/base.html" %}
+﻿{% extends "dashboard/base.html" %}
 
-{% block title %}Smart Inventory DSS — Notifications{% endblock %}
+{% block title %}Smart Inventory DSS â€” Notifications{% endblock %}
 
 {% block extra_css %}
 <style>
     :root {
-      --bg:       #e8f5eb;
-      --card:     #f4faf5;
-      --card2:    #eaf6ed;
-      --border:   #b8dfc2;
-      --txt:      #1a2e1e;
-      --muted:    #5a8266;
-      --sidebar:  #0f3d3e;
-      --green1:   #34d17a;
+      --bg:       #F0FDF4;
+      --card:     #fff;
+      --card2:    #F0FDF4;
+      --border:   #86EFAC;
+      --txt:      #64748B;
+      --muted:    #64748B;
+      --sidebar:  #14532d;
+      --green1:   #22C55E;
       --green2:   #22c55e;
-      --amber:    #f59e0b;
-      --red:      #ef4444;
-      --purple:   #8b5cf6;
-      --orange:   #ea580c;
+      --amber:    #EAB308;
+      --red:      #EF4444;
+      --purple:   #3B82F6;
+      --orange:   #F97316;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--txt); min-height: 100vh; }
+    body { background: var(--bg); font-family: 'Inter', sans-serif; color: var(--txt); min-height: 100vh; }
 
-    /* ── SUMMARY STRIP ───────────────────────────────────── */
+    /* â”€â”€ SUMMARY STRIP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
     .summary-card {
       background: var(--card); border: 1px solid var(--border); border-radius: 12px;
       padding: 14px 16px; display: flex; align-items: center; justify-content: space-between;
     }
     .summary-card .lbl { font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
-    .summary-card .val { font-size: 22px; font-weight: 700; font-family: 'DM Mono', monospace; }
+    .summary-card .val { font-size: 22px; font-weight: 700; font-family: 'Inter', monospace; }
     .summary-card i { font-size: 20px; }
     .sc-total .val { color: var(--txt); }
-    .sc-critical .val { color: #dc2626; }
-    .sc-high .val { color: #ea580c; }
-    .sc-medium .val { color: #ca8a04; }
+    .sc-critical .val { color: #DC2626; }
+    .sc-high .val { color: #F97316; }
+    .sc-medium .val { color: #CA8A04; }
 
-    /* ── FILTER BAR ──────────────────────────────────────── */
+    /* â”€â”€ FILTER BAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .filter-bar {
       background: var(--card); border: 1px solid var(--border); border-radius: 10px;
       padding: 10px 14px; margin-bottom: 16px;
@@ -48,21 +48,21 @@
       border: 1.5px solid; cursor: pointer; background: transparent; transition: all 0.13s;
     }
     .fp-all      { border-color: var(--muted);  color: var(--muted); }
-    .fp-critical { border-color: #dc2626; color: #dc2626; }
-    .fp-high     { border-color: #ea580c; color: #ea580c; }
-    .fp-medium   { border-color: #ca8a04; color: #ca8a04; }
+    .fp-critical { border-color: #DC2626; color: #DC2626; }
+    .fp-high     { border-color: #F97316; color: #F97316; }
+    .fp-medium   { border-color: #CA8A04; color: #CA8A04; }
     .fp-unread   { border-color: var(--sidebar); color: var(--sidebar); }
     .f-pill.on, .f-pill:hover { color: #fff; }
     .fp-all.on, .fp-all:hover           { background: var(--muted);  border-color: var(--muted); }
-    .fp-critical.on, .fp-critical:hover { background: #dc2626; border-color: #dc2626; }
-    .fp-high.on, .fp-high:hover         { background: #ea580c; border-color: #ea580c; }
-    .fp-medium.on, .fp-medium:hover     { background: #ca8a04; border-color: #ca8a04; }
+    .fp-critical.on, .fp-critical:hover { background: #DC2626; border-color: #DC2626; }
+    .fp-high.on, .fp-high:hover         { background: #F97316; border-color: #F97316; }
+    .fp-medium.on, .fp-medium:hover     { background: #CA8A04; border-color: #CA8A04; }
     .fp-unread.on, .fp-unread:hover     { background: var(--sidebar); border-color: var(--sidebar); }
 
     .filter-right { display: flex; align-items: center; gap: 8px; }
     .type-select {
       border: 1.5px solid var(--border); border-radius: 8px; padding: 5px 10px;
-      font-size: 11.5px; background: #fff; color: var(--txt); font-family: 'DM Sans', sans-serif;
+      font-size: 11.5px; background: #fff; color: var(--txt); font-family: 'Inter', sans-serif;
     }
     .refresh-btn {
       border: 1.5px solid var(--border); background: #fff; border-radius: 8px;
@@ -70,7 +70,7 @@
     }
     .refresh-btn:hover { background: var(--card2); }
 
-    /* ── LIST ────────────────────────────────────────────── */
+    /* â”€â”€ LIST â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .card-box {
       background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
       margin-bottom: 22px;
@@ -89,21 +89,21 @@
     .n-row.is-handled { opacity: 0.55; }
 
     .n-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
-    .nd-critical { background: #dc2626; } .nd-high { background: #ea580c; } .nd-medium { background: #ca8a04; } .nd-low { background: #6b7280; }
+    .nd-critical { background: #DC2626; } .nd-high { background: #F97316; } .nd-medium { background: #CA8A04; } .nd-low { background: #64748B; }
 
     .n-pri {
       font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
       padding: 2px 7px; border-radius: 4px; flex-shrink: 0; margin-top: 2px; white-space: nowrap;
     }
-    .np-critical { background: #fee2e2; color: #b91c1c; }
-    .np-high     { background: #ffedd5; color: #c2410c; }
-    .np-medium   { background: #fef9c3; color: #854d0e; }
-    .np-low      { background: #f1f5f9; color: #475569; }
+    .np-critical { background: #FEF2F2; color: #DC2626; }
+    .np-high     { background: #FFF7ED; color: #EA580C; }
+    .np-medium   { background: #FEFCE8; color: #CA8A04; }
+    .np-low      { background: #F1F5F9; color: #64748B; }
 
     .n-body { flex: 1; min-width: 0; }
     .n-title { font-size: 13px; font-weight: 700; color: var(--txt); }
     .n-msg { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
-    .n-meta { font-size: 10.5px; color: var(--muted); margin-top: 5px; font-family: 'DM Mono', monospace; }
+    .n-meta { font-size: 10.5px; color: var(--muted); margin-top: 5px; font-family: 'Inter', monospace; }
     .n-type-tag { background: var(--card2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px; margin-right: 6px; }
 
     .n-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
@@ -113,20 +113,20 @@
       cursor: pointer; color: var(--muted); transition: all 0.12s; font-size: 13px;
     }
     .n-btn:hover { background: var(--card2); color: var(--txt); }
-    .n-btn.read-btn:hover { color: #16a34a; border-color: #86efac; }
-    .n-btn.dismiss-btn:hover { color: #dc2626; border-color: #fca5a5; }
+    .n-btn.read-btn:hover { color: #16A34A; border-color: #86efac; }
+    .n-btn.dismiss-btn:hover { color: #DC2626; border-color: #FCA5A5; }
 
     .empty-state { padding: 40px 18px; text-align: center; color: var(--muted); font-size: 13px; }
     .empty-state i { font-size: 28px; display: block; margin-bottom: 8px; color: var(--green1); }
 
-    /* ── MODAL ───────────────────────────────────────────── */
+    /* â”€â”€ MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     .modal-content { border-radius: 14px; border: 1px solid var(--border); }
     .modal-header { border-bottom: 1px solid var(--border); }
     .modal-footer { border-top: 1px solid var(--border); }
     .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--card2); font-size: 12.5px; }
     .detail-row:last-child { border-bottom: none; }
     .detail-row .dk { color: var(--muted); font-weight: 600; }
-    .detail-row .dv { font-family: 'DM Mono', monospace; text-align: right; }
+    .detail-row .dv { font-family: 'Inter', monospace; text-align: right; }
 
     @media (max-width: 960px) {
       .summary-grid { grid-template-columns: repeat(2,1fr); }
@@ -141,10 +141,10 @@
   <div class="topbar">
     <div>
       <h1>Notifications &amp; Alerts</h1>
-      <div class="sub">Unread staff notifications — CRITICAL / HIGH / MEDIUM</div>
+      <div class="sub">Unread staff notifications â€” CRITICAL / HIGH / MEDIUM</div>
     </div>
     <div style="display:flex; gap:8px;">
-      <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+      <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
         <i class="bi bi-box-arrow-right"></i> Logout
       </button>
     </div>
@@ -153,24 +153,24 @@
   <!-- SUMMARY STRIP -->
   <div class="summary-grid">
     <div class="summary-card sc-total">
-      <div><div class="lbl" id="sumTotalLbl">Unread</div><div class="val" id="sumTotal">—</div></div>
+      <div><div class="lbl" id="sumTotalLbl">Unread</div><div class="val" id="sumTotal">â€”</div></div>
       <i class="bi bi-bell-fill" style="color:var(--sidebar)"></i>
     </div>
     <div class="summary-card sc-critical">
-      <div><div class="lbl">Critical</div><div class="val" id="sumCritical">—</div></div>
-      <i class="bi bi-exclamation-octagon-fill" style="color:#dc2626"></i>
+      <div><div class="lbl">Critical</div><div class="val" id="sumCritical">â€”</div></div>
+      <i class="bi bi-exclamation-octagon-fill" style="color:#DC2626"></i>
     </div>
     <div class="summary-card sc-high">
-      <div><div class="lbl">High</div><div class="val" id="sumHigh">—</div></div>
-      <i class="bi bi-exclamation-triangle-fill" style="color:#ea580c"></i>
+      <div><div class="lbl">High</div><div class="val" id="sumHigh">â€”</div></div>
+      <i class="bi bi-exclamation-triangle-fill" style="color:#F97316"></i>
     </div>
     <div class="summary-card sc-medium">
-      <div><div class="lbl">Medium</div><div class="val" id="sumMedium">—</div></div>
-      <i class="bi bi-info-circle-fill" style="color:#ca8a04"></i>
+      <div><div class="lbl">Medium</div><div class="val" id="sumMedium">â€”</div></div>
+      <i class="bi bi-info-circle-fill" style="color:#CA8A04"></i>
     </div>
   </div>
 
-  <!-- STATUS TABS — backed by GET /api/notifications/?status= -->
+  <!-- STATUS TABS â€” backed by GET /api/notifications/?status= -->
   <div class="filter-bar" style="margin-bottom:10px;">
     <div class="pill-wrap">
       <button class="f-pill fp-unread on" data-status="unread" onclick="setStatusTab('unread', this)">Unread</button>
@@ -202,13 +202,13 @@
         <div class="cht">Notification List</div>
         <div class="chs">Click a notification to view full details</div>
       </div>
-      <span class="card-badge" id="listCount" style="background:var(--card2);border:1px solid var(--border);border-radius:5px;padding:3px 9px;font-size:10.5px;color:var(--muted);">—</span>
+      <span class="card-badge" id="listCount" style="background:var(--card2);border:1px solid var(--border);border-radius:5px;padding:3px 9px;font-size:10.5px;color:var(--muted);">â€”</span>
     </div>
     <div id="listBody"></div>
     <div id="notifPagination"></div>
   </div>
 
-<!-- ── DETAIL MODAL ──────────────────────────────────────── -->
+<!-- â”€â”€ DETAIL MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <div class="modal fade" id="detailModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -239,7 +239,7 @@
     }[char]));
   }
 
-  // ── State ──────────────────────────────────────────────
+  // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Backed by GET /api/notifications/?status=unread|read|all
   let allNotifications = [];
   let statusTab = 'unread';
@@ -263,7 +263,7 @@
     priorityFilter = pri;
     document.querySelectorAll('.f-pill[data-pri]').forEach(b => b.classList.remove('on'));
     btn.classList.add('on');
-    notifPage = 1; // filter changed — back to page 1
+    notifPage = 1; // filter changed â€” back to page 1
     renderList();
   }
 
@@ -281,7 +281,7 @@
     document.getElementById('sumCritical').innerText = counts.CRITICAL;
     document.getElementById('sumHigh').innerText = counts.HIGH;
     document.getElementById('sumMedium').innerText = counts.MEDIUM;
-    // #sidebarAlertCount is NOT set from allNotifications here on purpose —
+    // #sidebarAlertCount is NOT set from allNotifications here on purpose â€”
     // allNotifications is filtered by statusTab (unread/read/all), so on the
     // Read or Total tab this would overwrite the badge with the wrong count.
     // refreshSidebarAlertBadge() (base.html) always fetches the true unread
@@ -316,7 +316,7 @@
       return;
     }
 
-    // Pagination — same pattern as Stock Levels (inventory.html): 25/page.
+    // Pagination â€” same pattern as Stock Levels (inventory.html): 25/page.
     const totalPages = Math.max(1, Math.ceil(rows.length / notifPageSize));
     notifPage = Math.min(notifPage, totalPages);
     const pageRows = rows.slice((notifPage - 1) * notifPageSize, notifPage * notifPageSize);
@@ -357,7 +357,7 @@
       allNotifications = Array.isArray(data) ? data : [];
       populateTypeSelect();
       updateSummary();
-      notifPage = 1; // fresh data — back to page 1
+      notifPage = 1; // fresh data â€” back to page 1
       renderList();
       refreshSidebarAlertBadge(); // keep the shared badges in sync with the true unread count
     } catch (e) {
@@ -367,11 +367,11 @@
     }
   }
 
-  // ── Mark as read / dismiss (list actions) ───────────────
+  // â”€â”€ Mark as read / dismiss (list actions) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function markRead(id) {
     try {
       await apiFetch(`/api/notifications/${id}/read/`, { method: 'PATCH' });
-      // On the Unread tab this item no longer belongs here — refetch
+      // On the Unread tab this item no longer belongs here â€” refetch
       // from the backend rather than faking local state.
       await loadNotifications();
     } catch (e) {
@@ -394,7 +394,7 @@
     }
   }
 
-  // ── Detail modal ─────────────────────────────────────────
+  // â”€â”€ Detail modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function openDetail(id) {
     activeDetailId = id;
     const modalEl = document.getElementById('detailModal');
@@ -409,17 +409,17 @@
       document.getElementById('modalBody').innerHTML = `
         <div class="detail-row"><span class="dk">Priority</span><span class="dv"><span class="n-pri np-${priClass[n.priority] || 'medium'}">${escapeHtml(n.priority)}</span></span></div>
         <div class="detail-row"><span class="dk">Type</span><span class="dv">${escapeHtml(n.type)}</span></div>
-        <div class="detail-row"><span class="dk">Message</span><span class="dv" style="text-align:left;max-width:60%;font-family:'DM Sans',sans-serif;">${escapeHtml(n.message || '—')}</span></div>
-        <div class="detail-row"><span class="dk">Reference</span><span class="dv">${escapeHtml(n.reference_table || '—')} #${n.reference_id ?? '—'}</span></div>
+        <div class="detail-row"><span class="dk">Message</span><span class="dv" style="text-align:left;max-width:60%;font-family:'Inter',sans-serif;">${escapeHtml(n.message || 'â€”')}</span></div>
+        <div class="detail-row"><span class="dk">Reference</span><span class="dv">${escapeHtml(n.reference_table || 'â€”')} #${n.reference_id ?? 'â€”'}</span></div>
         <div class="detail-row"><span class="dk">Created</span><span class="dv">${new Date(n.created_at).toLocaleString('en-GB')}</span></div>
-        <div class="detail-row"><span class="dk">Read</span><span class="dv">${n.is_read ? 'Yes — ' + new Date(n.read_at).toLocaleString('en-GB') : 'No'}</span></div>
+        <div class="detail-row"><span class="dk">Read</span><span class="dv">${n.is_read ? 'Yes â€” ' + new Date(n.read_at).toLocaleString('en-GB') : 'No'}</span></div>
         ${n.expires_at ? `<div class="detail-row"><span class="dk">Expires</span><span class="dv">${new Date(n.expires_at).toLocaleString('en-GB')}</span></div>` : ''}
         ${n.type === 'PRICE_REVIEW' && n.reference_table === 'product' && n.reference_id ? `<div class="mt-3 text-end"><a class="btn btn-sm btn-outline-primary" href="/dashboard/products/?edit=${encodeURIComponent(n.reference_id)}"><i class="bi bi-pencil-square"></i> Open Products</a></div>` : ''}
       `;
       document.getElementById('modalReadBtn').style.display = n.is_read ? 'none' : 'inline-block';
     } catch (e) {
       console.error('openDetail failed:', e);
-      document.getElementById('modalBody').innerHTML = 'Could not load this notification — it may have been dismissed.';
+      document.getElementById('modalBody').innerHTML = 'Could not load this notification â€” it may have been dismissed.';
     }
   }
 
@@ -441,3 +441,5 @@
   loadNotifications();
 </script>
 {% endblock %}
+
+

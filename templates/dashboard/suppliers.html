@@ -1,13 +1,13 @@
-{% extends "dashboard/base.html" %}
+﻿{% extends "dashboard/base.html" %}
 
-{% block title %}Suppliers — Smart Inventory DSS{% endblock %}
+{% block title %}Suppliers â€” Smart Inventory DSS{% endblock %}
 {% block nav_suppliers %}active{% endblock %}
 
 {% block extra_css %}
     <style>
         .table thead th { position:sticky; top:var(--topbar-height, 56px); z-index:10; background:var(--card2); }
         .btn-primary { background:var(--sidebar); border:none; }
-        .btn-primary:hover { background:#0a2b2c; }
+        .btn-primary:hover { background:#14532d; }
         .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
         .supplier-tab-panel { display:none; }
         .supplier-tab-panel.active { display:block; }
@@ -28,10 +28,10 @@
 <div class="topbar">
     <div>
         <h1>Suppliers</h1>
-        <div class="sub">Samanala Super Mart — supplier master records</div>
+        <div class="sub">Samanala Super Mart â€” supplier master records</div>
     </div>
     <div>
-        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#EF4444;color:white;">Logout</button>
     </div>
 </div>
 
@@ -179,7 +179,7 @@ async function loadSupplierReturns() {
         const res = await fetch('/api/supplier-returns/', { headers: { 'Authorization': 'Bearer ' + token } });
         if (!res.ok) throw new Error('Could not load returns.');
         const rows = await res.json();
-        tbody.innerHTML = rows.length ? rows.map(r => `<tr><td>${r.id}</td><td>${r.supplier ?? '—'}</td><td class="return-product">${String(r.product_name ?? '—').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])}</td><td>${r.batch ?? '—'}</td><td>${r.quantity_returned ?? 0}</td><td><span class="badge bg-success">${r.status ?? '—'}</span></td></tr>`).join('') : '<tr><td colspan="6" class="text-center text-muted">No supplier returns found.</td></tr>';
+        tbody.innerHTML = rows.length ? rows.map(r => `<tr><td>${r.id}</td><td>${r.supplier ?? 'â€”'}</td><td class="return-product">${String(r.product_name ?? 'â€”').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])}</td><td>${r.batch ?? 'â€”'}</td><td>${r.quantity_returned ?? 0}</td><td><span class="badge bg-success">${r.status ?? 'â€”'}</span></td></tr>`).join('') : '<tr><td colspan="6" class="text-center text-muted">No supplier returns found.</td></tr>';
     } catch (error) {
         tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Could not load supplier returns.</td></tr>';
     }
@@ -220,11 +220,11 @@ function renderSuppliers() {
     const pageRows = rows.slice(startIndex, endIndex);
     tbody.innerHTML = pageRows.map(s => `
         <tr>
-            <td style="font-weight:600">${s.name ?? s.supplier_name ?? '—'}</td>
-            <td>${s.email ?? '—'}</td>
-            <td>${s.contact_number ?? s.phone ?? '—'}</td>
-            <td>${s.lead_time_days ?? '—'} days</td>
-            <td>${s.return_policy ?? '—'}</td>
+            <td style="font-weight:600">${s.name ?? s.supplier_name ?? 'â€”'}</td>
+            <td>${s.email ?? 'â€”'}</td>
+            <td>${s.contact_number ?? s.phone ?? 'â€”'}</td>
+            <td>${s.lead_time_days ?? 'â€”'} days</td>
+            <td>${s.return_policy ?? 'â€”'}</td>
                     <td>
                         <div class="d-flex gap-1 flex-wrap">
                             ${canManageSuppliers ? `<button class="btn btn-sm btn-outline-secondary" onclick="editSupplierById(${s.id ?? s.supplier_id})">Edit</button>` : ''}
@@ -330,7 +330,7 @@ async function showScorecard(id) {
         const components = score.components ?? {};
         showSupplierModal('Supplier Scorecard', `
             <h6>${score.supplier_name ?? 'Supplier'}</h6>
-            <p class="fs-4 fw-bold mb-3">Overall score: ${score.overall_score ?? '—'}</p>
+            <p class="fs-4 fw-bold mb-3">Overall score: ${score.overall_score ?? 'â€”'}</p>
             <table class="table table-sm">
                 <tbody>${Object.entries(components).map(([name, value]) => `<tr><td>${name.replaceAll('_', ' ')}</td><td>${value}</td></tr>`).join('') || '<tr><td class="text-muted">Insufficient data</td></tr>'}</tbody>
             </table>`);
@@ -351,7 +351,7 @@ async function showCostTrend(id) {
         showSupplierModal('Supplier Cost Trend', groups.map(group => `
             <h6>${group.product_name ?? 'Product'}</h6>
             <table class="table table-sm"><thead><tr><th>Purchase date</th><th>Cost</th><th>Change</th></tr></thead><tbody>
-                ${(group.history ?? []).map(item => `<tr><td>${item.purchase_date ?? '—'}</td><td>${item.cost_price ?? '—'}</td><td>${item.increase_pct ?? 0}%</td></tr>`).join('')}
+                ${(group.history ?? []).map(item => `<tr><td>${item.purchase_date ?? 'â€”'}</td><td>${item.cost_price ?? 'â€”'}</td><td>${item.increase_pct ?? 0}%</td></tr>`).join('')}
             </tbody></table>`).join('') || '<div class="text-muted">No cost history found.</div>');
     } catch (e) {
         showSupplierModal('Supplier Cost Trend', '<div class="text-danger">Could not load cost trend.</div>');
@@ -367,7 +367,7 @@ async function showPurchaseHistory(id) {
         if (!res.ok) throw new Error('Request failed');
         const data = await res.json();
         const purchases = extractArray(data).filter(p => String(p.supplier ?? p.supplier_id) === String(id));
-        showSupplierModal('Supplier Purchase History', purchases.length ? `<table class="table table-sm"><thead><tr><th>Invoice</th><th>Date</th><th>Total</th></tr></thead><tbody>${purchases.map(p => `<tr><td>${p.invoice_number ?? '—'}</td><td>${p.purchase_date ?? '—'}</td><td>${p.total_amount ?? '—'}</td></tr>`).join('')}</tbody></table>` : '<div class="text-muted">No purchases found.</div>');
+        showSupplierModal('Supplier Purchase History', purchases.length ? `<table class="table table-sm"><thead><tr><th>Invoice</th><th>Date</th><th>Total</th></tr></thead><tbody>${purchases.map(p => `<tr><td>${p.invoice_number ?? 'â€”'}</td><td>${p.purchase_date ?? 'â€”'}</td><td>${p.total_amount ?? 'â€”'}</td></tr>`).join('')}</tbody></table>` : '<div class="text-muted">No purchases found.</div>');
     } catch (e) {
         showSupplierModal('Supplier Purchase History', '<div class="text-danger">Could not load purchase history.</div>');
     }
@@ -418,3 +418,5 @@ fetchCurrentUser().then(role => {
 loadSuppliers();
 </script>
 {% endblock %}
+
+

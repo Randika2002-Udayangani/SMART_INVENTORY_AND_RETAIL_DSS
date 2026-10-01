@@ -1,6 +1,6 @@
-{% extends "dashboard/base.html" %}
+﻿{% extends "dashboard/base.html" %}
 
-{% block title %}Inventory — Smart Inventory DSS{% endblock %}
+{% block title %}Inventory â€” Smart Inventory DSS{% endblock %}
 {% block nav_inventory %}active{% endblock %}
 
 {% block extra_css %}
@@ -9,9 +9,9 @@
         .kpi-card { background:var(--card); border-radius:12px; padding:18px; border:1px solid var(--border); text-align:center; }
         .kpi-val { font-size:24px; font-weight:700; }
         .kpi-lbl { font-size:11px; color:#64748b; text-transform:uppercase; }
-        .badge-available { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-low { background:#fed7aa; color:#c2410c; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-out { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .badge-available { background:#F0FDF4; color:#16A34A; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .badge-low { background:#FEFCE8; color:#CA8A04; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .badge-out { background:#FEF2F2; color:#DC2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
         .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
         .nav-tabs .nav-link { color:var(--txt); }
         .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
@@ -44,7 +44,7 @@
         position: relative;
         width: 100%;
         background: var(--card, #fff);
-        border: 1px solid var(--border, #dee2e6);
+        border: 1px solid var(--border, #CBD5E1);
         border-radius: 12px;
         overflow: hidden;
         box-shadow: 0 10px 30px rgba(0,0,0,.2);
@@ -57,7 +57,7 @@
         justify-content: space-between;
         padding: 1rem 1.25rem;
         background: var(--card, #fff);
-        border-bottom: 1px solid var(--border, #dee2e6);
+        border-bottom: 1px solid var(--border, #CBD5E1);
 }
 
         .detail-modal .modal-body {
@@ -72,8 +72,8 @@
         .upload-type { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:700; color:var(--txt); }
         .upload-date { margin-top:3px; font-size:10.5px; color:var(--muted); }
         .upload-status { margin-left:auto; flex:0 0 auto; padding:4px 8px; border-radius:999px; font-size:10px; font-weight:700; letter-spacing:.03em; }
-        .upload-success { background:#dcfce7; color:#15803d; }
-        .upload-partial { background:#fef3c7; color:#a16207; }
+        .upload-success { background:#F0FDF4; color:#16A34A; }
+        .upload-partial { background:#FEFCE8; color:#CA8A04; }
         .upload-empty { padding:14px; border:1px dashed var(--border); border-radius:10px; text-align:center; color:var(--muted); font-size:12px; }
         @media (max-width:768px) { .upload-summary { grid-template-columns:1fr; } }
     </style>
@@ -83,7 +83,7 @@
 <div class="topbar">
     <div>
         <h1>Inventory / Stock Management</h1>
-        <div class="sub">Samanala Super Mart — snapshot-based stock, updated on each sync</div>
+        <div class="sub">Samanala Super Mart â€” snapshot-based stock, updated on each sync</div>
     </div>
 </div>
 
@@ -92,25 +92,25 @@
         <div class="col-md-3">
             <div class="kpi-card">
                 <div class="kpi-lbl">Total Products</div>
-                <div class="kpi-val" id="kpiTotal">—</div>
+                <div class="kpi-val" id="kpiTotal">â€”</div>
             </div>
         </div>
         <div class="col-md-3">
             <div class="kpi-card">
-                <div class="kpi-lbl" style="color:#c2410c;">Low Stock</div>
-                <div class="kpi-val" style="color:#ea580c;" id="kpiLow">—</div>
+                <div class="kpi-lbl" style="color:#EA580C;">Low Stock</div>
+                <div class="kpi-val" style="color:#F97316;" id="kpiLow">â€”</div>
             </div>
         </div>
         <div class="col-md-3">
             <div class="kpi-card">
-                <div class="kpi-lbl" style="color:#dc2626;">Out of Stock</div>
-                <div class="kpi-val" style="color:#dc2626;" id="kpiOut">—</div>
+                <div class="kpi-lbl" style="color:#DC2626;">Out of Stock</div>
+                <div class="kpi-val" style="color:#DC2626;" id="kpiOut">â€”</div>
             </div>
         </div>
         <div class="col-md-3">
             <div class="kpi-card">
                 <div class="kpi-lbl">Last Synced</div>
-                <div class="kpi-val" style="font-size:16px;" id="kpiSync">—</div>
+                <div class="kpi-val" style="font-size:16px;" id="kpiSync">â€”</div>
             </div>
         </div>
     </div>
@@ -252,7 +252,7 @@ async function request(url, options = {}) {
 }
 
 function formatStockDateTime(value) {
-    if (!value) return '—';
+    if (!value) return 'â€”';
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return value;
     return parsed.toLocaleString('en-LK', {
@@ -315,10 +315,10 @@ async function loadStock() {
                 hour12: true
             });
     } else {
-        document.getElementById('kpiSync').innerText = '—';
+        document.getElementById('kpiSync').innerText = 'â€”';
     }
 } else {
-    document.getElementById('kpiSync').innerText = '—';
+    document.getElementById('kpiSync').innerText = 'â€”';
 }
 
         populateInventoryProductOptions();
@@ -389,11 +389,11 @@ function renderStock() {
     const pageRows = rows.slice((stockPage - 1) * stockPageSize, stockPage * stockPageSize);
     tbody.innerHTML = pageRows.map(p => {
         const current = p.current_stock ?? p.quantity ?? 0;
-        const threshold = p.reorder_threshold ?? '—';
+        const threshold = p.reorder_threshold ?? 'â€”';
         return `
         <tr>
-            <td style="font-weight:600">${p.product_name ?? p.name ?? '—'}</td>
-            <td>${p.category_name || '—'}</td>
+            <td style="font-weight:600">${p.product_name ?? p.name ?? 'â€”'}</td>
+            <td>${p.category_name || 'â€”'}</td>
             <td>${p.brand_name || 'UNBRANDED'}</td>
             
             <td>${current}</td>
@@ -414,11 +414,11 @@ function changeStockPage(delta) {
 }
 
 async function loadLowStock() {
-   await loadAlertStock('/api/inventory/low-stock/', 'lowBody', 'low_stock_products', rows => rows.map(p => `<tr><td>${p.product_name ?? '—'}</td><td>${p.current_stock ?? 0}</td><td>${p.reorder_threshold ?? '—'}</td><td>${p.shortage ?? '—'}</td><td>${p.urgency ?? '—'}</td></tr>`).join(''), 5);
+   await loadAlertStock('/api/inventory/low-stock/', 'lowBody', 'low_stock_products', rows => rows.map(p => `<tr><td>${p.product_name ?? 'â€”'}</td><td>${p.current_stock ?? 0}</td><td>${p.reorder_threshold ?? 'â€”'}</td><td>${p.shortage ?? 'â€”'}</td><td>${p.urgency ?? 'â€”'}</td></tr>`).join(''), 5);
 }
 
 async function loadOutOfStock() {
-    await loadAlertStock('/api/inventory/out-of-stock/', 'outBody', 'out_of_stock', rows => rows.map(p => `<tr><td>${p.product_name ?? '—'}</td><td class="text-center">${p.current_stock ?? 0}</td></tr>`).join(''), 2);
+    await loadAlertStock('/api/inventory/out-of-stock/', 'outBody', 'out_of_stock', rows => rows.map(p => `<tr><td>${p.product_name ?? 'â€”'}</td><td class="text-center">${p.current_stock ?? 0}</td></tr>`).join(''), 2);
 }
 
 async function loadAlertStock(url, bodyId, key, renderRows, columns) {
@@ -450,11 +450,11 @@ async function viewDetail(productId) {
         historyPage = 1;
 
         body.innerHTML = `
-            <h5>${data.product_name ?? '—'}</h5>
-            <p>Total stock: <strong>${data.current_stock ?? data.total_remaining ?? data.total_current_stock ?? '—'}</strong></p>
+            <h5>${data.product_name ?? 'â€”'}</h5>
+            <p>Total stock: <strong>${data.current_stock ?? data.total_remaining ?? data.total_current_stock ?? 'â€”'}</strong></p>
             <table class="table table-sm">
                 <thead><tr><th>Batch</th><th>Remaining</th><th>Expiry</th><th>Status</th></tr></thead>
-                <tbody>${batches.map(b => `<tr><td>${b.batch_id ?? b.id ?? '—'}</td><td>${b.remaining_quantity ?? '—'}</td><td>${b.expiry_date ?? '—'}</td><td>${b.status ?? '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="text-muted">No active batches found.</td></tr>'}</tbody>
+                <tbody>${batches.map(b => `<tr><td>${b.batch_id ?? b.id ?? 'â€”'}</td><td>${b.remaining_quantity ?? 'â€”'}</td><td>${b.expiry_date ?? 'â€”'}</td><td>${b.status ?? 'â€”'}</td></tr>`).join('') || '<tr><td colspan="4" class="text-muted">No active batches found.</td></tr>'}</tbody>
             </table>
             <hr>
             <h6 class="fw-bold mb-2">Stock Movement History</h6>
@@ -495,16 +495,16 @@ async function loadHistoryPage() {
             const insufficientStockData = h.balance_after !== null && h.balance_after !== undefined && Number(h.balance_after) < 0;
             const balanceCell = insufficientStockData
                 ? '<span class="badge bg-warning text-dark" title="The recorded sales exceed the available purchase/stock records.">Insufficient stock data</span>'
-                : (h.balance_after ?? '—');
+                : (h.balance_after ?? 'â€”');
             const reasonCell = insufficientStockData
                 ? 'Recorded sales exceed available stock data.'
-                : (h.reason ?? '—');
+                : (h.reason ?? 'â€”');
             return `
             <tr>
                 <td>${formatStockDateTime(h.transaction_date)}</td>
-                <td><span class="badge bg-secondary">${h.movement_type ?? '—'}</span></td>
-                <td>${h.source ?? '—'}</td>
-                <td style="color:${(h.quantity_change ?? 0) < 0 ? '#dc2626' : '#16a34a'}">${h.quantity_change ?? '—'}</td>
+                <td><span class="badge bg-secondary">${h.movement_type ?? 'â€”'}</span></td>
+                <td>${h.source ?? 'â€”'}</td>
+                <td style="color:${(h.quantity_change ?? 0) < 0 ? '#DC2626' : '#16A34A'}">${h.quantity_change ?? 'â€”'}</td>
                 <td>${balanceCell}</td>
                 <td>${reasonCell}</td>
             </tr>
@@ -513,7 +513,7 @@ async function loadHistoryPage() {
 
         pagDiv.innerHTML = data.total_pages > 1 ? `
             <button class="btn btn-sm btn-outline-secondary" onclick="changeHistoryPage(-1)" ${!data.has_previous ? 'disabled' : ''}>Previous</button>
-            <span class="text-muted small">Page ${data.page} of ${data.total_pages} — Next shows older entries</span>
+            <span class="text-muted small">Page ${data.page} of ${data.total_pages} â€” Next shows older entries</span>
             <button class="btn btn-sm btn-outline-secondary" onclick="changeHistoryPage(1)" ${!data.has_next ? 'disabled' : ''}>Next</button>
         ` : '';
     } catch(e) {
@@ -550,10 +550,10 @@ async function loadLedger() {
         tbody.innerHTML = ledgerData.map(l => `
             <tr>
                 <td>${formatStockDateTime(l.transaction_date ?? l.date ?? l.created_at)}</td>
-                <td>${l.product_name ?? '—'}</td>
-                <td><span class="badge bg-secondary">${l.transaction_type ?? '—'}</span></td>
-                <td style="color:${(l.quantity_change ?? 0) < 0 ? '#dc2626' : '#16a34a'}">${l.quantity_change ?? l.quantity ?? '—'}</td>
-                <td>${l.reason ?? l.notes ?? '—'}</td>
+                <td>${l.product_name ?? 'â€”'}</td>
+                <td><span class="badge bg-secondary">${l.transaction_type ?? 'â€”'}</span></td>
+                <td style="color:${(l.quantity_change ?? 0) < 0 ? '#DC2626' : '#16A34A'}">${l.quantity_change ?? l.quantity ?? 'â€”'}</td>
+                <td>${l.reason ?? l.notes ?? 'â€”'}</td>
             </tr>
         `).join('');
     } catch(e) {
@@ -598,3 +598,5 @@ loadStock();
 loadUploadSummary();
 </script>
 {% endblock %}
+
+
