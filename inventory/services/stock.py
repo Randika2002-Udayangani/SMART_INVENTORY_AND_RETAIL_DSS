@@ -19,23 +19,31 @@ can. StockLedger remains valuable as an audit trail / stock movement
 history (see the Product Details modal's Stock Movement History), but is
 no longer used to COMPUTE the stock total.
 
-Delegates to reorder_logic.get_current_stock() so there is exactly ONE
-implementation of "current stock" in the codebase -- this file previously
-duplicated that logic with a different (and less reliable) method. Also
-fixes a second, independent bug: the old version had no status filter at
-all, meaning EXPIRED/DISPOSED batches' original ledger contributions were
-still counted unless a later negative entry happened to net them out --
-fragile. reorder_logic.get_current_stock() correctly filters to
-ACTIVE + PENDING_EXPIRY, the same real-sellable-stock definition used by
-every other stock view in the project.
+Sellable stock is limited to non-empty ACTIVE/PENDING_EXPIRY batches with
+a verified future expiry date. This is the same definition used by customer
+availability, so expired or undated stock cannot inflate available counts.
 """
 
-from inventory.services.reorder_logic import get_current_stock as _get_current_stock
+from django.db.models import Sum
+from django.utils import timezone
+from purchases.models import PurchaseBatch
+
+
+def get_sellable_batches(product_id=None):
+    """Return batches eligible for sale and customer availability counts."""
+    batches = PurchaseBatch.objects.filter(
+        status__in=['ACTIVE', 'PENDING_EXPIRY'],
+        remaining_quantity__gt=0,
+        expiry_date__gt=timezone.now().date(),
+    )
+    if product_id is not None:
+        batches = batches.filter(product_id=product_id)
+    return batches
 
 
 def get_available_stock(product_id):
-    """
-    Returns total sellable stock for a product. Single implementation,
-    delegated -- see module docstring for why this changed.
-    """
-    return _get_current_stock(product_id)
+    """Return total unexpired, non-empty stock that can be sold now."""
+    total = get_sellable_batches(product_id).aggregate(
+        total=Sum('remaining_quantity')
+    )['total']
+    return total or 0
