@@ -7,6 +7,7 @@ from django.shortcuts import render
 from django.utils import timezone
 from django.db.models import Min, Q, Sum
 from purchases.models import PurchaseBatch
+from inventory.services.stock import get_sellable_batches
 from core.authentication import LenientJWTAuthentication
 from users.audit import log_action
 import pandas as pd
@@ -75,12 +76,14 @@ class ProductListCreateView(generics.ListCreateAPIView):
     pagination_class = StandardResultsPagination
 
     def get_queryset(self):
+        today = timezone.now().date()
         queryset = Product.objects.filter(is_active=True).annotate(
             earliest_expiry=Min(
                 'purchasebatch__expiry_date',
                 filter=Q(
                     purchasebatch__status__in=['ACTIVE', 'PENDING_EXPIRY'],
                     purchasebatch__remaining_quantity__gt=0,
+                    purchasebatch__expiry_date__gt=today,
                 ),
             ),
         )
@@ -139,9 +142,10 @@ class ProductAvailabilityView(APIView):
         except Product.DoesNotExist:
             return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        current_stock = PurchaseBatch.objects.filter(
-            product=product, status='ACTIVE'
-        ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
+        valid_batches = get_sellable_batches(product.id)
+
+        current_stock = valid_batches.aggregate(total=Sum('remaining_quantity'))['total'] or 0
+        earliest_expiry = valid_batches.order_by('expiry_date').values_list('expiry_date', flat=True).first()
 
         if current_stock == 0:
             availability_status = 'UNAVAILABLE'
@@ -157,7 +161,7 @@ class ProductAvailabilityView(APIView):
             'status': availability_status,
             'can_order': can_order,
             'stock': int(current_stock),
-
+            'earliest_expiry': str(earliest_expiry) if earliest_expiry else None,
         })
 
 
@@ -208,6 +212,7 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
             filter=Q(
                 purchasebatch__status__in=['ACTIVE', 'PENDING_EXPIRY'],
                 purchasebatch__remaining_quantity__gt=0,
+                purchasebatch__expiry_date__gt=timezone.now().date(),
             ),
         ),
     )
