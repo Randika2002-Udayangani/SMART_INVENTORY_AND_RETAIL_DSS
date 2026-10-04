@@ -133,6 +133,7 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.07);
             transition: transform 0.2s, box-shadow 0.2s;
             cursor: pointer;
+            display: flex; flex-direction: column;
         }
         .product-card:hover {
             transform: translateY(-3px);
@@ -157,8 +158,16 @@
             width: 100%; padding: 8px; background: #1a73e8;
             color: white; border: none; border-radius: 8px;
             cursor: pointer; font-size: 0.88rem; font-weight: 600;
+            margin-top: auto;
         }
         .product-card .add-btn:hover { background: #1558b0; }
+        .product-card .add-btn:disabled,
+        .product-card .add-btn:disabled:hover,
+        .modal-add-btn:disabled,
+        .modal-add-btn:disabled:hover {
+            background: #6b7280 !important;
+            cursor: not-allowed;
+        }
 
         /* ── Pagination ── */
         .pagination {
@@ -502,6 +511,31 @@
         return p.discount ? p.discount.price : parseFloat(p.unit_price);
     }
 
+    function updateProductCardAvailability(productId, data) {
+        const unavailable = data.status === 'UNAVAILABLE' || data.can_order === false;
+        document.querySelectorAll(`.product-card .add-btn[data-product-id="${productId}"]`)
+            .forEach(button => {
+                button.disabled = unavailable;
+                button.textContent = unavailable ? 'Out of Stock' : 'Add to Cart 🛒';
+            });
+    }
+
+    async function checkProductCardAvailability(productId) {
+        const buttons = document.querySelectorAll(`.product-card .add-btn[data-product-id="${productId}"]`);
+        try {
+            const response = await fetch(`/api/products/${productId}/availability/`, {
+                cache: 'no-store'
+            });
+            if (!response.ok) throw new Error('Availability check failed');
+            updateProductCardAvailability(productId, await response.json());
+        } catch (err) {
+            buttons.forEach(button => {
+                button.disabled = false;
+                button.textContent = 'Add to Cart 🛒';
+            });
+        }
+    }
+
     // ── Show category boxes ──────────────────────────────────────
     function showCategories() {
         currentCat  = null;
@@ -568,22 +602,16 @@
                                     border-radius:12px;font-weight:700;">
                                     🏷️ ${p.discount.pct}% OFF
                                 </span>
-                            </div>` : `
-                            <div style="margin-bottom:6px;">
-                                <span style="background:#eef4ff;color:#4a5a7a;
-                                    font-size:0.72rem;padding:3px 8px;
-                                    border-radius:12px;font-weight:700;">
-                                    Price may vary
-                                </span>
-                            </div>`}
+                            </div>` : ''}
                         <div class="pname">${p.product_name}</div>
                         <div class="pprice">${renderProductPrice(p)}</div>
-                        <button class="add-btn"
+                        <button class="add-btn" data-product-id="${p.id}" disabled
                             onclick="event.stopPropagation(); addToCart(${p.id}, '${p.product_name.replace(/'/g, '')}', ${getProductPrice(p)})">
-                            Add to Cart 🛒
+                            Checking stock...
                         </button>
                     </div>`).join('')}
             </div>`;
+        pageProds.forEach(p => checkProductCardAvailability(p.id));
 
         // Pagination
         if (totalPages > 1) {
@@ -666,6 +694,11 @@
             closeProductModal();
         };
 
+        addBtn.disabled         = true;
+        addBtn.style.background = '#aaa';
+        addBtn.textContent      = 'Checking stock...';
+        addBtn.onclick          = null;
+
         document.getElementById('productModal').style.display = 'flex';
 
         // Fetch real stock from availability endpoint
@@ -675,68 +708,75 @@
             const res = await fetch(`/api/products/${productId}/availability/`, {
                 cache: 'no-store'
             });
-            if (res.ok) {
-                const data  = await res.json();
-                const stockEl  = document.getElementById('stockDisplay');
-                const expiryEl = document.getElementById('expiryDisplay');
-                const addBtn2  = document.getElementById('modalAddBtn');
+            if (!res.ok) throw new Error('Availability check failed');
+            const data  = await res.json();
+            updateProductCardAvailability(productId, data);
+            const stockEl  = document.getElementById('stockDisplay');
+            const expiryEl = document.getElementById('expiryDisplay');
+            const addBtn2  = document.getElementById('modalAddBtn');
 
-                if (expiryEl && data.earliest_expiry) {
-                    expiryEl.textContent = `📅 ${data.earliest_expiry}`;
-                }
+            if (expiryEl && data.earliest_expiry) {
+                expiryEl.textContent = `📅 ${data.earliest_expiry}`;
+            }
 
-                if (stockEl) {
-                    const status   = data.status;
-                    const stock    = data.stock || 0;
+            if (stockEl) {
+                const status   = data.status;
+                const stock    = data.stock || 0;
 
-                    if (status === 'AVAILABLE') {
-                        stockEl.innerHTML = `
+                if (status === 'AVAILABLE') {
+                    stockEl.innerHTML = `
                             <span style="color:#1e7e34;">
                                 ✅ ${stock} items available
                             </span>`;
-                        // Allow adding up to available stock
-                        addBtn2.disabled         = false;
-                        addBtn2.style.background = '#1a73e8';
-                        addBtn2.textContent      = 'Add to Cart 🛒';
-                        addBtn2.onclick = () => {
-                            addToCartWithLimit(p.id, p.product_name,
-                                getProductPrice(p), stock);
-                            closeProductModal();
-                        };
+                    // Allow adding up to available stock
+                    addBtn2.disabled         = false;
+                    addBtn2.style.background = '#1a73e8';
+                    addBtn2.textContent      = 'Add to Cart 🛒';
+                    addBtn2.onclick = () => {
+                        addToCartWithLimit(p.id, p.product_name,
+                            getProductPrice(p), stock);
+                        closeProductModal();
+                    };
 
-                    } else if (status === 'LIMITED_STOCK') {
-                        stockEl.innerHTML = `
+                } else if (status === 'LIMITED_STOCK') {
+                    stockEl.innerHTML = `
                             <span style="color:#e65100;">
                                 ⚠️ Only ${stock} left — Order soon!
                             </span>`;
-                        // Allow adding but limit to available stock
-                        addBtn2.disabled         = false;
-                        addBtn2.style.background = '#1a73e8';
-                        addBtn2.textContent      = `Add to Cart 🛒`;
-                        addBtn2.onclick = () => {
-                            addToCartWithLimit(p.id, p.product_name,
-                                getProductPrice(p), stock);
-                            closeProductModal();
-                        };
+                    // Allow adding but limit to available stock
+                    addBtn2.disabled         = false;
+                    addBtn2.style.background = '#1a73e8';
+                    addBtn2.textContent      = `Add to Cart 🛒`;
+                    addBtn2.onclick = () => {
+                        addToCartWithLimit(p.id, p.product_name,
+                            getProductPrice(p), stock);
+                        closeProductModal();
+                    };
 
-                    } else {
-                        // The discount should not remain visible once the availability check
-                        // proves there is no sellable stock left for this product.
-                        document.getElementById('modalPrice').innerHTML = `Rs ${parseFloat(p.unit_price).toFixed(2)}`;
-                        stockEl.innerHTML = `
+                } else {
+                    // The discount should not remain visible once the availability check
+                    // proves there is no sellable stock left for this product.
+                    document.getElementById('modalPrice').innerHTML = `Rs ${parseFloat(p.unit_price).toFixed(2)}`;
+                    stockEl.innerHTML = `
                             <span style="color:#c5221f;">
                                 ❌ Currently out of stock
                             </span>`;
-                        addBtn2.disabled         = true;
-                        addBtn2.style.background = '#aaa';
-                        addBtn2.textContent      = 'Out of Stock';
-                        addBtn2.onclick          = null;
-                    }
+                    addBtn2.disabled         = true;
+                    addBtn2.style.background = '#aaa';
+                    addBtn2.textContent      = 'Out of Stock';
+                    addBtn2.onclick          = null;
                 }
             }
         } catch (err) {
             const stockEl = document.getElementById('stockDisplay');
             if (stockEl) stockEl.innerHTML = `✅ In Stock`;
+            addBtn.disabled         = false;
+            addBtn.style.background = '#1a73e8';
+            addBtn.textContent      = 'Add to Cart 🛒';
+            addBtn.onclick = () => {
+                addToCart(p.id, p.product_name, getProductPrice(p));
+                closeProductModal();
+            };
         }
     }
 
@@ -821,12 +861,13 @@
                                     : `Rs ${parseFloat(p.unit_price).toFixed(2)}`
                                 }
                             </div>
-                            <button class="add-btn"
+                            <button class="add-btn" data-product-id="${p.id}" disabled
                                 onclick="event.stopPropagation(); addToCart(${p.id}, '${p.product_name.replace(/'/g, '')}', ${p.discount ? p.discount.price : parseFloat(p.unit_price)})">
-                                Add to Cart 🛒
+                                Checking stock...
                             </button>
                         </div>`).join('')}
                 </div>`;
+            results.slice(0, 24).forEach(p => checkProductCardAvailability(p.id));
         }
         document.getElementById('pagination').innerHTML = '';
     }
