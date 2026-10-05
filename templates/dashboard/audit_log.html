@@ -1,6 +1,6 @@
-﻿{% extends "dashboard/base.html" %}
+{% extends "dashboard/base.html" %}
 
-{% block title %}Audit Log â€” Smart Inventory DSS{% endblock %}
+{% block title %}Audit Log — Smart Inventory DSS{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -75,7 +75,7 @@
 <<<<<<< HEAD
   // Tracks the last-applied filter query string. This page auto-polls
   // every 30s (see setInterval below), so unlike the other paginated
-  // pages we can't just reset to page 1 on every load â€” that would yank
+  // pages we can't just reset to page 1 on every load — that would yank
   // a manager reading page 3 back to page 1 every 30 seconds. Instead we
   // only reset when the filters actually changed (Apply/Clear with new
   // values); a same-filter reload (auto-poll, or Refresh with unchanged
@@ -110,7 +110,7 @@
       const rows = await apiFetch(`/api/audit-log/${query ? `?${query}` : ''}`);
       allAuditLogs = Array.isArray(rows) ? rows : (rows.results ?? []);
       if (query !== lastAuditQuery) {
-        auditPage = 1; // filters actually changed â€” back to page 1
+        auditPage = 1; // filters actually changed — back to page 1
         lastAuditQuery = query;
       }
 =======
@@ -131,7 +131,7 @@
   }
 
 <<<<<<< HEAD
-  // Pagination â€” same pattern used elsewhere (Stock Levels in
+  // Pagination — same pattern used elsewhere (Stock Levels in
   // inventory.html, Purchases, Batches, Reorder, Lifecycle, Loss Analysis,
   // Discount Engine, Health Score, Notifications): 25 rows/page,
   // client-side slice, Previous / "Page X of Y" / Next.

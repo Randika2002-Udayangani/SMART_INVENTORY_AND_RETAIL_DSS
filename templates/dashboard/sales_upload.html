@@ -1,6 +1,6 @@
-﻿{% extends "dashboard/base.html" %}
+{% extends "dashboard/base.html" %}
 
-{% block title %}Sales Upload â€” Smart Inventory DSS{% endblock %}
+{% block title %}Sales Upload — Smart Inventory DSS{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -26,7 +26,7 @@
     .upload-table { min-width: 760px; }
   }
 
-  /* Upload details modal â€” replaces the native alert() popup */
+  /* Upload details modal — replaces the native alert() popup */
   .upload-modal-backdrop {
     position: fixed; inset: 0; background: rgba(15,23,42,0.45);
     display: none; align-items: center; justify-content: center; z-index: 1050; padding: 16px;
@@ -204,7 +204,7 @@
   }
 
 <<<<<<< HEAD
-  // Pagination â€” same pattern used elsewhere (Purchases, Batches, Reorder,
+  // Pagination — same pattern used elsewhere (Purchases, Batches, Reorder,
   // Health Score, Audit Log, Loss Analysis): 25 rows/page, client-side
   // slice, Previous / "Page X of Y" / Next.
 =======
@@ -226,7 +226,7 @@
       // unpaginated response shape.
       allUploads = Array.isArray(data) ? data : (data.results ?? []);
 <<<<<<< HEAD
-      uploadPage = 1; // fresh data â€” back to page 1
+      uploadPage = 1; // fresh data — back to page 1
 =======
       uploadTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
       uploadPage = Array.isArray(data) ? uploadPage : (data.page ?? uploadPage);
@@ -291,7 +291,7 @@
       const field = (label, value) => `
         <div class="upload-detail-item">
             <div class="lbl">${escapeHtml(label)}</div>
-            <div class="val">${escapeHtml(value ?? 'â€”')}</div>
+            <div class="val">${escapeHtml(value ?? '—')}</div>
         </div>`;
 
       document.getElementById('uploadDetailsBody').innerHTML =

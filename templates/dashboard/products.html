@@ -1,6 +1,6 @@
-﻿{% extends "dashboard/base.html" %}
+{% extends "dashboard/base.html" %}
 
-{% block title %}Products â€” Smart Inventory DSS{% endblock %}
+{% block title %}Products — Smart Inventory DSS{% endblock %}
 {% block nav_products %}active{% endblock %}
 {% block extra_css %}
     <style>
@@ -17,7 +17,7 @@
 <div class="topbar">
     <div>
         <h1>Product Management</h1>
-        <div class="sub">Samanala Super Mart â€” product catalogue, import, brands &amp; categories</div>
+        <div class="sub">Samanala Super Mart — product catalogue, import, brands &amp; categories</div>
     </div>
 </div>
 
@@ -227,50 +227,50 @@
                                 <div class="d-flex justify-content-between align-items-start mb-3">
                                     <div>
                                         <div class="text-uppercase small text-muted fw-semibold mb-1">Product</div>
-                                        <h5 id="detailProductName" class="mb-0 fw-bold">â€”</h5>
+                                        <h5 id="detailProductName" class="mb-0 fw-bold">—</h5>
                                     </div>
-                                    <span id="detailAvailabilityBadge" class="badge rounded-pill px-3 py-2">â€”</span>
+                                    <span id="detailAvailabilityBadge" class="badge rounded-pill px-3 py-2">—</span>
                                 </div>
 
                                 <div class="row g-3">
                                     <div class="col-md-6">
                                         <div class="small text-muted">Product ID</div>
-                                        <div id="detailProductId" class="fw-semibold">â€”</div>
+                                        <div id="detailProductId" class="fw-semibold">—</div>
                                     </div>
                                     <div class="col-md-6">
                                         <div class="small text-muted">SKU</div>
-                                        <div id="detailSku" class="fw-semibold">â€”</div>
+                                        <div id="detailSku" class="fw-semibold">—</div>
                                     </div>
                                     <div class="col-md-6">
                                         <div class="small text-muted">Category</div>
-                                        <div id="detailCategory" class="fw-semibold">â€”</div>
+                                        <div id="detailCategory" class="fw-semibold">—</div>
                                     </div>
 
                                     <div class="col-md-6">
                                         <div class="small text-muted">Brand</div>
-                                        <div id="detailBrand" class="fw-semibold">â€”</div>
+                                        <div id="detailBrand" class="fw-semibold">—</div>
                                     </div>
                                     <div class="col-md-6">
                                         <div class="small text-muted">Status</div>
-                                        <div id="detailStatusText" class="fw-semibold">â€”</div>
+                                        <div id="detailStatusText" class="fw-semibold">—</div>
                                     </div>
 
                                     <div class="col-md-6">
                                         <div class="small text-muted">Unit Price</div>
-                                        <div id="detailUnitPrice" class="fw-semibold">â€”</div>
+                                        <div id="detailUnitPrice" class="fw-semibold">—</div>
                                     </div>
                                     <div class="col-md-6">
                                         <div class="small text-muted">Cost Price</div>
-                                        <div id="detailCostPrice" class="fw-semibold">â€”</div>
+                                        <div id="detailCostPrice" class="fw-semibold">—</div>
                                     </div>
 
                                     <div class="col-md-6">
                                         <div class="small text-muted">Avg Cost Price</div>
-                                        <div id="detailAvgCostPrice" class="fw-semibold">â€”</div>
+                                        <div id="detailAvgCostPrice" class="fw-semibold">—</div>
                                     </div>
                                     <div class="col-md-6">
                                         <div class="small text-muted">Can Order?</div>
-                                        <div id="detailCanOrder" class="fw-semibold">â€”</div>
+                                        <div id="detailCanOrder" class="fw-semibold">—</div>
                                     </div>
                                 </div>
                             </div>
@@ -442,7 +442,7 @@ async function loadProducts() {
         const data = await res.json();
         allProducts = extractArray(data);
 <<<<<<< HEAD
-        prodPage = 1; // fresh data (new search/filter/reload) â€” back to page 1
+        prodPage = 1; // fresh data (new search/filter/reload) — back to page 1
 =======
         prodTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
         prodPage = Array.isArray(data) ? prodPage : (data.page ?? prodPage);
@@ -472,10 +472,10 @@ function renderProducts() {
 
     tbody.innerHTML = rows.map(p => `
         <tr>
-            <td style="font-weight:600">${escapeHtml(p.product_name ?? 'â€”')}</td>
-            <td>${escapeHtml(p.category_name ?? 'â€”')}</td>
-            <td>${escapeHtml(p.brand_name ?? 'â€”')}</td>
-            <td>${escapeHtml(p.sku_code ?? 'â€”')}</td>
+            <td style="font-weight:600">${escapeHtml(p.product_name ?? '—')}</td>
+            <td>${escapeHtml(p.category_name ?? '—')}</td>
+            <td>${escapeHtml(p.brand_name ?? '—')}</td>
+            <td>${escapeHtml(p.sku_code ?? '—')}</td>
             <td>${formatMoney(p.unit_price)}</td>
             <td>
                 <div class="d-flex gap-2 flex-wrap">
@@ -595,7 +595,7 @@ function hideEditForm() {
 
 function formatCurrency(value) {
     const num = Number(value ?? 0);
-    if (!Number.isFinite(num)) return 'â€”';
+    if (!Number.isFinite(num)) return '—';
     return formatMoney(num);
 }
 
@@ -611,16 +611,16 @@ function showProductDetailModal(product, stockData = {}) {
     const statusText = (stockData.stock_status || 'UNKNOWN').replace('_', ' ');
     const canOrder = (stockData.total_current_stock ?? 0) > 0 ? 'Yes' : 'No';
 
-    document.getElementById('detailProductName').textContent = product.product_name || 'â€”';
-    document.getElementById('detailProductId').textContent = product.id ?? 'â€”';
-    document.getElementById('detailSku').textContent = product.sku_code || 'â€”';
-    document.getElementById('detailCategory').textContent = product.category_name || 'â€”';
-    document.getElementById('detailBrand').textContent = product.brand_name || 'â€”';
+    document.getElementById('detailProductName').textContent = product.product_name || '—';
+    document.getElementById('detailProductId').textContent = product.id ?? '—';
+    document.getElementById('detailSku').textContent = product.sku_code || '—';
+    document.getElementById('detailCategory').textContent = product.category_name || '—';
+    document.getElementById('detailBrand').textContent = product.brand_name || '—';
     document.getElementById('detailStatusText').textContent = statusText;
     document.getElementById('detailCanOrder').textContent = canOrder;
     document.getElementById('detailUnitPrice').textContent = formatCurrency(product.unit_price);
     document.getElementById('detailCostPrice').textContent = formatCurrency(product.cost_price);
-    document.getElementById('detailAvgCostPrice').textContent = product.avg_cost_price != null ? formatCurrency(product.avg_cost_price) : 'â€”';
+    document.getElementById('detailAvgCostPrice').textContent = product.avg_cost_price != null ? formatCurrency(product.avg_cost_price) : '—';
 
     const badge = document.getElementById('detailAvailabilityBadge');
     badge.textContent = statusText;
@@ -682,15 +682,15 @@ async function viewProductAvailability(id) {
         document.getElementById('productDetailContent').style.display = 'block';
 
         document.getElementById('detailProductName').textContent = 'Unable to load';
-        document.getElementById('detailProductId').textContent = id ?? 'â€”';
-        document.getElementById('detailSku').textContent = 'â€”';
-        document.getElementById('detailCategory').textContent = 'â€”';
-        document.getElementById('detailBrand').textContent = 'â€”';
+        document.getElementById('detailProductId').textContent = id ?? '—';
+        document.getElementById('detailSku').textContent = '—';
+        document.getElementById('detailCategory').textContent = '—';
+        document.getElementById('detailBrand').textContent = '—';
         document.getElementById('detailStatusText').textContent = 'Error';
         document.getElementById('detailCanOrder').textContent = 'Unknown';
-        document.getElementById('detailUnitPrice').textContent = 'â€”';
-        document.getElementById('detailCostPrice').textContent = 'â€”';
-        document.getElementById('detailAvgCostPrice').textContent = 'â€”';
+        document.getElementById('detailUnitPrice').textContent = '—';
+        document.getElementById('detailCostPrice').textContent = '—';
+        document.getElementById('detailAvgCostPrice').textContent = '—';
 
         const badge = document.getElementById('detailAvailabilityBadge');
         badge.textContent = 'ERROR';
@@ -809,8 +809,8 @@ async function loadBrands() {
 
         tbody.innerHTML = rows.map(b => `
             <tr>
-                <td>${b.id ?? 'â€”'}</td>
-                <td>${escapeHtml(b.brand_name ?? 'â€”')}</td>
+                <td>${b.id ?? '—'}</td>
+                <td>${escapeHtml(b.brand_name ?? '—')}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="editBrandPayload('${encodePayload(b)}')">Edit</button>
                     <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteBrand(${b.id})'>Delete</button>
@@ -903,8 +903,8 @@ async function loadCategoriesCrud() {
 
         tbody.innerHTML = rows.map(c => `
             <tr>
-                <td>${c.id ?? 'â€”'}</td>
-                <td>${escapeHtml(c.category_name ?? 'â€”')}</td>
+                <td>${c.id ?? '—'}</td>
+                <td>${escapeHtml(c.category_name ?? '—')}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="editCategoryPayload('${encodePayload(c)}')">Edit</button>
                     <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteCategory(${c.id})'>Delete</button>
@@ -999,10 +999,10 @@ async function loadStoreZones() {
 
         tbody.innerHTML = rows.map(z => `
             <tr>
-                <td>${z.id ?? 'â€”'}</td>
-                <td>${escapeHtml(z.zone_name ?? 'â€”')}</td>
-                <td>${escapeHtml(z.traffic_level ?? 'â€”')}</td>
-                <td>${escapeHtml(z.description ?? 'â€”')}</td>
+                <td>${z.id ?? '—'}</td>
+                <td>${escapeHtml(z.zone_name ?? '—')}</td>
+                <td>${escapeHtml(z.traffic_level ?? '—')}</td>
+                <td>${escapeHtml(z.description ?? '—')}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="editZonePayload('${encodePayload(z)}')">Edit</button>
                     <button class="btn btn-sm btn-outline-danger" onclick='confirmDeleteZone(${z.id})'>Delete</button>

@@ -1,8 +1,8 @@
-﻿{% extends "dashboard/base.html" %}
+{% extends "dashboard/base.html" %}
 
 
 
-{% block title %}Manager Analytics â€” Smart Inventory DSS{% endblock %}
+{% block title %}Manager Analytics — Smart Inventory DSS{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -57,7 +57,7 @@
 <div class="topbar">
   <div>
     <h1>Manager Analytics</h1>
-    <div class="sub" id="anPeriodLabel">Loading analytics periodâ€¦</div>
+    <div class="sub" id="anPeriodLabel">Loading analytics period…</div>
     <div class="sub" id="anSyncLabel"></div>
   </div>
   <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
@@ -116,13 +116,13 @@
   <div class="col-lg-8">
     <div class="an-card h-100">
       <div class="d-flex justify-content-between align-items-start mb-2">
-        <div><h6 class="fw-bold mb-0">Sales Trend â€” Revenue vs Profit</h6><small class="text-muted">Do rising sales translate into rising profit?</small></div>
+        <div><h6 class="fw-bold mb-0">Sales Trend — Revenue vs Profit</h6><small class="text-muted">Do rising sales translate into rising profit?</small></div>
         <select id="anTrendMetric" class="form-select form-select-sm w-auto">
           <option value="amount">Revenue + Profit</option>
           <option value="units">Units sold</option>
         </select>
       </div>
-      <div class="an-chart an-chart-wide"><canvas id="trendChart"></canvas><div id="trendState" class="an-loading">Loading trendâ€¦</div></div>
+      <div class="an-chart an-chart-wide"><canvas id="trendChart"></canvas><div id="trendState" class="an-loading">Loading trend…</div></div>
     </div>
   </div>
   <div class="col-lg-4">
@@ -135,16 +135,16 @@
 
 <!-- Product / Category / Brand charts -->
 <div class="row g-4 mb-4">
-  <div class="col-lg-4"><div class="an-card h-100"><h6 class="fw-bold mb-2">Top Products by Profit</h6><div class="an-chart"><canvas id="productsChart"></canvas><div id="productsChartState" class="an-loading">Loadingâ€¦</div></div></div></div>
-  <div class="col-lg-4"><div class="an-card h-100"><h6 class="fw-bold mb-2">Revenue by Category</h6><div class="an-chart"><canvas id="categoryChart"></canvas><div id="categoryChartState" class="an-loading">Loadingâ€¦</div></div></div></div>
-  <div class="col-lg-4"><div class="an-card h-100"><h6 class="fw-bold mb-2">Profit by Brand</h6><div class="an-chart"><canvas id="brandChart"></canvas><div id="brandChartState" class="an-loading">Loadingâ€¦</div></div></div></div>
+  <div class="col-lg-4"><div class="an-card h-100"><h6 class="fw-bold mb-2">Top Products by Profit</h6><div class="an-chart"><canvas id="productsChart"></canvas><div id="productsChartState" class="an-loading">Loading…</div></div></div></div>
+  <div class="col-lg-4"><div class="an-card h-100"><h6 class="fw-bold mb-2">Revenue by Category</h6><div class="an-chart"><canvas id="categoryChart"></canvas><div id="categoryChartState" class="an-loading">Loading…</div></div></div></div>
+  <div class="col-lg-4"><div class="an-card h-100"><h6 class="fw-bold mb-2">Profit by Brand</h6><div class="an-chart"><canvas id="brandChart"></canvas><div id="brandChartState" class="an-loading">Loading…</div></div></div></div>
 </div>
 
 <!-- Volume vs Margin -->
 <div class="an-card mb-4">
   <h6 class="fw-bold mb-1">Volume vs Margin Analysis</h6>
-  <small class="text-muted">Each point is a product â€” find high-margin/low-volume opportunities and low-margin/high-volume risks.</small>
-  <div class="an-chart an-chart-wide mt-2"><canvas id="portfolioChart"></canvas><div id="portfolioChartState" class="an-loading">Loadingâ€¦</div></div>
+  <small class="text-muted">Each point is a product — find high-margin/low-volume opportunities and low-margin/high-volume risks.</small>
+  <div class="an-chart an-chart-wide mt-2"><canvas id="portfolioChart"></canvas><div id="portfolioChartState" class="an-loading">Loading…</div></div>
 </div>
 
 <!-- Flags + Insights -->
@@ -177,15 +177,15 @@
       <thead>
         <tr>
           <th>Rank</th><th>Product</th><th>Brand</th><th>Category</th>
-          <th class="sortable" data-sort="qty">Units <span class="sort-arrow">â†•</span></th>
-          <th class="sortable" data-sort="revenue">Revenue <span class="sort-arrow">â†•</span></th>
-          <th>WAC <span class="tooltip-icon" title="Weighted Average Cost â€” the average price paid per unit based on all purchases">â“˜</span></th><th>Cost</th>
-          <th class="sortable" data-sort="profit">Profit <span class="sort-arrow">â†•</span></th>
-          <th class="sortable" data-sort="margin">Margin % <span class="tooltip-icon" title="Margin percentage â€” the share of each sale left after the product cost">â“˜</span> <span class="sort-arrow">â†•</span></th>
+          <th class="sortable" data-sort="qty">Units <span class="sort-arrow">↕</span></th>
+          <th class="sortable" data-sort="revenue">Revenue <span class="sort-arrow">↕</span></th>
+          <th>WAC <span class="tooltip-icon" title="Weighted Average Cost — the average price paid per unit based on all purchases">ⓘ</span></th><th>Cost</th>
+          <th class="sortable" data-sort="profit">Profit <span class="sort-arrow">↕</span></th>
+          <th class="sortable" data-sort="margin">Margin % <span class="tooltip-icon" title="Margin percentage — the share of each sale left after the product cost">ⓘ</span> <span class="sort-arrow">↕</span></th>
           <th>Flag</th><th>Action</th>
         </tr>
       </thead>
-      <tbody id="anProductsBody"><tr><td colspan="12" class="text-center text-muted py-4">Loadingâ€¦</td></tr></tbody>
+      <tbody id="anProductsBody"><tr><td colspan="12" class="text-center text-muted py-4">Loading…</td></tr></tbody>
     </table>
   </div>
   <div class="d-flex justify-content-between align-items-center">
@@ -206,7 +206,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <div id="paLoading" class="an-loading">Loading product analysisâ€¦</div>
+        <div id="paLoading" class="an-loading">Loading product analysis…</div>
         <div id="paError" class="an-error" style="display:none;"></div>
         <div id="paBody" style="display:none;">
           <div class="row g-3 mb-3" id="paKpis"></div>
@@ -230,7 +230,7 @@
 
           <div class="an-card">
             <h6 class="fw-bold mb-2">Monthly Sales &amp; Profit</h6>
-            <div class="an-chart an-chart-wide"><canvas id="paMonthlyChart"></canvas><div id="paMonthlyState" class="an-loading">Loadingâ€¦</div></div>
+            <div class="an-chart an-chart-wide"><canvas id="paMonthlyChart"></canvas><div id="paMonthlyState" class="an-loading">Loading…</div></div>
           </div>
         </div>
       </div>
@@ -251,7 +251,7 @@
   // (e.g. "Sep 11, 2026, 1:36 PM" or "Sep 11, 2026"). Falls back to the
   // raw string if it can't be parsed, rather than showing "Invalid Date".
   function formatDateTime(raw, includeTime = true) {
-    if (!raw) return 'â€”';
+    if (!raw) return '—';
     const parsed = new Date(raw.replace(' ', 'T'));
     if (isNaN(parsed.getTime())) return raw;
     const dateStr = parsed.toLocaleDateString(undefined, {
@@ -264,7 +264,7 @@
     return `${dateStr}, ${timeStr}`;
   }
 
-  const pct = v => (v === null || v === undefined) ? 'â€”' : Number(v).toFixed(1) + '%';
+  const pct = v => (v === null || v === undefined) ? '—' : Number(v).toFixed(1) + '%';
   const COLORS = { revenue: '#22c55e', profit: '#14532d', units: '#EAB308', cat: '#22C55E', brand: '#3B82F6' };
   let charts = {};
   let productPage = 1;
@@ -328,7 +328,7 @@
     if (!mode) { stateEl.style.display = 'none'; if (canvas) canvas.style.display = ''; return; }
     stateEl.className = 'an-' + mode;
     stateEl.style.display = 'flex';
-    stateEl.innerText = text || (mode === 'loading' ? 'Loadingâ€¦' : mode === 'empty' ? 'No data available for the selected period.' : 'Failed to load.');
+    stateEl.innerText = text || (mode === 'loading' ? 'Loading…' : mode === 'empty' ? 'No data available for the selected period.' : 'Failed to load.');
     if (canvas) canvas.style.display = 'none';
   }
 
@@ -339,17 +339,17 @@
     return (e && e.message) || 'Unable to load analytics data.';
   }
 
-  // â”€â”€ KPIs + comparison + charts + flags + insights (from /analytics/overview/) â”€â”€
+  // ── KPIs + comparison + charts + flags + insights (from /analytics/overview/) ──
   function renderOverview(o) {
     lastOverview = o;
-    $('anPeriodLabel').innerText = `Analytics period: ${o.period.date_from} â€“ ${o.period.date_to}`;
+    $('anPeriodLabel').innerText = `Analytics period: ${o.period.date_from} – ${o.period.date_to}`;
     $('anSyncLabel').innerText = o.data_quality.latest_sales_date
       ? `Sales data through ${formatDateTime(o.data_quality.latest_sales_date, false)} · Last synchronized: ${formatDateTime(o.data_quality.last_synchronized)}`
       : `Last synchronized: ${formatDateTime(o.data_quality.last_synchronized)}`;
 
     if (o.data_quality.products_missing_wac > 0) {
       $('anQualityBanner').style.display = 'block';
-      $('anQualityBanner').innerHTML = `âš  ${o.data_quality.products_missing_wac} products sold in this period have insufficient cost (WAC) data â€” their profit figures may be incomplete.`;
+      $('anQualityBanner').innerHTML = `⚠ ${o.data_quality.products_missing_wac} products sold in this period have insufficient cost (WAC) data — their profit figures may be incomplete.`;
     } else {
       $('anQualityBanner').style.display = 'none';
     }
@@ -359,7 +359,7 @@
     const cards = [
       ['Total Revenue', money(s.revenue), c.revenue_pct, 'vs previous period'],
       ['Cost (WAC-based)', money(s.cost), null, 'Weighted Average Cost'],
-      ['Gross Profit', money(s.profit), c.profit_pct, 'Revenue âˆ’ WAC cost'],
+      ['Gross Profit', money(s.profit), c.profit_pct, 'Revenue − WAC cost'],
       ['Margin', pct(s.margin_pct), c.margin_pct, 'Profit / Revenue'],
       ['Units Sold', Number(s.units_sold).toLocaleString(), c.units_pct, 'across all products'],
       ['Total Discount', money(s.discount), null, 'selected period'],
@@ -368,7 +368,7 @@
       let chgHtml = '<div class="kpi-change flat">No comparable data</div>';
       if (chg !== null && chg !== undefined) {
         const cls = chg >= 0 ? 'up' : 'down';
-        const arrow = chg >= 0 ? 'â†‘' : 'â†“';
+        const arrow = chg >= 0 ? '↑' : '↓';
         chgHtml = `<div class="kpi-change ${cls}">${arrow} ${Math.abs(chg).toFixed(1)}% vs previous</div>`;
       }
       return `<div class="col-6 col-md-4 col-xl-2"><div class="kpi-card"><div class="kpi-lbl">${label}</div><div class="kpi-val">${val}</div><div class="kpi-sub">${sub}</div>${chgHtml}</div></div>`;
@@ -379,9 +379,9 @@
     ].map(([label, chg]) => {
       const body = (chg === null || chg === undefined)
         ? '<span class="text-muted">No comparable data</span>'
-        : `<span class="${chg >= 0 ? 'kpi-change up' : 'kpi-change down'}">${chg >= 0 ? 'â†‘' : 'â†“'} ${Math.abs(chg).toFixed(1)}% vs previous period</span>`;
+        : `<span class="${chg >= 0 ? 'kpi-change up' : 'kpi-change down'}">${chg >= 0 ? '↑' : '↓'} ${Math.abs(chg).toFixed(1)}% vs previous period</span>`;
       return `<div class="comparison-item"><strong>${label}</strong><div class="small mt-1">${body}</div></div>`;
-    }).join(`<div class="mb-2"><small class="text-muted">${o.previous_period.date_from} â€“ ${o.previous_period.date_to}</small></div>`);
+    }).join(`<div class="mb-2"><small class="text-muted">${o.previous_period.date_from} – ${o.previous_period.date_to}</small></div>`);
 
     // Top products by profit
     const top = o.top_products.profit || [];
@@ -483,7 +483,7 @@
 
   async function loadProducts() {
     const search = encodeURIComponent($('anSearch').value.trim());
-    $('anProductsBody').innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4">Loadingâ€¦</td></tr>';
+    $('anProductsBody').innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4">Loading…</td></tr>';
     try {
       const p = await apiFetch(`/api/analytics/products/?${dateQS()}&sort=${currentSort}&page=${productPage}&page_size=${PAGE_SIZE}&search=${search}`);
       $('anCount').innerText = `${p.count} products`;
@@ -504,7 +504,7 @@
     }
   }
 
-  // â”€â”€ Product Analysis modal (View Analysis drill-down) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Product Analysis modal (View Analysis drill-down) ──────────────────
   function statusTone(value) {
     const good = ['HEALTHY', 'GROWING', 'STABLE', 'LOW', 'RETAIN', 'MONITOR'];
     const warn = ['WATCH', 'MEDIUM', 'NEW'];
@@ -516,7 +516,7 @@
   }
 
   function badge(value, label) {
-    if (value === null || value === undefined) return '<span class="status-badge muted">â€”</span>';
+    if (value === null || value === undefined) return '<span class="status-badge muted">—</span>';
     return `<span class="status-badge ${statusTone(value)}">${label || value}</span>`;
   }
 
@@ -544,7 +544,7 @@
   function renderProductAnalysis(a) {
     const p = a.product, s = a.summary;
     $('paProductName').innerText = p.name;
-    $('paProductMeta').innerText = `SKU ${p.sku_code || 'â€”'} · ${p.brand || 'Unbranded'} · ${p.category || 'Uncategorised'} · ${a.period.date_from} â€“ ${a.period.date_to}`;
+    $('paProductMeta').innerText = `SKU ${p.sku_code || '—'} · ${p.brand || 'Unbranded'} · ${p.category || 'Uncategorised'} · ${a.period.date_from} – ${a.period.date_to}`;
 
     const kpis = [
       ['Revenue', money(s.revenue)], ['Profit', money(s.profit)], ['Margin', pct(s.margin_pct)],
@@ -559,7 +559,7 @@
     $('paRecommendationCard').innerHTML = `
       <h6 class="fw-bold mb-1">Manager Recommendation</h6>
       <div class="quality-banner" style="margin-bottom:0;${warnStyle}">
-        <strong>${r.action}</strong>${r.suggested_quantity ? ` â€” ${r.suggested_quantity} units` : ''}<br>
+        <strong>${r.action}</strong>${r.suggested_quantity ? ` — ${r.suggested_quantity} units` : ''}<br>
         <span class="small">${r.reason}</span>
       </div>`;
 
@@ -603,7 +603,7 @@
     await Promise.all([loadOverview(), loadTrend(), loadProducts()]);
   }
 
-  // â”€â”€ wiring â”€â”€
+  // ── wiring ──
   $('anPreset').onchange = () => { if ($('anPreset').value !== 'custom') { setPresetDates(); chooseGranularity(); } };
   $('anApply').onclick = loadAll;
   $('anTrendMetric').onchange = () => { if (lastOverview) loadTrend(); };

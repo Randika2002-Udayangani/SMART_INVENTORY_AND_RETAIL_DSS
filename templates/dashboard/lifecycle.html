@@ -1,6 +1,6 @@
-﻿{% extends "dashboard/base.html" %}
+{% extends "dashboard/base.html" %}
 
-{% block title %}Product Lifecycle â€” Smart Inventory DSS{% endblock %}
+{% block title %}Product Lifecycle — Smart Inventory DSS{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -47,7 +47,7 @@
   <div class="topbar lifecycle-page-header">
     <div>
       <h1>Product Lifecycle</h1>
-      <div class="sub">Samanala Super Mart â€” Decision Support System</div>
+      <div class="sub">Samanala Super Mart — Decision Support System</div>
     </div>
     <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
       <i class="bi bi-box-arrow-right"></i> Logout
@@ -55,11 +55,11 @@
   </div>
 
   <div class="row g-3 mb-4">
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="NEW"></div><div class="kpi-val text-primary" id="countNew">â€”</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="GROWING"></div><div class="kpi-val text-success" id="countGrowing">â€”</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="STABLE"></div><div class="kpi-val text-secondary" id="countStable">â€”</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="DECLINING"></div><div class="kpi-val text-warning" id="countDeclining">â€”</div></div></div>
-    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="SLOW_MOVING"></div><div class="kpi-val text-danger" id="countSlow">â€”</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="NEW"></div><div class="kpi-val text-primary" id="countNew">—</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="GROWING"></div><div class="kpi-val text-success" id="countGrowing">—</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="STABLE"></div><div class="kpi-val text-secondary" id="countStable">—</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="DECLINING"></div><div class="kpi-val text-warning" id="countDeclining">—</div></div></div>
+    <div class="col"><div class="kpi-card"><div class="kpi-lbl" data-lifecycle-label="SLOW_MOVING"></div><div class="kpi-val text-danger" id="countSlow">—</div></div></div>
   </div>
 
   <div class="mb-3">
@@ -148,7 +148,7 @@
 
   function formatLifecycleDate(value) {
     const date = new Date(`${value}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return value || 'â€”';
+    if (Number.isNaN(date.getTime())) return value || '—';
     return date.toLocaleDateString('en-GB', {
       day: '2-digit', month: 'short', year: 'numeric'
     });
@@ -160,7 +160,7 @@
       STABLE: '#F1F5F9;color:#64748B', DECLINING: '#FFF7ED;color:#EA580C',
       SLOW_MOVING: '#FEFCE8;color:#CA8A04'
     };
-    const safeStatus = String(status ?? 'â€”');
+    const safeStatus = String(status ?? '—');
     return `<span class="pill" style="background:${map[safeStatus] || '#F1F5F9;color:#64748B'}">${escapeHtml(displayLabel(LIFECYCLE_LABELS, safeStatus))}</span>`;
   }
 
@@ -168,14 +168,14 @@
     // CLEARANCE / PHASE_OUT added: SLOW_MOVING no longer auto-recommends
     // DISCONTINUE off a single period (see inventory/services/lifecycle.py).
     // CLEARANCE = first/non-consecutive slow period, discount candidate.
-    // PHASE_OUT = SLOW_MOVING for 3 consecutive monthly runs â€” review to
+    // PHASE_OUT = SLOW_MOVING for 3 consecutive monthly runs — review to
     // discontinue. DISCONTINUE kept in the map for any old/legacy rows.
     const map = {
       RETAIN: '#F0FDF4;color:#16A34A', MONITOR: '#EFF6FF;color:#1D4ED8',
       DISCOUNT: '#FEFCE8;color:#CA8A04', CLEARANCE: '#FEFCE8;color:#CA8A04',
       PHASE_OUT: '#FFF7ED;color:#EA580C', DISCONTINUE: '#FEF2F2;color:#DC2626'
     };
-    const safeRecommendation = String(recommendation ?? 'â€”');
+    const safeRecommendation = String(recommendation ?? '—');
     return `<span class="pill" style="background:${map[safeRecommendation] || '#F1F5F9;color:#64748B'}">${escapeHtml(safeRecommendation)}</span>`;
   }
 
@@ -251,7 +251,7 @@
     }
   }
 
-  // Pagination â€” same pattern used elsewhere (Stock Levels in
+  // Pagination — same pattern used elsewhere (Stock Levels in
   // inventory.html, Purchases, Batches, Reorder, Notifications): 10
   // rows/page, client-side slice, Previous / "Page X of Y" / Next.
   function renderLifecycleTable() {
@@ -327,7 +327,7 @@
       document.getElementById('historySummary').innerHTML = `
         <div class="row g-3">
           <div class="col-md-3"><div class="label">Current</div><div>${statusBadge(current?.status)}</div></div>
-          <div class="col-md-3"><div class="label">Previous</div><div>${statusBadge(previous?.status || 'â€”')}</div></div>
+          <div class="col-md-3"><div class="label">Previous</div><div>${statusBadge(previous?.status || '—')}</div></div>
           <div class="col-md-3"><div class="label">Pattern</div><div class="history-timeline">${history.length ? history.map((record, index) => `${index ? '<span class="history-arrow">&#8594;</span>' : ''}${statusBadge(record.status)}`).join('') : '<span class="text-muted small">No lifecycle calculation yet</span>'}</div></div>
           <div class="col-md-3"><div class="label">Recommendation</div><div>${recPill(current?.recommendation)}</div></div>
         </div>`;

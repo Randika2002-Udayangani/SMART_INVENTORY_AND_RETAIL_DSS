@@ -1,6 +1,6 @@
-﻿{% extends "dashboard/base.html" %}
+{% extends "dashboard/base.html" %}
 
-{% block title %}Loss Analysis â€” Smart Inventory DSS{% endblock %}
+{% block title %}Loss Analysis — Smart Inventory DSS{% endblock %}
 {% block nav_loss %}active{% endblock %}
 
 {% block extra_css %}
@@ -65,7 +65,7 @@
 <div class="topbar">
     <div>
         <h1>Loss Analysis</h1>
-        <div class="sub">Samanala Super Mart â€” expiry loss, damage, and supplier returns</div>
+        <div class="sub">Samanala Super Mart — expiry loss, damage, and supplier returns</div>
     </div>
     <div>
         <button onclick="doLogout()" class="btn btn-sm" style="background:#EF4444;color:white;">Logout</button>
@@ -88,19 +88,19 @@
         <div class="col-md-4">
             <div class="kpi-card">
                 <div class="kpi-lbl">Gross Expiry Loss</div>
-                <div class="kpi-val text-danger" id="grossLoss">â€”</div>
+                <div class="kpi-val text-danger" id="grossLoss">—</div>
             </div>
         </div>
         <div class="col-md-4">
             <div class="kpi-card">
                 <div class="kpi-lbl">Recovered Amount</div>
-                <div class="kpi-val text-success" id="recovered">â€”</div>
+                <div class="kpi-val text-success" id="recovered">—</div>
             </div>
         </div>
         <div class="col-md-4">
             <div class="kpi-card">
                 <div class="kpi-lbl">Total Net Loss</div>
-                <div class="kpi-val text-warning" id="netLoss">â€”</div>
+                <div class="kpi-val text-warning" id="netLoss">—</div>
             </div>
         </div>
     </div>
@@ -205,7 +205,7 @@
 
 {% block page_scripts %}
 <script>
-// â”€â”€ Product name search for Record Damage form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Product name search for Record Damage form ─────────────────────
 // Same pattern as Purchases: dmgProductLookup maps the displayed text
 // to the real product ID, since the API needs product_id not a name.
 let dmgProductLookup = {};
@@ -295,7 +295,7 @@ async function loadLosses() {
     try {
         const data = await apiFetch(url);
         allLosses = Array.isArray(data) ? data : (data.results ?? []);
-        lossPage = 1; // fresh data (filter changed / reload) â€” back to page 1
+        lossPage = 1; // fresh data (filter changed / reload) — back to page 1
         renderLosses();
     } catch(e) {
         document.getElementById('lossTableBody').innerHTML = `<tr><td colspan="5" class="text-center text-danger">${escapeHtml(e.message)}</td></tr>`;
@@ -304,7 +304,7 @@ async function loadLosses() {
     }
 }
 
-// Pagination â€” same pattern used elsewhere (Stock Levels in inventory.html,
+// Pagination — same pattern used elsewhere (Stock Levels in inventory.html,
 // Purchases, Batches, Reorder, Lifecycle, Notifications): 25 rows/page,
 // client-side slice, Previous / "Page X of Y" / Next.
 function renderLosses() {
@@ -324,11 +324,11 @@ function renderLosses() {
         const key = r.id ?? allLosses.indexOf(r);
         return `
         <tr onclick="showLossDetails('${key}')">
-            <td>${escapeHtml(r.product_name ?? r['product__product_name'] ?? 'â€”')}</td>
+            <td>${escapeHtml(r.product_name ?? r['product__product_name'] ?? '—')}</td>
             <td><span class="badge bg-secondary">${escapeHtml(r.loss_type)}</span></td>
-            <td>${escapeHtml(r.loss_quantity ?? r.quantity ?? 'â€”')}</td>
+            <td>${escapeHtml(r.loss_quantity ?? r.quantity ?? '—')}</td>
             <td>${formatMoney(r.loss_value)}</td>
-            <td>${escapeHtml(r.loss_date ?? r.date ?? r.created_at ?? 'â€”')}</td>
+            <td>${escapeHtml(r.loss_date ?? r.date ?? r.created_at ?? '—')}</td>
         </tr>`;
     }).join('');
 
@@ -353,7 +353,7 @@ function showLossDetails(key) {
     const field = (label, value, full = false) => `
         <div class="loss-detail-item${full ? ' full' : ''}">
             <div class="lbl">${escapeHtml(label)}</div>
-            <div class="val">${escapeHtml(value ?? 'â€”')}</div>
+            <div class="val">${escapeHtml(value ?? '—')}</div>
         </div>`;
 
     const html = `
@@ -381,7 +381,7 @@ async function loadReturns() {
     try {
         const data = await apiFetch('/api/supplier-returns/');
         allReturns = Array.isArray(data) ? data : (data.results ?? []);
-        returnsPage = 1; // fresh data â€” back to page 1
+        returnsPage = 1; // fresh data — back to page 1
         renderReturns();
     } catch(e) {
         document.getElementById('returnsTableBody').innerHTML = `<tr><td colspan="5" class="text-center text-danger">${escapeHtml(e.message)}</td></tr>`;
@@ -405,9 +405,9 @@ function renderReturns() {
 
     tbody.innerHTML = pageRows.map(r => `
         <tr>
-           <td>${escapeHtml(r.supplier_name ?? (typeof r.supplier === 'object' ? r.supplier?.name : r.supplier) ?? 'â€”')}</td>
-           <td>${escapeHtml(r.product_name ?? (typeof r.product === 'object' ? r.product?.name : r.product) ?? 'â€”')}</td>
-            <td>${escapeHtml(r.quantity_returned ?? 'â€”')}</td>
+           <td>${escapeHtml(r.supplier_name ?? (typeof r.supplier === 'object' ? r.supplier?.name : r.supplier) ?? '—')}</td>
+           <td>${escapeHtml(r.product_name ?? (typeof r.product === 'object' ? r.product?.name : r.product) ?? '—')}</td>
+            <td>${escapeHtml(r.quantity_returned ?? '—')}</td>
             <td><span class="badge ${r.status==='CONFIRMED'?'bg-success':r.status==='REJECTED'?'bg-danger':'bg-warning'}">${escapeHtml(r.status)}</span></td>
             <td>
                 <button class="btn-success-soft me-1" onclick="updateReturn(${r.id},'CONFIRMED')">Confirm</button>
@@ -453,7 +453,7 @@ async function submitDamage() {
     const quantity = Number(document.getElementById('dmgQty').value);
     const notes = document.getElementById('dmgNotes').value.trim();
     if (!product_id) {
-        msgBox.innerHTML = '<div class="alert alert-warning py-2">Product name doesn\'t match any product â€” pick a suggestion from the dropdown as you type.</div>';
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Product name doesn\'t match any product — pick a suggestion from the dropdown as you type.</div>';
         return;
     }
     if (!Number.isInteger(quantity) || quantity <= 0) {
@@ -466,7 +466,7 @@ async function submitDamage() {
     }
 
     // Field names below (product_id, loss_type, loss_quantity, notes) are
-    // unchanged from the original page â€” not verified against a live
+    // unchanged from the original page — not verified against a live
     // backend error yet, unlike the supplier/product field names we
     // corrected on the Purchases page. If this errors, paste the exact
     // response and we'll fix names the same way.

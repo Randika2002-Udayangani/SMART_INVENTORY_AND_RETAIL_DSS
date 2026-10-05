@@ -1,6 +1,6 @@
-﻿{% extends "dashboard/base.html" %}
+{% extends "dashboard/base.html" %}
 
-{% block title %}Order Management â€” Smart Inventory DSS{% endblock %}
+{% block title %}Order Management — Smart Inventory DSS{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -38,7 +38,7 @@
   <div class="topbar order-page-header">
     <div>
       <h1>Order Management</h1>
-      <div class="sub">Samanala Super Mart â€” Decision Support System</div>
+      <div class="sub">Samanala Super Mart — Decision Support System</div>
     </div>
     <div class="order-actions">
       <button class="btn btn-sm btn-outline-secondary" id="overdueBtn" onclick="toggleOverdue()">Overdue</button>
@@ -101,7 +101,7 @@
   let showingOverdue = false;
   let searchTimer;
 
-  // Pagination â€” same pattern used elsewhere (Purchases, Batches, Reorder,
+  // Pagination — same pattern used elsewhere (Purchases, Batches, Reorder,
   // Health Score, Audit Log, Loss Analysis, Sales Upload): 25 rows/page,
   // client-side slice, Previous / "Page X of Y" / Next.
   let allOrders = [];
@@ -114,9 +114,9 @@
 
   function showError(message) { const el = document.getElementById('errorState'); el.innerText = message; el.hidden = false; }
   function clearError() { document.getElementById('errorState').hidden = true; }
-  function displayDate(value) { return value ? escapeHtml(String(value).slice(0, 10)) : 'â€”'; }
-  function money(value) { return value == null ? 'â€”' : formatMoney(value); }
-  function statusBadge(value) { return `<span class="badge bg-secondary">${escapeHtml(value || 'â€”')}</span>`; }
+  function displayDate(value) { return value ? escapeHtml(String(value).slice(0, 10)) : '—'; }
+  function money(value) { return value == null ? '—' : formatMoney(value); }
+  function statusBadge(value) { return `<span class="badge bg-secondary">${escapeHtml(value || '—')}</span>`; }
   function loadOrdersDebounced() { clearTimeout(searchTimer); searchTimer = setTimeout(loadOrders, 250); }
 
   function renderActions(order) {
@@ -163,7 +163,7 @@
 
   function paginateAndRender(rows) {
     allOrders = rows;
-    orderPage = 1; // fresh data â€” back to page 1
+    orderPage = 1; // fresh data — back to page 1
     renderRows(allOrders);
   }
 
@@ -231,7 +231,7 @@
           <div><div class="order-detail-label">Total</div><div class="order-detail-value">${money(order.total_amount)}</div></div>
         </div>
         <p class="small text-muted">${escapeHtml(order.notes || 'No notes')}</p>
-        <table class="table table-sm"><thead><tr><th>Product</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>Rating</th></tr></thead><tbody>${order.items.map(item => `<tr><td>${escapeHtml(item.product_name)}</td><td>${escapeHtml(item.quantity)}</td><td>${money(item.unit_price)}</td><td>${money(item.line_total)}</td><td>${item.rating ? `${item.rating.rating}/5${item.rating.feedback_text ? `<br><small>${escapeHtml(item.rating.feedback_text)}</small>` : ''}` : 'â€”'}</td></tr>`).join('')}</tbody></table>`;
+        <table class="table table-sm"><thead><tr><th>Product</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>Rating</th></tr></thead><tbody>${order.items.map(item => `<tr><td>${escapeHtml(item.product_name)}</td><td>${escapeHtml(item.quantity)}</td><td>${money(item.unit_price)}</td><td>${money(item.line_total)}</td><td>${item.rating ? `${item.rating.rating}/5${item.rating.feedback_text ? `<br><small>${escapeHtml(item.rating.feedback_text)}</small>` : ''}` : '—'}</td></tr>`).join('')}</tbody></table>`;
       document.getElementById('detailModal').hidden = false;
     } catch (error) { showError('Order details could not be loaded.'); }
   }

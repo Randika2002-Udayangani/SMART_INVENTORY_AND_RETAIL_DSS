@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
@@ -28,7 +28,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--bg); font-family: 'Inter', sans-serif; color: var(--txt); min-height: 100vh; }
 
-    /* â”€â”€ SIDEBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── SIDEBAR ─────────────────────────────────────────── */
     .sidebar {
       width: var(--sidebar-w); height: 100vh; background: var(--sidebar);
       position: fixed; top: 0; left: 0;
@@ -37,7 +37,7 @@
       transition: transform 0.25s ease;
       overflow-y: auto;
     }
-    /* Collapsed state â€” slides fully off-canvas */
+    /* Collapsed state — slides fully off-canvas */
     body.sidebar-collapsed .sidebar { transform: translateX(-100%); }
     body.sidebar-collapsed .main { margin-left: 0; }
     body.sidebar-collapsed .sb-toggle { left: 16px; }
@@ -63,7 +63,7 @@
     .sb-footer { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.15); font-size: 11.5px; color: rgba(255,255,255,0.5); }
     .sb-footer .name { color: #fff; font-weight: 600; font-size: 12.5px; }
 
-    /* â”€â”€ HAMBURGER TOGGLE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── HAMBURGER TOGGLE ─────────────────────────────────── */
     /* Fixed button, always visible, slides with the sidebar edge */
     .sb-toggle {
       position: fixed; top: 18px; left: calc(var(--sidebar-w) + 12px);
@@ -76,10 +76,10 @@
     .sb-toggle:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
     .sb-toggle i { font-size: 17px; color: var(--sidebar); }
 
-    /* â”€â”€ MAIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── MAIN ────────────────────────────────────────────── */
     .main { margin-left: var(--sidebar-w); padding: 68px 28px 40px; transition: margin-left 0.25s ease; }
 
-    /* â”€â”€ SHARED TOPBAR (kept minimal â€” pages can extend) â”€â”€â”€ */
+    /* ── SHARED TOPBAR (kept minimal — pages can extend) ─── */
     .topbar {
       display: flex; align-items: flex-start; justify-content: space-between;
       margin-bottom: 22px;
@@ -92,7 +92,7 @@
     .topbar .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
     .tooltip-icon { display:inline-block; margin-left:3px; color:var(--sidebar); cursor:help; font-size:.9em; }
 
-    /* â”€â”€ NOTIFICATION NAVBAR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── NOTIFICATION NAVBAR ─────────────────────────────── */
     .notification-nav { position:fixed; top:18px; right:140px; z-index:260; }
     .notification-bell {
       position:relative; width:36px; height:36px; border:1px solid var(--border);
@@ -137,7 +137,7 @@
     .notification-footer a { color:var(--sidebar); font-size:11px; font-weight:700; text-decoration:none; }
     .notification-footer a:hover { text-decoration:underline; }
 
-    /* â”€â”€ RESPONSIVE â€” on small screens default to collapsed â”€â”€ */
+    /* ── RESPONSIVE — on small screens default to collapsed ── */
     @media (max-width: 960px) {
       .main { padding-top: 68px; }
       .notification-nav { right: 88px; }
@@ -238,7 +238,7 @@
 </head>
 <body>
 
-<!-- â”€â”€ HAMBURGER TOGGLE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ── HAMBURGER TOGGLE ──────────────────────────────────── -->
 <button class="sb-toggle" id="sbToggle" title="Toggle sidebar" aria-label="Toggle sidebar">
   <i class="bi bi-list"></i>
 </button>
@@ -262,7 +262,7 @@
   </section>
 </div>
 
-<!-- â”€â”€ SIDEBAR â€” shared across every dashboard page â”€â”€â”€â”€â”€â”€â”€â”€â”€
+<!-- ── SIDEBAR — shared across every dashboard page ─────────
      Include this partial and set request.resolver_match.url_name
      (or a page-specific block variable) to control which link gets .active -->
 <aside class="sidebar" id="sidebar">
@@ -310,12 +310,12 @@
   </div>
 </aside>
 
-<!-- â”€â”€ MAIN CONTENT â€” each page fills this block â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ── MAIN CONTENT — each page fills this block ────────── -->
 <main class="main">
   {% block content %}{% endblock %}
 </main>
 
-<!-- â”€â”€ SHARED SCRIPTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ── SHARED SCRIPTS ────────────────────────────────────── -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
 <script>
   const HEALTH_LABELS = {
@@ -349,7 +349,7 @@
     return 'Rs. ' + parseFloat(amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
   }
 
-  // â”€â”€ SIDEBAR TOGGLE â€” persists collapsed/open state across pages â”€â”€
+  // ── SIDEBAR TOGGLE — persists collapsed/open state across pages ──
   (function() {
     const STORAGE_KEY = 'sidebar_collapsed';
     const toggle = document.getElementById('sbToggle');
@@ -372,7 +372,7 @@
     }
   })();
 
-  // â”€â”€ STICKY TOPBAR HEIGHT â€” exposed as a CSS variable â”€â”€
+  // ── STICKY TOPBAR HEIGHT — exposed as a CSS variable ──
   // Pages with sticky table headers (e.g. purchases, purchase detail) need
   // to know exactly how tall the topbar renders, since it varies by page
   // (some have a tab bar underneath, some don't). Measuring it here means
@@ -386,14 +386,14 @@
   window.addEventListener('load', setTopbarHeightVar);
   window.addEventListener('resize', setTopbarHeightVar);
 
-  // JWT CHECK â€” shared across every dashboard page
+  // JWT CHECK — shared across every dashboard page
   function checkAuth() {
     const token = sessionStorage.getItem('access_token');
     if (!token) { window.location.href = '/dashboard/login/'; }
   }
   checkAuth();
 
-  // Logout â€” shared across every dashboard page
+  // Logout — shared across every dashboard page
   function doLogout() {
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('refresh_token');
@@ -417,7 +417,7 @@
         const rawText = await response.text();
         data = rawText ? JSON.parse(rawText) : {};
       } catch (e) {
-        // Body wasn't JSON â€” most often a Django debug/error page on a
+        // Body wasn't JSON — most often a Django debug/error page on a
         // 500. Surfacing that as an empty {} hides a real server error
         // behind what looks like an empty validation error, so keep the
         // status visible instead.
@@ -433,7 +433,7 @@
     return response.json();
   }
 
-  // FETCH â€” logged-in user profile for sidebar footer (GET /api/auth/me/)
+  // FETCH — logged-in user profile for sidebar footer (GET /api/auth/me/)
   // Every page should call this and read window.currentUserRole afterward
   // for its own role-based hiding (e.g. money widgets on home.html).
   window.currentUserRole = null;
@@ -451,7 +451,7 @@
     }
   }
 
-  // â”€â”€ NAVBAR NOTIFICATIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── NAVBAR NOTIFICATIONS ─────────────────────────────────
   // Notification requests intentionally read the JWT from sessionStorage,
   // as required by the notification API contract.
   (function() {
@@ -599,16 +599,16 @@
     window.setInterval(refreshUnreadCount, 60000);
   })();
 
-  // â”€â”€ SIDEBAR ALERT BADGES â€” shared across every dashboard page â”€â”€
+  // ── SIDEBAR ALERT BADGES — shared across every dashboard page ──
   // #dashboardNavBadge and #sidebarAlertCount live in THIS shared sidebar
   // markup (hardcoded to "0" above), but they used to only get filled in by
   // home.html's page-specific fetchNotifications(). So the badge showed the
   // real unread count on the dashboard, then reset to the sidebar's baked-in
-  // "0" the moment you opened any other page â€” nothing on those other pages
+  // "0" the moment you opened any other page — nothing on those other pages
   // was refreshing it. Running the refresh here means it happens on every
   // page load, regardless of which page-specific script is also loaded.
   // GET /api/notifications/ returns only unread notifications (API Design
-  // Doc Â§21.2), so its length is exactly what both badges should show.
+  // Doc §21.2), so its length is exactly what both badges should show.
   async function refreshSidebarAlertBadge() {
     try {
       const data = await apiFetch('/api/notifications/');

@@ -1,6 +1,6 @@
-﻿{% extends "dashboard/base.html" %}
+{% extends "dashboard/base.html" %}
 
-{% block title %}Reports â€” Smart Inventory DSS{% endblock %}
+{% block title %}Reports — Smart Inventory DSS{% endblock %}
 {% block nav_reports %}active{% endblock %}
 
 {% block extra_css %}
@@ -35,10 +35,10 @@
 <div id="toast" class="alert d-none" role="status"></div>
 
 <div class="row g-4">
-    <!-- Sales Report â€” revenue data. Financial: hidden from STAFF. -->
+    <!-- Sales Report — revenue data. Financial: hidden from STAFF. -->
     <div class="col-12 col-lg-6 fin-restricted">
         <div class="card report-card p-4">
-            <div class="d-flex justify-content-between"><h5>Sales Report</h5><span class="report-icon">â–¤</span></div>
+            <div class="d-flex justify-content-between"><h5>Sales Report</h5><span class="report-icon">▤</span></div>
             <p class="description">Detailed sales revenue, units sold, and best-selling products.</p>
             <div class="row g-2 mb-3">
                 <div class="col"><label class="date-label" for="salesFrom">From</label><input type="date" id="salesFrom" class="form-control form-control-sm"></div>
@@ -52,11 +52,11 @@
         </div>
     </div>
 
-    <!-- Profit Report â€” cost/margin data. Financial: hidden from STAFF. -->
+    <!-- Profit Report — cost/margin data. Financial: hidden from STAFF. -->
     <div class="col-12 col-lg-6 fin-restricted">
         <div class="card report-card p-4">
-            <div class="d-flex justify-content-between"><h5>Profit Report</h5><span class="report-icon">â†—</span></div>
-            <p class="description">Revenue, cost, gross profit, and margin results using <span title="Weighted Average Cost â€” the average price paid per unit based on all purchases">WAC <span class="tooltip-icon">â“˜</span></span> and <span title="Margin percentage â€” the share of each sale left after the product cost">Margin % <span class="tooltip-icon">â“˜</span></span>.</p>
+            <div class="d-flex justify-content-between"><h5>Profit Report</h5><span class="report-icon">↗</span></div>
+            <p class="description">Revenue, cost, gross profit, and margin results using <span title="Weighted Average Cost — the average price paid per unit based on all purchases">WAC <span class="tooltip-icon">ⓘ</span></span> and <span title="Margin percentage — the share of each sale left after the product cost">Margin % <span class="tooltip-icon">ⓘ</span></span>.</p>
             <div class="row g-2 mb-3">
                 <div class="col"><label class="date-label" for="profitFrom">From</label><input type="date" id="profitFrom" class="form-control form-control-sm"></div>
                 <div class="col"><label class="date-label" for="profitTo">To</label><input type="date" id="profitTo" class="form-control form-control-sm"></div>
@@ -69,10 +69,10 @@
         </div>
     </div>
 
-    <!-- Inventory Report â€” stock levels/thresholds only, no money. Visible to all. -->
+    <!-- Inventory Report — stock levels/thresholds only, no money. Visible to all. -->
     <div class="col-12 col-lg-6 col-xl-4">
         <div class="card report-card p-4">
-            <div class="d-flex justify-content-between"><h5>Inventory Report</h5><span class="report-icon">â–¦</span></div>
+            <div class="d-flex justify-content-between"><h5>Inventory Report</h5><span class="report-icon">▦</span></div>
             <p class="description">Current stock, reorder thresholds, and stock status.</p>
             <div class="download-actions">
                 <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/inventory/','inventory_report','excel',{},this)">Download Excel</button>
@@ -82,10 +82,10 @@
         </div>
     </div>
 
-    <!-- Health Score Report â€” normalized scores only, no money. Visible to all. -->
+    <!-- Health Score Report — normalized scores only, no money. Visible to all. -->
     <div class="col-12 col-lg-6 col-xl-4">
         <div class="card report-card p-4">
-            <div class="d-flex justify-content-between"><h5>Health Score Report</h5><span class="report-icon">â™¥</span></div>
+            <div class="d-flex justify-content-between"><h5>Health Score Report</h5><span class="report-icon">♥</span></div>
             <p class="description">Product health scores and their component assessments.</p>
             <div class="download-actions">
                 <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/health-scores/','health_score_report','excel',{},this)">Download Excel</button>
@@ -97,7 +97,7 @@
 
     
 
-    <!-- Supplier Report â€” purchasing activity. Financial: hidden from STAFF. -->
+    <!-- Supplier Report — purchasing activity. Financial: hidden from STAFF. -->
     <div class="col-12 col-lg-6 col-xl-4 fin-restricted">
         <div class="card report-card p-4">
             <div class="d-flex justify-content-between"><h5>Supplier Report</h5><span class="report-icon"><i class="bi bi-truck"></i></span></div>
@@ -110,7 +110,7 @@
         </div>
     </div>
 
-    <!-- Lifecycle Report â€” status/velocity only, no money. Visible to all. -->
+    <!-- Lifecycle Report — status/velocity only, no money. Visible to all. -->
     <div class="col-12 col-lg-6 col-xl-4">
         <div class="card report-card p-4">
             <div class="d-flex justify-content-between"><h5>Lifecycle Report</h5><span class="report-icon"><i class="bi bi-bezier2"></i></span></div>
@@ -123,10 +123,10 @@
         </div>
     </div>
 
-    <!-- Loss Report â€” loss values. Financial: hidden from STAFF. -->
+    <!-- Loss Report — loss values. Financial: hidden from STAFF. -->
     <div class="col-12 col-lg-6 col-xl-4 fin-restricted">
         <div class="card report-card p-4">
-            <div class="d-flex justify-content-between"><h5>Loss Report</h5><span class="report-icon">â†˜</span></div>
+            <div class="d-flex justify-content-between"><h5>Loss Report</h5><span class="report-icon">↘</span></div>
             <p class="description">Recorded losses, expiry damage, and loss values.</p>
             <div class="download-actions">
                 <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/loss/','loss_report','excel',{},this)">Download Excel</button>
@@ -136,10 +136,10 @@
         </div>
     </div>
 
-    <!-- Reorder Report â€” includes costs. Financial: hidden from STAFF. -->
+    <!-- Reorder Report — includes costs. Financial: hidden from STAFF. -->
     <div class="col-12 col-lg-6 col-xl-4 fin-restricted">
         <div class="card report-card p-4">
-            <div class="d-flex justify-content-between"><h5>Reorder Report</h5><span class="report-icon">âŸ³</span></div>
+            <div class="d-flex justify-content-between"><h5>Reorder Report</h5><span class="report-icon">⟳</span></div>
             <p class="description">Restocking recommendations, urgency, quantities, and estimated costs.</p>
             <div class="download-actions">
                 <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/reorder/','reorder_report','excel',{},this)">Download Excel</button>
@@ -263,7 +263,7 @@ function downloadDateReport(endpoint, filenameBase, format, fromId, toId, button
 
 // Sales, Profit, Supplier, Loss, and Reorder reports all surface real
 // money (revenue, cost, margin, loss values, reorder costs) with no
-// non-financial view of the same data â€” so unlike Health Score, the whole
+// non-financial view of the same data — so unlike Health Score, the whole
 // card is hidden for STAFF rather than gating individual fields.
 // applyRoleBasedSidebar() in base.html separately hides the standalone
 // Sales Report page's nav link using the same role check.
