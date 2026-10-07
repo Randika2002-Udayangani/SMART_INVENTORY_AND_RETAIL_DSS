@@ -1,10 +1,13 @@
-import os
 from django.test import TestCase, Client
-from datetime import date, timedelta
+from datetime import timedelta
 
 from products.models import Product, Brand, Category
 from sales.models import ItemSalesRecord
-from inventory.models import ProductLifecycle
+from inventory.models import ProductLifecycle, InventoryHealthScore
+from inventory.services.lifecycle import _resolve_declining_recommendation
+from inventory.testing_helpers import (
+    create_user_with_role, login_headers, local_today,
+)
 
 # ============================================================
 # F06 — Product Lifecycle Monitoring Tests
@@ -12,9 +15,15 @@ from inventory.models import ProductLifecycle
 # ============================================================
 # How to run:
 #   python manage.py test inventory.test06 --verbosity=2
+#
+# Changes from the previous version:
+#   * The test user now has the MANAGER role (was is_staff only -> 403).
+#   * Dates use Sri Lanka local time, matching the app.
+#   * GET /api/lifecycle/<product_id>/ now returns a dict
+#     {history, sales_series, date_from, date_to}, not a bare list.
+#   * SLOW_MOVING recommendation is CLEARANCE (or PHASE_OUT after 3
+#     consecutive runs); the old DISCONTINUE value is no longer used.
 # ============================================================
-
-TEST_PASSWORD = os.environ.get('TEST_PASSWORD', 'testpass123')
 
 
 class F06LifecycleTestSetup(TestCase):
@@ -23,30 +32,14 @@ class F06LifecycleTestSetup(TestCase):
     def setUp(self):
         self.client = Client()
 
-        # Create a manager user and get JWT token
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        self.manager = User.objects.create_user(
-            username='test_manager',
-            password=TEST_PASSWORD,
-            is_staff=True
-        )
-
-        response = self.client.post('/api/auth/login/', {
-            'username': 'test_manager',
-            'password': TEST_PASSWORD
-        }, content_type='application/json')
-
-        self.assertEqual(response.status_code, 200, "Login failed — check auth endpoint")
-        data = response.json()
-        self.token = data.get('access') or data.get('token')
-        self.auth_header = {'HTTP_AUTHORIZATION': f'Bearer {self.token}'}
+        self.manager = create_user_with_role('test_manager', 'MANAGER')
+        self.auth_header = login_headers(self.client, 'test_manager')
 
         # ---- Create Brand and Category ----
         self.brand = Brand.objects.create(brand_name='Test Brand')
         self.category = Category.objects.create(category_name='Test Category')
 
-        today = date.today()
+        today = local_today()
 
         # Product A — NEW (introduced < 30 days ago)
         self.product_new = Product.objects.create(
@@ -156,6 +149,18 @@ class F06CalculateTest(F06LifecycleTestSetup):
         response = self.client.post('/api/lifecycle/calculate/')
         self.assertEqual(response.status_code, 401)
 
+    def test_calculate_forbidden_for_non_manager(self):
+        """A logged-in user without MANAGER/ADMIN role must get 403."""
+        create_user_with_role('plain_staff_f06', None)
+        staff_header = login_headers(self.client, 'plain_staff_f06')
+        response = self.client.post(
+            '/api/lifecycle/calculate/',
+            content_type='application/json',
+            **staff_header
+        )
+        self.assertEqual(response.status_code, 403)
+        print("\n✅ Non-manager blocked from lifecycle calculate (403)")
+
     def test_calculate_success(self):
         """Should return 200 and trigger lifecycle calculation."""
         response = self.client.post(
@@ -178,13 +183,17 @@ class F06CalculateTest(F06LifecycleTestSetup):
         print(f"\n✅ NEW: status={record.status}, recommendation={record.recommendation}")
 
     def test_slow_moving_product_status(self):
-        """Product with < 5 units in 60 days must be SLOW_MOVING → DISCONTINUE."""
+        """
+        Product with < 5 units in 60 days must be SLOW_MOVING.
+        Recommendation is CLEARANCE on the first run (PHASE_OUT after 3
+        consecutive SLOW_MOVING runs) — see inventory/services/lifecycle.py.
+        """
         self.client.post('/api/lifecycle/calculate/',
                          content_type='application/json', **self.auth_header)
         record = ProductLifecycle.objects.filter(product=self.product_slow).last()
         self.assertIsNotNone(record)
         self.assertEqual(record.status, 'SLOW_MOVING')
-        self.assertEqual(record.recommendation, 'DISCONTINUE')
+        self.assertIn(record.recommendation, ['CLEARANCE', 'PHASE_OUT'])
         print(f"\n✅ SLOW_MOVING: status={record.status}, recommendation={record.recommendation}")
 
     def test_growing_product_status(self):
@@ -198,13 +207,18 @@ class F06CalculateTest(F06LifecycleTestSetup):
         print(f"\n✅ GROWING: status={record.status}, recommendation={record.recommendation}")
 
     def test_declining_product_status(self):
-        """Product with current velocity < historical x 0.85 must be DECLINING → DISCOUNT."""
+        """
+        Velocity < historical x 0.85 must be DECLINING.
+        Since lifecycle v5 the recommendation is scaled by the product's
+        latest health score; with no health score calculated yet it defaults
+        to MONITOR (see F06DecliningRecommendationTest for the full mapping).
+        """
         self.client.post('/api/lifecycle/calculate/',
                          content_type='application/json', **self.auth_header)
         record = ProductLifecycle.objects.filter(product=self.product_declining).last()
         self.assertIsNotNone(record)
         self.assertEqual(record.status, 'DECLINING')
-        self.assertEqual(record.recommendation, 'DISCOUNT')
+        self.assertEqual(record.recommendation, 'MONITOR')
         print(f"\n✅ DECLINING: status={record.status}, recommendation={record.recommendation}")
 
     def test_inactive_products_excluded(self):
@@ -213,7 +227,7 @@ class F06CalculateTest(F06LifecycleTestSetup):
             product_name='Inactive Product',
             brand=self.brand,
             category=self.category,
-            introduced_date=date.today() - timedelta(days=200),
+            introduced_date=local_today() - timedelta(days=200),
             is_active=False,
             avg_cost_price=50.00,
             cost_price=50.00,
@@ -228,12 +242,12 @@ class F06CalculateTest(F06LifecycleTestSetup):
     def test_calculate_creates_new_record_each_run(self):
         """Running calculate twice same day updates existing record (unique per day)."""
         self.client.post('/api/lifecycle/calculate/',
-                        content_type='application/json', **self.auth_header)
+                         content_type='application/json', **self.auth_header)
         self.client.post('/api/lifecycle/calculate/',
-                        content_type='application/json', **self.auth_header)
+                         content_type='application/json', **self.auth_header)
         records = ProductLifecycle.objects.filter(product=self.product_growing)
         self.assertEqual(records.count(), 1,
-                        "Same-day runs should update — not duplicate — the record")
+                         "Same-day runs should update — not duplicate — the record")
         print(f"\n✅ Same-day idempotent: {records.count()} record (correct)")
 
 
@@ -336,6 +350,7 @@ class F06DecliningEndpointTest(F06LifecycleTestSetup):
 
 # ============================================================
 # TEST 4 — GET /api/lifecycle/{product_id}/
+# Response shape: {history: [...], sales_series: [...], date_from, date_to}
 # ============================================================
 
 class F06ProductHistoryTest(F06LifecycleTestSetup):
@@ -354,23 +369,38 @@ class F06ProductHistoryTest(F06LifecycleTestSetup):
         self.assertEqual(response.status_code, 401)
 
     def test_product_history_returns_200(self):
-        """Should return 200 with at least 2 history records after 2 runs."""
+        """Should return 200 with a history list and a daily sales series."""
         response = self.client.get(
             f'/api/lifecycle/{self.product_growing.id}/',
             **self.auth_header
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertIsInstance(data, list)
-        self.assertGreaterEqual(len(data), 1,
-                                "Should have at least 1 records after 1 runs")
-        print(f"\n✅ Product history → {len(data)} records")
+        self.assertIsInstance(data, dict)
+        for key in ['history', 'sales_series', 'date_from', 'date_to']:
+            self.assertIn(key, data, f"Missing key: {key}")
+        self.assertIsInstance(data['history'], list)
+        self.assertGreaterEqual(len(data['history']), 1,
+                                "Should have at least 1 history record after calculating")
+        self.assertIsInstance(data['sales_series'], list)
+        self.assertGreater(len(data['sales_series']), 0)
+        print(f"\n✅ Product history → {len(data['history'])} records, "
+              f"{len(data['sales_series'])} daily points")
 
     def test_invalid_product_id_returns_404(self):
         """Non-existent product ID should return 404."""
         response = self.client.get('/api/lifecycle/99999/', **self.auth_header)
         self.assertEqual(response.status_code, 404)
         print("\n✅ Invalid product ID → 404 correct")
+
+    def test_invalid_date_range_returns_400(self):
+        """Bad date_from must return 400, not crash."""
+        response = self.client.get(
+            f'/api/lifecycle/{self.product_growing.id}/?date_from=not-a-date',
+            **self.auth_header
+        )
+        self.assertEqual(response.status_code, 400)
+        print("\n✅ Invalid date_from → 400 correct")
 
     def test_history_records_have_required_fields(self):
         """Each history record must contain status, recommendation, calculated_date."""
@@ -379,8 +409,60 @@ class F06ProductHistoryTest(F06LifecycleTestSetup):
             **self.auth_header
         )
         data = response.json()
-        self.assertGreater(len(data), 0)
-        record = data[0]
+        history = data['history']
+        self.assertGreater(len(history), 0)
+        record = history[0]
         for field in ['status', 'recommendation', 'calculated_date']:
             self.assertIn(field, record, f"Missing field: {field}")
         print(f"\n✅ History record fields OK: {list(record.keys())}")
+
+
+# ============================================================
+# TEST 5 — DECLINING recommendation is health-tiered (lifecycle v5)
+# DECLINING is a sales-trend signal. The recommendation severity depends
+# on the product's latest Inventory Health Score status.
+# ============================================================
+
+class F06DecliningRecommendationTest(F06LifecycleTestSetup):
+
+    def test_mapping_function(self):
+        """The health-status -> recommendation mapping must match the design."""
+        expected = {
+            'HEALTHY' : 'MONITOR',
+            'WATCH'   : 'REVIEW_DISCOUNT',
+            'AT RISK' : 'DISCOUNT_REVIEW',
+            'CRITICAL': 'IMMEDIATE_ACTION',
+            None      : 'MONITOR',
+        }
+        for health_status, recommendation in expected.items():
+            self.assertEqual(
+                _resolve_declining_recommendation(health_status),
+                recommendation,
+                f"Wrong recommendation for health status {health_status!r}",
+            )
+        print("\n✅ Health status → DECLINING recommendation mapping correct")
+
+    def test_declining_recommendation_follows_health_score(self):
+        """
+        After a health calculation, the DECLINING product's lifecycle
+        recommendation must be the mapping of its latest health status.
+        """
+        self.client.post('/api/health-scores/calculate/',
+                         content_type='application/json', **self.auth_header)
+        health = InventoryHealthScore.objects.filter(
+            product=self.product_declining
+        ).order_by('-calculated_date', '-id').first()
+        self.assertIsNotNone(health, "Health score was not calculated")
+
+        self.client.post('/api/lifecycle/calculate/',
+                         content_type='application/json', **self.auth_header)
+        record = ProductLifecycle.objects.filter(
+            product=self.product_declining
+        ).last()
+        self.assertIsNotNone(record)
+        self.assertEqual(record.status, 'DECLINING')
+        self.assertEqual(
+            record.recommendation,
+            _resolve_declining_recommendation(health.status),
+        )
+        print(f"\n✅ DECLINING + health {health.status} → {record.recommendation}")
