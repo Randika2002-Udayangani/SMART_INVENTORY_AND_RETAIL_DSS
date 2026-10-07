@@ -30,6 +30,7 @@ from users.audit import log_action
 from users.models import SystemConfig
 from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore, ReorderRecommendation
 from inventory.services.fefo import deduct_stock_fefo
+from inventory.services.online_reconciliation import reconcile_item_ledger_deduction
 
 LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
@@ -321,63 +322,117 @@ class ItemLedgerPDFUploadView(APIView):
                 if qty <= 0:
                     continue
 
-                already_exists = ItemSalesRecord.objects.filter(
-                    product=product,
-                    sale_date=sale_date
-                ).exists()
-
-                if already_exists:
-
-                    skipped += 1
-
-                    errors.append(
-                        f'{sale_date}: '
-                        f'Record already exists'
+                # ── Transactional per-date unit ───────────────────────────
+                # The ItemSalesRecord creation, the online-pickup
+                # reconciliation, and the FEFO deduction are ONE logical
+                # operation: an exception partway through must roll back
+                # the record AND any batch/ledger changes together, never
+                # leaving a half-updated day.
+                #
+                # Concurrency: locking this product's batches FIRST
+                # serializes two simultaneous Item Ledger uploads for the
+                # same product — the second process waits here, then its
+                # already_exists check (made under the same lock) sees the
+                # first upload's record and skips it, so it can never
+                # recompute the same `remaining` and deduct again.
+                with transaction.atomic():
+                    list(
+                        PurchaseBatch.objects
+                        .select_for_update()
+                        .filter(product_id=product.id)
                     )
 
-                    continue
+                    already_exists = ItemSalesRecord.objects.filter(
+                        product=product,
+                        sale_date=sale_date
+                    ).exists()
 
-                ItemSalesRecord.objects.create(
-                    product=product,
-                    sale_date=sale_date,
-                    quantity_sold=qty,
-                    unit_price=unit_price,
-                    total_amount=round(qty * unit_price, 2),
-                    upload=upload_log
-                )
+                    if already_exists:
 
-                inserted += 1
+                        skipped += 1
 
-                # ── FIX: stock was never actually deducted on sale ────────
-                # ItemSalesRecord existed but PurchaseBatch.remaining_quantity
-                # was never touched -- this endpoint has been silently NOT
-                # doing what Section 9 of the API doc documents ("Deducts
-                # stock via FEFO") since it was first built. See
-                # inventory/services/fefo.py for full root-cause notes.
-                # Does not fail the upload on shortfall -- the sale itself
-                # is real/authoritative data; an oversell here means the
-                # STOCK bookkeeping is behind (likely from historical sales
-                # recorded before this fix existed, not yet reconciled via
-                # reconcile_stock_fefo), not that the sale should be
-                # rejected. Surfaced as a warning instead.
-                sale_record = ItemSalesRecord.objects.filter(
-                    product=product, sale_date=sale_date
-                ).order_by('-id').first()
+                        errors.append(
+                            f'{sale_date}: '
+                            f'Record already exists'
+                        )
 
-                fefo_result = deduct_stock_fefo(
-                    product_id=product.id,
-                    quantity=qty,
-                    source='SALE_SYNC_ITEM_LEDGER',
-                    reference_id=sale_record.id if sale_record else None,
-                )
-                if fefo_result['shortfall'] > 0:
-                    errors.append(
-                        f'{sale_date}: sold {qty} but only '
-                        f'{fefo_result["deducted"]} could be deducted from '
-                        f'sellable batches (shortfall {fefo_result["shortfall"]}). '
-                        f'Stock bookkeeping for this product may need '
-                        f'reconciliation -- see reconcile_stock_fefo command.'
+                        continue
+
+                    ItemSalesRecord.objects.create(
+                        product=product,
+                        sale_date=sale_date,
+                        quantity_sold=qty,
+                        unit_price=unit_price,
+                        total_amount=round(qty * unit_price, 2),
+                        upload=upload_log
                     )
+
+                    inserted += 1
+
+                    # ── FIX: stock was never actually deducted on sale ────
+                    # ItemSalesRecord existed but PurchaseBatch.remaining_quantity
+                    # was never touched -- this endpoint has been silently NOT
+                    # doing what Section 9 of the API doc documents ("Deducts
+                    # stock via FEFO") since it was first built. See
+                    # inventory/services/fefo.py for full root-cause notes.
+                    # Does not fail the upload on shortfall -- the sale itself
+                    # is real/authoritative data; an oversell here means the
+                    # STOCK bookkeeping is behind (likely from historical sales
+                    # recorded before this fix existed, not yet reconciled via
+                    # reconcile_stock_fefo), not that the sale should be
+                    # rejected. Surfaced as a warning instead.
+
+                    # ── Online-order pickup reconciliation ────────────────
+                    # The Item Ledger total includes online pickups that were
+                    # ALREADY stock-deducted at order creation (FEFO,
+                    # source='ONLINE_ORDER', reference_id=order.id). Only
+                    # orders with an explicit physical pickup timestamp
+                    # (picked_up_at) count — otherwise ordinary POS sales
+                    # would be misclassified as online pickups. The sale
+                    # record itself is still created with the full ledger
+                    # quantity (authoritative sales data); only the stock
+                    # deduction is reduced by the confirmed online portion.
+                    reconciliation = reconcile_item_ledger_deduction(
+                        product.id, sale_date, qty
+                    )
+
+                    if reconciliation['risk']:
+                        errors.append(
+                            f'{sale_date}: DOUBLE_DEDUCTION_RISK - Item Ledger '
+                            f'quantity {qty} for "{product.product_name}" is '
+                            f'less than confirmed online-pickup deductions '
+                            f'{reconciliation["confirmed_online_quantity"]} '
+                            f'(orders {reconciliation["order_ids"]}). No stock '
+                            f'deducted for this date; verify which online '
+                            f'orders were actually picked up before re-uploading.'
+                        )
+                        continue
+
+                    remaining_to_deduct = reconciliation['remaining_to_deduct']
+
+                    sale_record = ItemSalesRecord.objects.filter(
+                        product=product, sale_date=sale_date
+                    ).order_by('-id').first()
+
+                    if remaining_to_deduct == 0:
+                        # Fully covered by confirmed online pickups — the
+                        # original ONLINE_ORDER deduction is authoritative.
+                        continue
+
+                    fefo_result = deduct_stock_fefo(
+                        product_id=product.id,
+                        quantity=remaining_to_deduct,
+                        source='SALE_SYNC_ITEM_LEDGER',
+                        reference_id=sale_record.id if sale_record else None,
+                    )
+                    if fefo_result['shortfall'] > 0:
+                        errors.append(
+                            f'{sale_date}: sold {remaining_to_deduct} but only '
+                            f'{fefo_result["deducted"]} could be deducted from '
+                            f'sellable batches (shortfall {fefo_result["shortfall"]}). '
+                            f'Stock bookkeeping for this product may need '
+                            f'reconciliation -- see reconcile_stock_fefo command.'
+                        )
 
             # ---------------------------------------------------------
             # Update Sync Date

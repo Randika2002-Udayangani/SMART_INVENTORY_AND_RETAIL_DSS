@@ -2,6 +2,7 @@ import json
 
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
+from django.utils import timezone
 from django.db.models import Avg, Count, OuterRef, Prefetch, Q, Subquery
 from django.db import IntegrityError, transaction
 from core.authentication import LenientJWTAuthentication
@@ -667,6 +668,13 @@ class OrderStatusUpdateView(APIView):
         order.status = new_status
         if new_status == "CONFIRMED":
             order.confirmed_by = request.user
+        if new_status == "COMPLETED":
+            # Physical customer pickup actually happened — timestamp it
+            # explicitly. READY/CONFIRMED do NOT prove collection, so
+            # picked_up_at is only stamped here. No new stock deduction
+            # is performed: the ONLINE_ORDER FEFO deduction made at
+            # order creation remains the authoritative one.
+            order.picked_up_at = timezone.now()
         order.save()
 
         log_action(
@@ -1062,6 +1070,13 @@ def _release_order_stock(order, reason):
     GET /api/inventory/ledger/.
     """
     with transaction.atomic():
+        # Guard: if the customer has already physically collected this
+        # order, the goods left the shop as a real sale — restoring the
+        # ONLINE_ORDER deduction would create phantom stock. Only
+        # uncollected (picked_up_at IS NULL) orders may release stock.
+        if order.picked_up_at is not None:
+            return
+
         deductions = list(
             StockLedger.objects.select_for_update().filter(
                 reference_id=order.id,
@@ -1069,6 +1084,20 @@ def _release_order_stock(order, reason):
                 quantity_change__lt=0,
             )
         )
+
+        # Idempotency guard: if a release row already exists for this
+        # order, the reservation was already restored (e.g. a customer
+        # cancellation racing the overdue-expire process, or the helper
+        # being invoked twice). The select_for_update() above serializes
+        # concurrent callers on the deduction rows, so this check sees
+        # any committed release and stops before a double restore.
+        already_released = StockLedger.objects.filter(
+            reference_id=order.id,
+            source__in=["ORDER_CANCELLED", "ORDER_EXPIRED"],
+            quantity_change__gt=0,
+        ).exists()
+        if already_released:
+            return
 
         restored_product_ids = set()
         for deduction in deductions:
@@ -1207,34 +1236,38 @@ class OrderCancelView(APIView):
     CANCELLABLE_STATUSES = ["PENDING", "CONFIRMED", "READY"]
 
     def delete(self, request, pk):
-        try:
-            order = OnlineOrder.objects.get(id=pk)
-        except OnlineOrder.DoesNotExist:
-            return Response(
-                {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
-            )
+        # select_for_update inside a transaction: two simultaneous cancel
+        # requests must not both read the pre-cancel status and both call
+        # _release_order_stock (double stock restore).
+        with transaction.atomic():
+            try:
+                order = OnlineOrder.objects.select_for_update().get(id=pk)
+            except OnlineOrder.DoesNotExist:
+                return Response(
+                    {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
+                )
 
-        is_customer = isinstance(request.user, Customer)
+            is_customer = isinstance(request.user, Customer)
 
-        if is_customer and order.customer_id != request.user.id:
-            return Response(
-                {"error": "You can only cancel your own orders."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            if is_customer and order.customer_id != request.user.id:
+                return Response(
+                    {"error": "You can only cancel your own orders."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
-        if order.status not in self.CANCELLABLE_STATUSES:
-            return Response(
-                {"error": f"Cannot cancel an order in {order.status} status."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            if order.status not in self.CANCELLABLE_STATUSES:
+                return Response(
+                    {"error": f"Cannot cancel an order in {order.status} status."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        old_status = order.status
-        order.status = "CANCELLED"
-        order.cancel_reason = request.data.get("reason", "")
-        order.cancelled_by = "CUSTOMER" if is_customer else "STAFF"
-        order.save()
+            old_status = order.status
+            order.status = "CANCELLED"
+            order.cancel_reason = request.data.get("reason", "")
+            order.cancelled_by = "CUSTOMER" if is_customer else "STAFF"
+            order.save()
 
-        _release_order_stock(order, "ORDER_CANCELLED")
+            _release_order_stock(order, "ORDER_CANCELLED")
 
         log_action(
             user=None if is_customer else request.user,
