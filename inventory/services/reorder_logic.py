@@ -201,15 +201,8 @@ def check_reorder_needs(as_of: date = None) -> list:
         if avg_daily_sales == 0:
             continue
 
-        # ── 3. Current stock ──────────────────────────────────────────────────
-        # [LR] "current_stock = SUM(remaining_quantity) from ACTIVE batches"
-        stock_agg = PurchaseBatch.objects.filter(
-            product=product,
-            status__in=['ACTIVE', 'PENDING_EXPIRY'],   # ← was status='ACTIVE'
-            remaining_quantity__gt=0,
-        ).aggregate(total_stock=Sum('remaining_quantity'))
-
-        current_stock = stock_agg['total_stock'] or 0
+        # ── 3. Current sellable stock ─────────────────────────────────────────
+        current_stock = get_current_stock(product.id)
 
         # ── 4. days_of_stock ──────────────────────────────────────────────────
         # [LR] "days_of_stock = current_stock ÷ avg_daily_sales"
@@ -270,13 +263,10 @@ def check_reorder_needs(as_of: date = None) -> list:
 # ════════════════════════════════════════════════════════════════════════════
 
 def get_current_stock(product_id: int) -> int:
-    agg = PurchaseBatch.objects.filter(
-        product_id=product_id,
-        status__in=['ACTIVE', 'PENDING_EXPIRY'],   # ← was status='ACTIVE'
-        remaining_quantity__gt=0,
-    ).aggregate(total=Sum('remaining_quantity'))
+    # Keep reorder and availability calculations on the same sellable-stock rule.
+    from inventory.services.stock import get_available_stock
 
-    return agg['total'] or 0
+    return get_available_stock(product_id)
 
 
 def _get_supplier_lead_time(product: Product):
