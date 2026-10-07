@@ -1,6 +1,5 @@
-import os
 from django.test import TestCase, Client
-from datetime import date, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 
 from products.models import Product, Brand, Category
@@ -8,6 +7,9 @@ from suppliers.models import Supplier
 from purchases.models import Purchase, PurchaseBatch
 from sales.models import ItemSalesRecord
 from inventory.models import InventoryHealthScore, CategoryHealthScore
+from inventory.testing_helpers import (
+    create_user_with_role, login_headers, local_today,
+)
 
 # ============================================================
 # F08 — Inventory Health Score Tests
@@ -15,9 +17,14 @@ from inventory.models import InventoryHealthScore, CategoryHealthScore
 # ============================================================
 # How to run:
 #   python manage.py test inventory.test08 --verbosity=2
+#
+# Changes from the previous version:
+#   * The test user now has the MANAGER role (was is_staff only -> 403).
+#   * Dates use Sri Lanka local time, matching the app.
+#   * GET /api/health-scores/<product_id>/ now returns ONE dict (the latest
+#     score).  The multi-run list lives at /api/health-scores/history/<id>/,
+#     which now has its own tests.
 # ============================================================
-
-TEST_PASSWORD = os.environ.get('TEST_PASSWORD', 'testpass123')
 
 
 class F08TestSetup(TestCase):
@@ -26,25 +33,10 @@ class F08TestSetup(TestCase):
     def setUp(self):
         self.client = Client()
 
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        self.manager = User.objects.create_user(
-            username='test_manager_f08',
-            password=TEST_PASSWORD,
-            is_staff=True
-        )
+        self.manager = create_user_with_role('test_manager_f08', 'MANAGER')
+        self.auth_header = login_headers(self.client, 'test_manager_f08')
 
-        response = self.client.post('/api/auth/login/', {
-            'username': 'test_manager_f08',
-            'password': TEST_PASSWORD
-        }, content_type='application/json')
-
-        self.assertEqual(response.status_code, 200, "Login failed")
-        data             = response.json()
-        self.token       = data.get('access') or data.get('token')
-        self.auth_header = {'HTTP_AUTHORIZATION': f'Bearer {self.token}'}
-
-        today = date.today()
+        today = local_today()
 
         # ── Brand, Category ──────────────────────────────────────
         self.brand    = Brand.objects.create(brand_name='Test Brand F08')
@@ -127,6 +119,18 @@ class F08CalculateTest(F08TestSetup):
         response = self.client.post('/api/health-scores/calculate/')
         self.assertEqual(response.status_code, 401)
 
+    def test_calculate_forbidden_for_non_manager(self):
+        """A logged-in user without MANAGER/ADMIN role must get 403."""
+        create_user_with_role('plain_staff_f08', None)
+        staff_header = login_headers(self.client, 'plain_staff_f08')
+        response = self.client.post(
+            '/api/health-scores/calculate/',
+            content_type='application/json',
+            **staff_header
+        )
+        self.assertEqual(response.status_code, 403)
+        print("\n✅ Non-manager blocked from health score calculate (403)")
+
     def test_calculate_success(self):
         """Should return 200 and process all active products."""
         response = self.client.post(
@@ -170,6 +174,7 @@ class F08CalculateTest(F08TestSetup):
                          content_type='application/json', **self.auth_header)
         record = InventoryHealthScore.objects.filter(
             product=self.product_healthy).last()
+        self.assertIsNotNone(record)
         self.assertIsNotNone(record.velocity_score)
         self.assertIsNotNone(record.margin_score)
         self.assertIsNotNone(record.expiry_risk_score)
@@ -186,6 +191,7 @@ class F08CalculateTest(F08TestSetup):
                          content_type='application/json', **self.auth_header)
         record = InventoryHealthScore.objects.filter(
             product=self.product_healthy).last()
+        self.assertIsNotNone(record)
         self.assertEqual(record.weighting_mode, '4-COMPONENT')
         self.assertFalse(record.rating_sufficient)
         print(f"\n✅ Weighting mode: {record.weighting_mode}")
@@ -207,7 +213,7 @@ class F08CalculateTest(F08TestSetup):
             product_name    = 'Inactive F08',
             brand           = self.brand,
             category        = self.category,
-            introduced_date = date.today() - timedelta(days=100),
+            introduced_date = local_today() - timedelta(days=100),
             is_active       = False,
             avg_cost_price  = 50.00,
             cost_price      = 50.00,
@@ -241,8 +247,8 @@ class F08HealthScoreListTest(F08TestSetup):
         response = self.client.get('/api/health-scores/', **self.auth_header)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        # FIX: /api/health-scores/ is now paginated — response is
-        # {results, count, page, page_size, total_pages}, not a bare list.
+        # /api/health-scores/ is paginated:
+        # {results, count, page, page_size, total_pages}
         self.assertIn('results', data)
         self.assertIsInstance(data['results'], list)
         self.assertGreater(data['count'], 0)
@@ -378,6 +384,7 @@ class F08CriticalScoreTest(F08TestSetup):
 
 # ============================================================
 # TEST 5 — GET /api/health-scores/<product_id>/
+# Returns ONE dict: the latest score breakdown for the product.
 # ============================================================
 
 class F08HealthScoreDetailTest(F08TestSetup):
@@ -394,17 +401,18 @@ class F08HealthScoreDetailTest(F08TestSetup):
         self.assertEqual(response.status_code, 401)
 
     def test_detail_returns_200(self):
-        """Should return 200 with health score history."""
+        """Should return 200 with the latest score for the product."""
         response = self.client.get(
             f'/api/health-scores/{self.product_healthy.id}/',
             **self.auth_header
         )
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertIsInstance(data, list)
-        self.assertGreater(len(data), 0)
+        self.assertIsInstance(data, dict)
+        self.assertEqual(data['product'], self.product_healthy.id)
+        self.assertEqual(data['product_name'], 'Healthy Product F08')
         print(f"\n✅ GET /api/health-scores/{self.product_healthy.id}/ "
-              f"→ {len(data)} records")
+              f"→ score={data['overall_score']}, status={data['status']}")
 
     def test_detail_invalid_product_returns_404(self):
         """Non-existent product ID should return 404."""
@@ -414,13 +422,12 @@ class F08HealthScoreDetailTest(F08TestSetup):
         print("\n✅ Invalid product_id → 404 correct")
 
     def test_detail_has_required_fields(self):
-        """Each record must contain all required health score fields."""
+        """The record must contain all required health score fields."""
         response = self.client.get(
             f'/api/health-scores/{self.product_healthy.id}/',
             **self.auth_header
         )
-        data   = response.json()
-        record = data[0]
+        record = response.json()
         for field in ['overall_score', 'status', 'velocity_score',
                       'margin_score', 'expiry_risk_score',
                       'stock_duration_score', 'weighting_mode',
@@ -430,21 +437,52 @@ class F08HealthScoreDetailTest(F08TestSetup):
 
 
 # ============================================================
+# TEST 6 — GET /api/health-scores/history/<product_id>/
+# Returns a LIST: every calculation run for the product.
+# ============================================================
+
+class F08HealthScoreHistoryTest(F08TestSetup):
+
+    def setUp(self):
+        super().setUp()
+        self.client.post('/api/health-scores/calculate/',
+                         content_type='application/json', **self.auth_header)
+
+    def test_history_requires_auth(self):
+        """Should return 401 without token."""
+        response = self.client.get(
+            f'/api/health-scores/history/{self.product_healthy.id}/')
+        self.assertEqual(response.status_code, 401)
+
+    def test_history_returns_list(self):
+        """Should return 200 with a list of score records."""
+        response = self.client.get(
+            f'/api/health-scores/history/{self.product_healthy.id}/',
+            **self.auth_header
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIsInstance(data, list)
+        self.assertGreater(len(data), 0)
+        record = data[0]
+        for field in ['overall_score', 'status', 'calculated_date']:
+            self.assertIn(field, record, f"Missing field: {field}")
+        print(f"\n✅ GET history → {len(data)} records")
+
+    def test_history_invalid_product_returns_404(self):
+        """Non-existent product ID should return 404."""
+        response = self.client.get(
+            '/api/health-scores/history/99999/', **self.auth_header)
+        self.assertEqual(response.status_code, 404)
+        print("\n✅ History for invalid product → 404 correct")
+
+
+# ============================================================
 # Regression test — HealthScoreSummaryView must stay read-only
 # ============================================================
-# This is the exact bug flagged as "the only genuine pre-merge blocker"
-# during PR review, and it has already been reintroduced once by a
-# well-intentioned but incorrect fix. No other test in this file
-# exercises /api/health-scores/summary/ directly, so nothing here would
-# have caught either occurrence. These two tests exist specifically so
-# a third reintroduction fails CI instead of being found by hand again.
-#
-# Uses F08TestSetup directly (not F08CalculateTest or similar) because
-# HealthScoreSummaryView has no permission_classes override — it relies
-# on the project's default IsAuthenticated, not IsManagerOrAdmin — and
-# F08TestSetup's product_healthy/product_critical are created active
-# with zero InventoryHealthScore records, which is exactly the partial/
-# empty state that triggers the bug when it's present.
+# GET /api/health-scores/summary/ must never trigger a calculation.
+# This bug was reintroduced once already; these tests make a third
+# reintroduction fail the test run instead of being found by hand.
 class F08HealthScoreSummaryNoSideEffectTest(F08TestSetup):
 
     def test_summary_get_creates_no_health_score_records(self):

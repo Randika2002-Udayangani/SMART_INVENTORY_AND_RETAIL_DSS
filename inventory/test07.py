@@ -1,11 +1,13 @@
-import os
 from django.test import TestCase, Client
-from datetime import date, timedelta
+from datetime import timedelta
 
 from products.models import Product, Brand, Category
 from suppliers.models import Supplier
 from purchases.models import Purchase, PurchaseBatch
 from inventory.models import LossRecord, SupplierReturn
+from inventory.testing_helpers import (
+    create_user_with_role, login_headers, local_today,
+)
 
 # ============================================================
 # F07 — Loss & Supplier Returns Tests
@@ -13,9 +15,13 @@ from inventory.models import LossRecord, SupplierReturn
 # ============================================================
 # How to run:
 #   python manage.py test inventory.test07 --verbosity=2
+#
+# Changes from the previous version:
+#   * The test user now has the MANAGER role (was is_staff only -> 403).
+#   * Dates use Sri Lanka local time, matching the app.
+#   * Added F07RoleAccessTest: a plain staff user must get 403 on the
+#     manager-only loss / supplier-return endpoints.
 # ============================================================
-
-TEST_PASSWORD = os.environ.get('TEST_PASSWORD', 'testpass123')
 
 
 class F07TestSetup(TestCase):
@@ -24,25 +30,10 @@ class F07TestSetup(TestCase):
     def setUp(self):
         self.client = Client()
 
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        self.manager = User.objects.create_user(
-            username='test_manager_f07',
-            password=TEST_PASSWORD,
-            is_staff=True
-        )
+        self.manager = create_user_with_role('test_manager_f07', 'MANAGER')
+        self.auth_header = login_headers(self.client, 'test_manager_f07')
 
-        response = self.client.post('/api/auth/login/', {
-            'username': 'test_manager_f07',
-            'password': TEST_PASSWORD
-        }, content_type='application/json')
-
-        self.assertEqual(response.status_code, 200, "Login failed")
-        data        = response.json()
-        self.token  = data.get('access') or data.get('token')
-        self.auth_header = {'HTTP_AUTHORIZATION': f'Bearer {self.token}'}
-
-        today = date.today()
+        today = local_today()
 
         # ── Brand, Category ──────────────────────────────────────
         self.brand    = Brand.objects.create(brand_name='Test Brand F07')
@@ -118,6 +109,40 @@ class F07TestSetup(TestCase):
             recovery_type     = 'CREDIT_NOTE',
             status            = 'PENDING',
         )
+
+
+# ============================================================
+# TEST 0 — Role access: plain staff must be blocked (403)
+# ============================================================
+
+class F07RoleAccessTest(F07TestSetup):
+
+    def setUp(self):
+        super().setUp()
+        create_user_with_role('plain_staff_f07', None)
+        self.staff_header = login_headers(self.client, 'plain_staff_f07')
+
+    def test_staff_cannot_list_losses(self):
+        response = self.client.get('/api/losses/', **self.staff_header)
+        self.assertEqual(response.status_code, 403)
+        print("\n✅ Staff blocked from GET /api/losses/ (403)")
+
+    def test_staff_cannot_run_auto_detect(self):
+        response = self.client.post('/api/losses/auto-detect/',
+                                    content_type='application/json',
+                                    **self.staff_header)
+        self.assertEqual(response.status_code, 403)
+        print("\n✅ Staff blocked from POST /api/losses/auto-detect/ (403)")
+
+    def test_staff_cannot_list_supplier_returns(self):
+        response = self.client.get('/api/supplier-returns/', **self.staff_header)
+        self.assertEqual(response.status_code, 403)
+        print("\n✅ Staff blocked from GET /api/supplier-returns/ (403)")
+
+    def test_staff_cannot_view_loss_summary(self):
+        response = self.client.get('/api/losses/summary/', **self.staff_header)
+        self.assertEqual(response.status_code, 403)
+        print("\n✅ Staff blocked from GET /api/losses/summary/ (403)")
 
 
 # ============================================================
@@ -244,6 +269,7 @@ class F07LossSummaryTest(F07TestSetup):
     def test_summary_damage_reflects_records(self):
         """damage_loss should include our test damage record (500.00)."""
         response = self.client.get('/api/losses/summary/', **self.auth_header)
+        self.assertEqual(response.status_code, 200)
         data     = response.json()
         damage   = float(data['damage_loss'])
         self.assertGreaterEqual(damage, 500.00)
@@ -265,8 +291,8 @@ class F07LossAutoDetectTest(F07TestSetup):
         """GET should not be allowed — must be POST only."""
         response = self.client.get('/api/losses/auto-detect/',
                                    **self.auth_header)
-        self.assertIn(response.status_code, [405, 401])
-        print("\n✅ GET on auto-detect/ correctly rejected")
+        self.assertEqual(response.status_code, 405)
+        print("\n✅ GET on auto-detect/ correctly rejected (405)")
 
     def test_auto_detect_creates_loss_for_expired_batch(self):
         """Should detect the expired batch and create a LossRecord."""
@@ -283,18 +309,20 @@ class F07LossAutoDetectTest(F07TestSetup):
             batch=self.expired_batch, loss_type='EXPIRY'
         ).first()
         self.assertIsNotNone(record, "LossRecord not created for expired batch")
-        self.assertEqual(record.loss_quantity,
-                         self.expired_batch.remaining_quantity)
+        # self.expired_batch is the pre-request copy (remaining_quantity=10);
+        # the view zeroes the DB row afterwards, so compare against the setup value.
+        self.assertEqual(record.loss_quantity, 10)
         print(f"\n✅ auto-detect → {data['batches_expired']} expired, "
               f"LossRecord created")
 
     def test_auto_detect_marks_batch_expired(self):
-        """Expired batch status should be updated to EXPIRED."""
+        """Expired batch status should be EXPIRED and remaining stock zeroed."""
         self.client.post('/api/losses/auto-detect/',
                          content_type='application/json', **self.auth_header)
         self.expired_batch.refresh_from_db()
         self.assertEqual(self.expired_batch.status, 'EXPIRED')
-        print("\n✅ Batch status → EXPIRED")
+        self.assertEqual(self.expired_batch.remaining_quantity, 0)
+        print("\n✅ Batch status → EXPIRED, remaining_quantity → 0")
 
     def test_auto_detect_no_duplicates(self):
         """Running auto-detect twice must not create duplicate LossRecords."""
