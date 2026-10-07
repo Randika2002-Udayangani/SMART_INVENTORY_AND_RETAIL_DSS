@@ -12,11 +12,14 @@
 # Writes    : StoreZone (group zones, get_or_create — idempotent),
 #             Category.default_zone, ZoneRecommendation
 
-from django.utils import timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from django.db.models import Q
 
 from products.models import Product, Category, StoreZone, ZoneRecommendation, ProductZoneOverride
 from inventory.models import InventoryHealthScore
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 HIGH_VELOCITY_THRESHOLD = 70
 HIGH_MARGIN_THRESHOLD = 70
@@ -136,7 +139,7 @@ def calculate_zone_recommendations():
     # PENDING/APPLIED status field (that field tracks whether staff has
     # physically confirmed the move — not whether the manager's decision
     # is currently in effect).
-    today = timezone.now().date()
+    today = datetime.now(LOCAL_TZ).date()
     active_overrides = {
         o.product_id: o
         for o in ProductZoneOverride.objects.filter(start_date__lte=today)

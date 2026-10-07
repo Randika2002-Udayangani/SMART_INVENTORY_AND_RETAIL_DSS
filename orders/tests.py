@@ -4,7 +4,7 @@ from django.urls import reverse
 from rest_framework.test import APIRequestFactory, force_authenticate
 from unittest.mock import patch
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -25,6 +25,11 @@ from purchases.models import Purchase, PurchaseBatch
 from sales.models import ItemSalesRecord
 from suppliers.models import Supplier
 
+from zoneinfo import ZoneInfo
+
+def local_today():
+    """The app counts days in Sri Lanka time, so the tests must too."""
+    return datetime.now(ZoneInfo('Asia/Colombo')).date()
 
 class ChatbotAgentTests(TestCase):
     def setUp(self):
@@ -184,12 +189,12 @@ class ChatbotAgentTests(TestCase):
         """Create a real purchase batch expiring N days from today."""
         supplier = Supplier.objects.create(supplier_name='Test Supplier')
         purchase = Purchase.objects.create(
-            supplier=supplier, purchase_date=date.today() - timedelta(days=20)
+            supplier=supplier, purchase_date=local_today() - timedelta(days=20)
         )
         return PurchaseBatch.objects.create(
             purchase=purchase, product=product, quantity_received=10,
             cost_price=100, remaining_quantity=remaining,
-            expiry_date=date.today() + timedelta(days=days_ahead), status=status,
+            expiry_date=local_today() + timedelta(days=days_ahead), status=status,
         )
 
     def test_customer_can_execute_expiry_tool_with_real_data(self):
@@ -200,7 +205,7 @@ class ChatbotAgentTests(TestCase):
         entry = result['products'][0]
         self.assertEqual(entry['id'], self.product.id)
         self.assertEqual(entry['product_name'], 'Milk Budget 1L')
-        self.assertEqual(entry['expiry_date'], str(date.today() + timedelta(days=10)))
+        self.assertEqual(entry['expiry_date'], str(local_today() + timedelta(days=10)))
         self.assertEqual(entry['days_until_expiry'], 10)
         self.assertTrue(entry['is_available'])
 
@@ -257,7 +262,7 @@ class ChatbotAgentTests(TestCase):
 
     def _sales_record(self, product, units, days_ago=1, price='250.00'):
         ItemSalesRecord.objects.create(
-            product=product, sale_date=date.today() - timedelta(days=days_ago),
+            product=product, sale_date=local_today() - timedelta(days=days_ago),
             quantity_sold=units, unit_price=price, total_amount=str(float(price) * units),
         )
 
@@ -347,7 +352,7 @@ class ChatbotAgentTests(TestCase):
 
     def _sales_record(self, product, units, days_ago=1, price='250.00'):
         ItemSalesRecord.objects.create(
-            product=product, sale_date=date.today() - timedelta(days=days_ago),
+            product=product, sale_date=local_today() - timedelta(days=days_ago),
             quantity_sold=units, unit_price=price, total_amount=str(float(price) * units),
         )
 

@@ -1,5 +1,5 @@
 from django.test import TestCase, Client
-from datetime import timedelta
+from datetime import date, timedelta
 
 from products.models import Product, Brand, Category
 from sales.models import ItemSalesRecord
@@ -371,7 +371,10 @@ class F06ProductHistoryTest(F06LifecycleTestSetup):
     def test_product_history_returns_200(self):
         """Should return 200 with a history list and a daily sales series."""
         response = self.client.get(
-            f'/api/lifecycle/{self.product_growing.id}/',
+            # calculated_date uses auto_now_add, which stamps the computer's own
+            # date.today(). Ask for exactly that date so the test does not
+            # depend on the gap between the computer clock and Colombo time.
+            f'/api/lifecycle/{self.product_growing.id}/?date_to={date.today()}',
             **self.auth_header
         )
         self.assertEqual(response.status_code, 200)
@@ -405,7 +408,8 @@ class F06ProductHistoryTest(F06LifecycleTestSetup):
     def test_history_records_have_required_fields(self):
         """Each history record must contain status, recommendation, calculated_date."""
         response = self.client.get(
-            f'/api/lifecycle/{self.product_declining.id}/',
+            # Same reason as above: match the date auto_now_add stamped.
+            f'/api/lifecycle/{self.product_declining.id}/?date_to={date.today()}',
             **self.auth_header
         )
         data = response.json()
