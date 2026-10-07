@@ -1,3 +1,961 @@
-from django.shortcuts import render
+import re
+import datetime
+from decimal import Decimal, InvalidOperation
 
-# Create your views here.
+from rest_framework import generics, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.utils import timezone
+from django.db import transaction
+from datetime import timedelta
+
+from .models import Purchase, PurchaseBatch
+from users.audit import log_action
+from .serializers import (
+    PurchaseSerializer, PurchaseCreateSerializer, PurchaseBatchSerializer
+)
+from suppliers.models import Supplier
+from products.models import Product
+from sales.models import UploadLog
+from orders.models import Notification
+from django.db.models import Sum, F, DecimalField, Prefetch
+from django.db.models.functions import Coalesce
+from core.pagination import StandardResultsPagination
+
+
+
+# ─────────────────────────────────────────────────────────────────
+# POST /api/purchases/   — Create GRN (Goods Received Note)
+# GET  /api/purchases/   — List all purchases
+# ─────────────────────────────────────────────────────────────────
+class PurchaseListCreateView(generics.ListCreateAPIView):
+    """
+    GET  — returns all purchases with their batches
+    POST — creates a purchase + batches + stock ledger entries + WAC update
+
+    POST body example:
+    {
+        "supplier": 1,
+        "purchase_date": "2026-03-05",
+        "invoice_number": "INV-001",
+        "expected_days": 3,
+        "actual_days": 3,
+        "batches": [
+            {
+                "product": 1,
+                "quantity_received": 50,
+                "cost_price": "380.00",
+                "expiry_date": "2026-09-01"
+            }
+        ]
+    }
+    """
+    # Fix (Randika, performance): GET was doing ~1 + N + N + M + M queries
+    # (N purchases -> supplier lookup + batches lookup each; M batches ->
+    # product lookup + purchase-backref lookup each), because PurchaseSerializer
+    # nests batches/product/supplier without any select_related/prefetch_related.
+    # select_related('supplier') joins the supplier in the same query.
+    # prefetch_related(...) fetches ALL batches for ALL purchases in one extra
+    # query, with product and purchase already joined on that query too (the
+    # nested PurchaseBatchSerializer reads product_name and invoice_number via
+    # product.product_name / purchase.invoice_number, so both need to be
+    # pre-joined here to avoid re-querying per batch).
+    #
+    # Also now paginated + ?search= on invoice_number (was previously
+    # unpaginated — returned every purchase, with every batch nested
+    # inside each one, on every page load). See core.pagination.
+    queryset = Purchase.objects.select_related('supplier').prefetch_related(
+        Prefetch(
+            'purchasebatch_set',
+            queryset=PurchaseBatch.objects.select_related('product', 'purchase'),
+        )
+    ).order_by('-purchase_date')
+    pagination_class = StandardResultsPagination
+
+    def get_queryset(self):
+        queryset = Purchase.objects.select_related('supplier').prefetch_related(
+            Prefetch(
+                'purchasebatch_set',
+                queryset=PurchaseBatch.objects.select_related('product', 'purchase'),
+            )
+        ).order_by('-purchase_date')
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(invoice_number__icontains=search)
+        return queryset
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return PurchaseCreateSerializer
+        return PurchaseSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = PurchaseCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            purchase = serializer.save()
+            output = PurchaseSerializer(purchase)
+
+            log_action(
+                user=request.user, action='CREATE', table_name='purchase',
+                record_id=purchase.id, old_value=None,
+                new_value=output.data, request=request,
+            )
+
+            return Response(
+                {
+                    'message': 'Purchase recorded successfully',
+                    'purchase': output.data
+                },
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/purchases/<id>/  — Get one purchase with batches
+# ─────────────────────────────────────────────────────────────────
+class PurchaseDetailView(generics.RetrieveAPIView):
+    # Same fix as PurchaseListCreateView above — one purchase can still have
+    # many batches, each needing product + purchase joined.
+    queryset = Purchase.objects.select_related('supplier').prefetch_related(
+        Prefetch(
+            'purchasebatch_set',
+            queryset=PurchaseBatch.objects.select_related('product', 'purchase'),
+        )
+    )
+    serializer_class = PurchaseSerializer
+
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/batches/   — List all batches (with optional filters)
+# Query params: ?status=ACTIVE  ?product=<id>
+# ─────────────────────────────────────────────────────────────────
+class BatchListView(generics.ListAPIView):
+    """
+    Returns all batches.
+    Filter by: ?status=ACTIVE|EXPIRED|DEPLETED|DISPOSED|PENDING_EXPIRY
+               ?product=<product_id>
+
+    Paginated — was previously unpaginated. See core.pagination.
+    """
+    serializer_class = PurchaseBatchSerializer
+    pagination_class = StandardResultsPagination
+
+    def get_queryset(self):
+        queryset = PurchaseBatch.objects.select_related(
+            'product', 'purchase'
+        ).all().order_by('-id')
+        status_filter = self.request.query_params.get('status')
+        product = self.request.query_params.get('product')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        if product:
+            queryset = queryset.filter(product__id=product)
+        return queryset
+
+
+# ─────────────────────────────────────────────────────────────────
+# GET /api/batches/expiring-soon/  — Batches expiring within N days
+# Query param: ?days=30 (default 30)
+# ─────────────────────────────────────────────────────────────────
+class BatchExpiringSoonView(APIView):
+    """
+    Returns all ACTIVE batches with expiry_date within the next N days.
+    Default: 30 days.
+    Usage: GET /api/batches/expiring-soon/?days=14
+    """
+    def get(self, request):
+        days = int(request.query_params.get('days', 30))
+        today = timezone.now().date()
+        cutoff = today + timedelta(days=days)
+
+        batches = PurchaseBatch.objects.filter(
+            status='ACTIVE',
+            expiry_date__isnull=False,
+            expiry_date__lte=cutoff,
+            expiry_date__gte=today
+        ).order_by('expiry_date')
+
+        serializer = PurchaseBatchSerializer(batches, many=True)
+        return Response({
+            'days_filter'  : days,
+            'cutoff_date'  : str(cutoff),
+            'count'        : batches.count(),
+            'batches'      : serializer.data
+        })
+
+
+# ─────────────────────────────────────────────────────────────────
+# PATCH /api/batches/<id>/status/  — Update batch status manually
+# Body: {"status": "EXPIRED"}
+# ─────────────────────────────────────────────────────────────────
+class BatchStatusUpdateView(APIView):
+    """
+    Manually update a batch status.
+    Valid statuses: ACTIVE, EXPIRED, DEPLETED, DISPOSED, PENDING_EXPIRY
+    """
+    def patch(self, request, pk):
+        try:
+            batch = PurchaseBatch.objects.get(pk=pk)
+        except PurchaseBatch.DoesNotExist:
+            return Response(
+                {'error': 'Batch not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        new_status = request.data.get('status')
+        valid_statuses = ['ACTIVE', 'EXPIRED', 'DEPLETED', 'DISPOSED', 'PENDING_EXPIRY']
+
+        if new_status not in valid_statuses:
+            return Response(
+                {'error': f'Status must be one of {valid_statuses}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        old_status = batch.status
+        batch.status = new_status
+        batch.save()
+
+        log_action(
+            user=request.user, action='UPDATE', table_name='purchase_batch',
+            record_id=batch.id,
+            old_value={'status': old_status},
+            new_value={'status': batch.status},
+            request=request,
+        )
+
+        return Response({
+            'message'  : f'Batch {batch.id} status updated',
+            'id'       : batch.id,
+            'product'  : batch.product.product_name if batch.product else None,
+            'status'   : batch.status
+        })
+
+
+# =========================================================
+# PURCHASE INVOICE PDF UPLOAD
+# POST /api/purchases/upload/invoice/
+#
+# Implements Pipeline 4 per Data_Ingestion_Rules_v3.pdf Section 11.
+# Rules R1-R9 as confirmed by Randika from the source document:
+#
+#   R1  Supplier must exact-match Supplier table       -> ABORT file, LOG_ERROR
+#   R2  Duplicate (supplier, invoice_number)            -> REJECT, show existing
+#   R3  Invoice date missing/unparseable/future          -> REJECT, LOG_ERROR
+#   R4  Cost price <= 0 on a line                        -> SKIP line, LOG_ERROR
+#   R5  Qty <= 0 on a line                                -> SKIP line, LOG_ERROR
+#   R6  |CostTotal - UnitCost*Qty| > 0.05                 -> LOG_WARNING,
+#                                                             use computed value
+#   R7  Product name unmatched                           -> create batch with
+#                                                             product=NULL,
+#                                                             FLAG for review
+#                                                             (does NOT abort file)
+#   R8  Invoice selling price != Product.unit_price      -> LOG_WARNING, alert
+#                                                             staff, do NOT
+#                                                             auto-update price
+#   R9  Expiry date (never present in this invoice        -> batch created with
+#       format)                                              status='PENDING_EXPIRY',
+#                                                             excluded from active
+#                                                             stock until staff
+#                                                             enters expiry
+#
+# ADDITION BEYOND SPEC (flagged for Randika's awareness):
+#   Before falling through to R7's product=NULL path, a narrow truncation
+#   auto-correction is attempted (see _try_resolve_truncated_product). It
+#   only fires when a description matches the specific "digits + trailing
+#   period" pattern (e.g. "...17." meaning "...170g") AND exactly one
+#   Product uniquely matches the prefix. This is strictly safer than R7's
+#   fallback -- it reduces how often product=NULL/staff-review is needed,
+#   without ever guessing among ambiguous candidates. If Randika wants R7
+#   applied strictly with no auto-correction, remove the call to
+#   _try_resolve_truncated_product() below.
+#
+# Requires model changes (see model_changes_required.txt):
+#   - PurchaseBatch.STATUS_CHOICES: add ('PENDING_EXPIRY', 'Pending Expiry')
+#   - PurchaseBatch.product: add null=True, blank=True
+#   - UploadLog.UPLOAD_TYPES: add ('SUPPLIER_INVOICE', 'Supplier Invoice PDF')
+# =========================================================
+
+# Matches: Bill No : 0002147 Supplier : UNILEVER
+_BILL_SUPPLIER_PATTERN = re.compile(r'Bill No\s*:\s*(\S+)\s+Supplier\s*:\s*(.+)')
+
+# Matches: Date : 15-Jan-2025 Invoice No :
+_DATE_PATTERN = re.compile(r'Date\s*:\s*(\d{1,2}-\w{3}-\d{4})')
+
+# Matches an item line:
+#   1369 SIGNAL DEEP CLEAN DBL PACK 24.00 0.00 236.96 5,687.04 24.00 280.00 6,720.00
+#   item_code  description(non-greedy)  qty  free_qty  cost_unit  cost_total  sell_qty  sell_unit  sell_total
+_ITEM_LINE_PATTERN = re.compile(
+    r'^(\d{3,6})\s+(.+?)\s+'
+    r'([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+'
+    r'([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})$'
+)
+
+_SKIP_LINE_KEYWORDS = ('Gross Total', 'Discount', 'Net Total', 'Loading Charge',
+                        'Other Charge', 'Return', 'Item Description', 'No Qty')
+
+# R6 tolerance for cost total cross-check
+_COST_TOTAL_TOLERANCE = Decimal('0.05')
+
+# Detects descriptions truncated by the invoice's own layout, e.g.
+# "RITZBURY PEBBALS PEANUT PARTY TIME 17." (should be "...170g").
+_TRUNCATED_DESCRIPTION_PATTERN = re.compile(r'\d+\.$')
+
+
+def _parse_decimal(text):
+    """Strip thousands-separator commas and convert to Decimal."""
+    try:
+        clean = text.replace(',', '')
+        return Decimal(clean)
+    except InvalidOperation:
+        return None
+
+
+def _try_resolve_truncated_product(description):
+    """
+    Narrow, safe fallback before R7's product=NULL path. Only fires on the
+    specific truncation signature (digits + trailing period), and only
+    auto-applies when exactly one Product matches the stripped prefix.
+    Returns the matched Product, or None (falls through to R7).
+    """
+    if not _TRUNCATED_DESCRIPTION_PATTERN.search(description):
+        return None
+    prefix = description.rstrip('.').strip()
+    if not prefix:
+        return None
+    candidates = list(Product.objects.filter(product_name__istartswith=prefix))
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def _recalculate_avg_cost_price(product):
+    """
+    True weighted-average-cost recalculation across ALL ACTIVE PurchaseBatch
+    records for this product (both from this invoice pipeline and the
+    original JSON /api/purchases/ endpoint) -- not just the most recent
+    purchase.
+
+    Formula: avg_cost_price = total_purchase_cost / total_remaining_units
+    (matches Randika's spec, updated per Fix below.)
+
+    Fix (Randika, [date]) — filter to status='ACTIVE' only, matching the
+    same fix already applied in serializers.py (Fix 8). Before this fix,
+    PENDING_EXPIRY batches (100% of batches from the PDF invoice pipeline,
+    per R9) were counted into avg_cost_price even though they don't count
+    as stock anywhere else (StockSnapshotView, low-stock, reorder all
+    filter to ACTIVE only). That let cost move while stock stayed at 0
+    for the same batch — misleading margin/health-score numbers with no
+    real stock backing them.
+
+    Fix (Randika, 2026-08-23) — switched from quantity_received to
+    remaining_quantity, matching serializers.py Fix 7 and Nipuni's
+    recalculate_wac.py fix exactly. All three WAC code paths in the
+    system now agree. WAC should reflect current stock reality (what's
+    actually still on the shelf), not original arrival quantity -- a
+    batch that's mostly sold through shouldn't still weight its full
+    original quantity into the cost average. Feeds F05 profit
+    calculation and F09's discount profit floor directly.
+
+    Edge case (same convention as serializers.py Fix 7+8 and
+    recalculate_wac.py): if a product's ACTIVE batches sum to zero
+    remaining units, avg_cost_price is left UNCHANGED, not reset to 0 --
+    the last known cost basis stays as a useful reference.
+
+    Called after every batch creation, not just the first purchase.
+    Safe to call multiple times for the same product within one
+    transaction -- each call re-aggregates from the DB, so it stays
+    correct even if the same product appears twice on one invoice.
+    """
+    agg = PurchaseBatch.objects.filter(
+        product=product,
+        status='ACTIVE'          # <-- Fix: was unfiltered
+    ).aggregate(
+        total_cost=Coalesce(
+            Sum(
+                F('remaining_quantity') * F('cost_price'),   # Fix: was quantity_received
+                output_field=DecimalField(max_digits=14, decimal_places=2)
+            ),
+            Decimal('0'),
+        ),
+        total_qty=Coalesce(Sum('remaining_quantity'), 0),    # Fix: was quantity_received
+    )
+    total_cost = agg['total_cost']
+    total_qty = agg['total_qty']
+
+    if total_qty and total_qty > 0:
+        new_avg = (total_cost / total_qty).quantize(Decimal('0.01'))
+        product.avg_cost_price = new_avg
+        product.save(update_fields=['avg_cost_price'])
+        return new_avg
+    # No ACTIVE batches with remaining stock -- leave existing
+    # avg_cost_price unchanged rather than resetting it (matches
+    # serializers.py Fix 7+8 and recalculate_wac.py convention).
+    return None
+ 
+from .serializers import (
+    PurchaseSerializer, PurchaseCreateSerializer, PurchaseBatchSerializer,
+    ConfirmBatchExpirySerializer, BulkConfirmBatchExpirySerializer,
+)
+
+
+# ─────────────────────────────────────────────────────────────────
+# POST /api/batches/<id>/confirm-expiry/
+# Moves a single PENDING_EXPIRY batch to ACTIVE once staff enters
+# the real expiry date. Closes the R9 gap: PDF-pipeline batches had
+# no exit path out of PENDING_EXPIRY before this.
+# ─────────────────────────────────────────────────────────────────
+class ConfirmBatchExpiryView(APIView):
+    def post(self, request, pk):
+        try:
+            batch = PurchaseBatch.objects.get(pk=pk)
+        except PurchaseBatch.DoesNotExist:
+            return Response(
+                {'error': 'Batch not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if batch.status != 'PENDING_EXPIRY':
+            return Response(
+                {'error': f'Batch {batch.id} is status {batch.status}, '
+                          f'not PENDING_EXPIRY. Nothing to confirm.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = ConfirmBatchExpirySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        old_status = batch.status
+        batch.expiry_date = serializer.validated_data['expiry_date']
+        batch.status = 'ACTIVE'
+        batch.save(update_fields=['expiry_date', 'status'])
+
+        new_avg = None
+        if batch.product is not None:
+            # R7 batches (product=NULL, flagged for review) can't get a
+            # WAC recalc until staff also resolves the product match --
+            # confirming expiry alone doesn't fix a missing product link.
+            new_avg = _recalculate_avg_cost_price(batch.product)
+
+        log_action(
+            user=request.user, action='UPDATE', table_name='purchase_batch',
+            record_id=batch.id,
+            old_value={'status': old_status, 'expiry_date': None},
+            new_value={'status': batch.status, 'expiry_date': str(batch.expiry_date)},
+            request=request,
+        )
+
+        return Response({
+            'message': f'Batch {batch.id} confirmed and moved to ACTIVE.',
+            'id': batch.id,
+            'product': batch.product.product_name if batch.product else None,
+            'status': batch.status,
+            'expiry_date': str(batch.expiry_date),
+            'avg_cost_price_after_recalc': str(new_avg) if new_avg is not None else None,
+        })
+
+
+# ─────────────────────────────────────────────────────────────────
+# POST /api/batches/confirm-expiry/bulk/
+# Confirms many PENDING_EXPIRY batches in one call -- needed because
+# a single invoice can produce dozens of PENDING_EXPIRY batches at
+# once, and confirming them one at a time isn't realistic for real
+# invoice volume.
+#
+# Body:
+# {
+#   "batches": [
+#     {"batch_id": 101, "expiry_date": "2026-09-01"},
+#     {"batch_id": 102, "expiry_date": "2026-08-15"}
+#   ]
+# }
+#
+# Partial-success pattern, matching the PDF upload view's style:
+# valid batches are confirmed even if others in the same request fail.
+# ─────────────────────────────────────────────────────────────────
+class BulkConfirmBatchExpiryView(APIView):
+    def post(self, request):
+        serializer = BulkConfirmBatchExpirySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        confirmed = []
+        failed = []
+        affected_products = set()
+
+        # Bulk-fetch every requested batch up front — was previously one
+        # PurchaseBatch.objects.get(pk=...) query PER batch inside the loop
+        # below. Bounded by request size (one invoice's PENDING_EXPIRY
+        # batches, typically dozens), so this was never a severe bottleneck,
+        # but it's a free fix while touching this view for the pagination
+        # changes above.
+        requested_ids = [item['batch_id'] for item in serializer.validated_data['batches']]
+        batches_by_id = {
+            b.id: b for b in PurchaseBatch.objects.filter(pk__in=requested_ids)
+        }
+
+        with transaction.atomic():
+            for item in serializer.validated_data['batches']:
+                batch_id = item['batch_id']
+                expiry_date = item['expiry_date']
+
+                batch = batches_by_id.get(batch_id)
+                if batch is None:
+                    failed.append({
+                        'batch_id': batch_id,
+                        'reason': 'Batch not found',
+                    })
+                    continue
+
+                if batch.status != 'PENDING_EXPIRY':
+                    failed.append({
+                        'batch_id': batch_id,
+                        'reason': f'Status is {batch.status}, not PENDING_EXPIRY',
+                    })
+                    continue
+
+                old_status = batch.status
+                batch.expiry_date = expiry_date
+                batch.status = 'ACTIVE'
+                batch.save(update_fields=['expiry_date', 'status'])
+
+                log_action(
+                    user=request.user, action='UPDATE', table_name='purchase_batch',
+                    record_id=batch.id,
+                    old_value={'status': old_status, 'expiry_date': None},
+                    new_value={'status': batch.status, 'expiry_date': str(batch.expiry_date)},
+                    request=request,
+                )
+
+                confirmed.append({
+                    'batch_id': batch.id,
+                    'product': batch.product.product_name if batch.product else None,
+                    'expiry_date': str(batch.expiry_date),
+                })
+
+                if batch.product is not None:
+                    affected_products.add(batch.product)
+
+            # Recalc WAC once per unique product, same optimization
+            # pattern as Fix 8 in serializers.py -- avoids N recalcs
+            # for N batches of the same product in one bulk request.
+            wac_updates = {}
+            for product in affected_products:
+                new_avg = _recalculate_avg_cost_price(product)
+                if new_avg is not None:
+                    wac_updates[product.product_name] = str(new_avg)
+
+        return Response({
+            'message': f'{len(confirmed)} batch(es) confirmed, {len(failed)} failed.',
+            'confirmed_count': len(confirmed),
+            'failed_count': len(failed),
+            'confirmed': confirmed,
+            'failed': failed,
+            'wac_updates': wac_updates,
+        }, status=status.HTTP_200_OK if confirmed else status.HTTP_400_BAD_REQUEST)
+
+class PurchaseInvoicePDFUploadView(APIView):
+    """
+    Upload a single supplier invoice PDF. Implements Pipeline 4 rules
+    R1-R9 from Data_Ingestion_Rules_v3.pdf Section 11.
+    """
+
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        file = request.FILES.get('file')
+
+        if not file:
+            return Response(
+                {'error': 'No file uploaded. Send file as form-data with key "file"'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not file.name.endswith('.pdf'):
+            return Response(
+                {'error': 'File must be a PDF'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        upload_log = UploadLog.objects.create(
+            file_name=file.name,
+            upload_type='SUPPLIER_INVOICE',
+            status='PARTIAL',
+            error_message='',
+        )
+
+        try:
+            import pdfplumber
+            import io
+
+            pdf_bytes = file.read()
+
+            bill_no = None
+            supplier_name = None
+            purchase_date = None
+            item_lines = []
+
+            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if not text:
+                        continue
+
+                    for line in text.split('\n'):
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        if bill_no is None:
+                            m = _BILL_SUPPLIER_PATTERN.search(line)
+                            if m:
+                                bill_no = m.group(1).strip()
+                                supplier_name = m.group(2).strip()
+                                continue
+
+                        if purchase_date is None:
+                            m = _DATE_PATTERN.search(line)
+                            if m:
+                                try:
+                                    purchase_date = datetime.datetime.strptime(
+                                        m.group(1), '%d-%b-%Y'
+                                    ).date()
+                                except ValueError:
+                                    pass  # R3 handles this below (still None)
+                                continue
+
+                        if any(kw in line for kw in _SKIP_LINE_KEYWORDS):
+                            continue
+
+                        m = _ITEM_LINE_PATTERN.match(line)
+                        if m:
+                            item_code, desc, qty, free_qty, cost_unit, cost_total, \
+                                sell_qty, sell_unit, sell_total = m.groups()
+                            item_lines.append({
+                                'item_code': item_code,
+                                'description': desc.strip(),
+                                'qty': _parse_decimal(qty),
+                                'cost_unit': _parse_decimal(cost_unit),
+                                'cost_total_stated': _parse_decimal(cost_total),
+                                'sell_unit': _parse_decimal(sell_unit),
+                                'raw_line': line,
+                            })
+
+            # ── Header validation ────────────────────────────────────────────
+            if not bill_no or not supplier_name:
+                upload_log.status = 'FAILED'
+                upload_log.error_message = 'Could not extract Bill No / Supplier from PDF header'
+                upload_log.save()
+                return Response(
+                    {'error': upload_log.error_message},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # ── R3: date missing / unparseable / future -> REJECT, LOG_ERROR ──
+            today = timezone.now().date()
+            if not purchase_date:
+                upload_log.status = 'FAILED'
+                upload_log.error_message = 'R3: Invoice date missing or unparseable'
+                upload_log.save()
+                return Response(
+                    {'error': 'R3 violation: could not extract a valid purchase date from PDF'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if purchase_date > today:
+                upload_log.status = 'FAILED'
+                upload_log.error_message = f'R3: Invoice date {purchase_date} is in the future'
+                upload_log.save()
+                return Response(
+                    {'error': f'R3 violation: invoice date {purchase_date} is in the future'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if not item_lines:
+                upload_log.status = 'FAILED'
+                upload_log.error_message = 'No item lines could be parsed from this invoice'
+                upload_log.save()
+                return Response(
+                    {'error': 'No item lines could be parsed from this invoice'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # ── R1: match the supplier or create it from the invoice header ──
+            supplier_created = False
+            try:
+                supplier = Supplier.objects.get(supplier_name__iexact=supplier_name)
+            except Supplier.DoesNotExist:
+                supplier = Supplier.objects.create(supplier_name=supplier_name)
+                supplier_created = True
+            except Supplier.MultipleObjectsReturned:
+                upload_log.status = 'FAILED'
+                upload_log.error_message = f'Multiple suppliers matched "{supplier_name}"'
+                upload_log.save()
+                return Response(
+                    {'error': f'Multiple suppliers matched "{supplier_name}" - ambiguous, needs manual resolution'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # ── R2: duplicate invoice (supplier + invoice_number) -> REJECT ────
+            existing = Purchase.objects.filter(
+                supplier=supplier, invoice_number=bill_no
+            ).first()
+            if existing:
+                upload_log.status = 'FAILED'
+                upload_log.error_message = f'R2: Duplicate invoice {bill_no} for {supplier_name}'
+                upload_log.save()
+                return Response(
+                    {
+                        'error': f'R2 violation: invoice {bill_no} for {supplier_name} already exists',
+                        'existing_purchase_id': existing.id,
+                        'existing_purchase_date': str(existing.purchase_date),
+                        'existing_total_amount': str(existing.total_amount),
+                    },
+                    status=status.HTTP_409_CONFLICT
+                )
+
+            # ── Process line items ─────────────────────────────────────────────
+            inserted = []
+            auto_corrected = []
+            products_created = []
+            flagged_for_review = []   # R7: product=NULL, batch still created
+            skipped = []              # R4/R5: line dropped entirely
+            warnings = []             # R6/R8: logged, doesn't block anything
+            total_amount = Decimal('0')
+
+            with transaction.atomic():
+                purchase = Purchase.objects.create(
+                    supplier=supplier,
+                    purchase_date=purchase_date,
+                    invoice_number=bill_no,
+                    total_amount=Decimal('0'),
+                )
+
+                for line in item_lines:
+                    product_name = line['description']
+                    qty = line['qty']
+                    cost_unit = line['cost_unit']
+                    cost_total_stated = line['cost_total_stated']
+                    sell_unit = line['sell_unit']
+
+                    # ── R5: qty <= 0 -> SKIP line, LOG_ERROR ───────────────────
+                    if qty is None or qty <= 0:
+                        skipped.append({
+                            'item_code': line['item_code'],
+                            'description': product_name,
+                            'reason': f'R5: qty <= 0 or unparseable (qty={qty})',
+                        })
+                        continue
+
+                    # ── R4: cost price <= 0 -> SKIP line, LOG_ERROR ────────────
+                    if cost_unit is None or cost_unit <= 0:
+                        skipped.append({
+                            'item_code': line['item_code'],
+                            'description': product_name,
+                            'reason': f'R4: cost price <= 0 or unparseable (cost={cost_unit})',
+                        })
+                        continue
+
+                    # ── R6: cost total cross-check -> LOG_WARNING, use computed ─
+                    computed_total = (cost_unit * qty).quantize(Decimal('0.01'))
+                    final_cost_price = cost_unit  # always use computed unit cost as batch basis
+                    if cost_total_stated is not None:
+                        diff = abs(computed_total - cost_total_stated)
+                        if diff > _COST_TOTAL_TOLERANCE:
+                            warnings.append({
+                                'item_code': line['item_code'],
+                                'description': product_name,
+                                'rule': 'R6',
+                                'message': f'Stated cost total {cost_total_stated} differs from '
+                                           f'computed (qty*unit={computed_total}) by {diff} '
+                                           f'- using computed value',
+                            })
+
+                    # ── Product matching: exact match, then narrow auto-correct,
+                    #     then R7 fallback (product=NULL, flagged) ────────────────
+                    product = None
+                    was_auto_corrected = False
+                    product_match_ambiguous = False
+
+                    try:
+                        product = Product.objects.get(product_name__iexact=product_name)
+                    except Product.DoesNotExist:
+                        resolved = _try_resolve_truncated_product(product_name)
+                        if resolved is not None:
+                            product = resolved
+                            was_auto_corrected = True
+                    except Product.MultipleObjectsReturned:
+                        product_match_ambiguous = True
+
+                    # Create a basic product when the invoice contains a new
+                    # item. Category and brand are intentionally left empty:
+                    # the invoice format does not provide reliable values for
+                    # either field and inventing them would corrupt master data.
+                    if product is None and not product_match_ambiguous and qty > 0 and cost_unit > 0:
+                        sku_code = (line['item_code'] or '').strip() or None
+                        if sku_code:
+                            sku_product = Product.objects.filter(
+                                sku_code__iexact=sku_code
+                            ).first()
+                            if sku_product is not None:
+                                product = sku_product
+
+                        if product is None:
+                            product = Product.objects.create(
+                                product_name=product_name,
+                                sku_code=sku_code,
+                                unit_price=sell_unit if sell_unit and sell_unit > 0 else cost_unit,
+                                cost_price=cost_unit,
+                                avg_cost_price=cost_unit,
+                                introduced_date=purchase_date,
+                                is_active=True,
+                            )
+                            products_created.append({
+                                'product_id': product.id,
+                                'product_name': product.product_name,
+                                'sku_code': product.sku_code,
+                            })
+
+                    # ── R8: selling price differs from Product.unit_price ──────
+                    if product is not None and sell_unit is not None:
+                        current_unit_price = product.unit_price
+                        if current_unit_price and abs(sell_unit - current_unit_price) > Decimal('0.01'):
+                            warnings.append({
+                                'item_code': line['item_code'],
+                                'description': product_name,
+                                'rule': 'R8',
+                                'product_id': product.id,
+                                'invoice_number': bill_no,
+                                'invoice_price': str(sell_unit),
+                                'current_price': str(current_unit_price),
+                                'message': f'Invoice selling price {sell_unit} differs from '
+                                           f'Product.unit_price {current_unit_price} - '
+                                           f'NOT auto-updated, staff review needed',
+                            })
+
+                    # ── R9: expiry never present -> PENDING_EXPIRY status ───────
+                    batch = PurchaseBatch.objects.create(
+                        purchase=purchase,
+                        product=product,  # may be None -> R7
+                        quantity_received=int(qty),
+                        cost_price=final_cost_price,
+                        expiry_date=None,
+                        remaining_quantity=int(qty),
+                        status='PENDING_EXPIRY',
+                    )
+
+                    entry = {
+                        'item_code': line['item_code'],
+                        'description': product_name,
+                        'product': product.product_name if product else None,
+                        'quantity_received': int(qty),
+                        'cost_price': str(final_cost_price),
+                        'batch_id': batch.id,
+                        'batch_status': 'PENDING_EXPIRY',
+                    }
+
+                    if product is None:
+                        # Keep the defensive fallback for malformed/ambiguous
+                        # lines that cannot be safely assigned to a product.
+                        entry['reason'] = (
+                            'Multiple products matched this name - flagged for staff review'
+                            if product_match_ambiguous else
+                            'Product could not be resolved safely - flagged for staff review'
+                        )
+                        flagged_for_review.append(entry)
+                        continue
+
+                    # Update most-recent cost_price (informational field)
+                    product.cost_price = final_cost_price
+                    product.save(update_fields=['cost_price'])
+
+                    # Recalculate avg_cost_price as a true weighted average
+                    # across ALL batches for this product -- fixes the
+                    # "frozen after first purchase" bug Randika flagged.
+                    _recalculate_avg_cost_price(product)
+
+                    total_amount += final_cost_price * qty
+
+                    if was_auto_corrected:
+                        entry['auto_corrected_from'] = product_name
+                        auto_corrected.append(entry)
+                    else:
+                        inserted.append(entry)
+
+                purchase.total_amount = total_amount
+                purchase.save(update_fields=['total_amount'])
+
+            # ── Finalize UploadLog ──────────────────────────────────────────────
+            log_notes = []
+            if supplier_created:
+                log_notes.append(f'CREATED supplier [{supplier.supplier_name}]')
+            for created in products_created:
+                log_notes.append(
+                    f"CREATED product [{created['product_name']}]"
+                )
+            for s in skipped:
+                log_notes.append(f"SKIPPED [{s['item_code']}] {s['reason']}")
+            for f in flagged_for_review:
+                log_notes.append(f"FLAGGED [{f['item_code']}] {f['reason']}")
+            for w in warnings:
+                log_notes.append(f"WARNING [{w['rule']}] [{w['item_code']}] {w['message']}")
+
+            # R6/R8 warnings are non-blocking. The purchase is successful;
+            # only skipped lines or unresolved products make the upload partial.
+            if skipped or flagged_for_review:
+                upload_log.status = 'PARTIAL'
+            else:
+                upload_log.status = 'SUCCESS'
+            upload_log.error_message = '\n'.join(log_notes)[:2000]
+            upload_log.save()
+
+            for warning in warnings:
+                if warning.get('rule') != 'R8' or not warning.get('product_id'):
+                    continue
+                Notification.objects.create(
+                    user=None,
+                    customer=None,
+                    type='PRICE_REVIEW',
+                    priority='MEDIUM',
+                    title='Invoice price review required',
+                    message=(
+                        f"{warning['description']}: invoice selling price "
+                        f"Rs {warning['invoice_price']} differs from the current "
+                        f"product price Rs {warning['current_price']}. "
+                        f"Review and manually update the product price."
+                    ),
+                    reference_table='product',
+                    reference_id=warning['product_id'],
+                )
+
+            return Response({
+                'message': 'Purchase invoice PDF upload complete',
+                'upload_log_id': upload_log.id,
+                'supplier': supplier.supplier_name,
+                'supplier_created': supplier_created,
+                'invoice_number': bill_no,
+                'purchase_date': str(purchase_date),
+                'purchase_id': purchase.id,
+                'total_amount': str(total_amount),
+                'batches_created': len(inserted) + len(auto_corrected) + len(flagged_for_review),
+                'inserted_count': len(inserted),
+                'auto_corrected_count': len(auto_corrected),
+                'products_created_count': len(products_created),
+                'products_created': products_created,
+                'flagged_for_review_count': len(flagged_for_review),
+                'lines_skipped_count': len(skipped),
+                'warnings_count': len(warnings),
+                'inserted': inserted,
+                'auto_corrected': auto_corrected,
+                'flagged_for_review': flagged_for_review,
+                'skipped': skipped,
+                'warnings': warnings,
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            upload_log.status = 'FAILED'
+            upload_log.error_message = str(e)[:2000]
+            upload_log.save()
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )

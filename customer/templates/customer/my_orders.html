@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Orders | SmartDeals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #333; }
+
+        /* ── Nav ── */
+        nav {
+            background: #1a73e8; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        nav .nav-links a { color: white; text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+        nav .nav-links a:hover { text-decoration: underline; }
+        nav .logout-btn {
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            padding: 7px 16px; border-radius: 20px; margin-left: 20px;
+            cursor: pointer; font-size: 0.9rem;
+        }
+
+        /* ── Page ── */
+        .page { padding: 24px; max-width: 800px; margin: 0 auto; }
+
+        .page-header {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-bottom: 20px;
+        }
+        .page-title { font-size: 1.3rem; font-weight: 700; color: #222; }
+        .order-count {
+            font-size: 0.85rem; background: #e8f0fe;
+            color: #1a73e8; padding: 4px 12px;
+            border-radius: 12px; font-weight: 500;
+        }
+
+        
+        .order-card:hover { transform: translateY(-2px); }
+
+        .order-info .reference {
+            font-size: 0.82rem; color: #888; margin-bottom: 4px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .order-info .product-name {
+            font-size: 1rem; font-weight: 700;
+            color: #222; margin-bottom: 8px;
+        }
+        .order-info .details {
+            font-size: 0.85rem; color: #666;
+            display: flex; gap: 14px; flex-wrap: wrap;
+        }
+        .order-info .details span {
+            display: flex; align-items: center; gap: 4px;
+        }
+
+        .order-right { text-align: right; flex-shrink: 0; }
+        .order-right .total {
+            font-size: 1.1rem; font-weight: 700;
+            color: #1a73e8; margin-bottom: 8px;
+        }
+
+        /* ── Status badges — all 5 ── */
+        .status-badge {
+            display: inline-block; padding: 5px 14px;
+            border-radius: 12px; font-size: 0.78rem; font-weight: 600;
+        }
+        .status-PENDING   { background: #f0f0f0; color: #666; }
+        .status-CONFIRMED { background: #e8f0fe; color: #1a73e8; }
+        .status-READY     { background: #e6f4ea; color: #1e7e34; }
+        .status-COMPLETED { background: #e8eaed; color: #444; }
+        .status-CANCELLED { background: #fce8e6; color: #c5221f; }
+
+        /* ── Loading state ── */
+        .loading-state {
+            text-align: center; padding: 60px 20px; color: #888;
+        }
+        .loading-state .spinner {
+            width: 40px; height: 40px; border: 4px solid #e8f0fe;
+            border-top: 4px solid #1a73e8; border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Empty state ── */
+        .empty-state {
+            text-align: center; padding: 60px 20px; color: #888;
+        }
+        .empty-state .icon { font-size: 3.5rem; margin-bottom: 16px; }
+        .empty-state h3 { font-size: 1.1rem; color: #444; margin-bottom: 8px; }
+        .empty-state p { font-size: 0.9rem; margin-bottom: 20px; }
+        .empty-state a {
+            background: #1a73e8; color: white; text-decoration: none;
+            padding: 10px 24px; border-radius: 8px; font-size: 0.95rem;
+        }
+
+        /* ── Mobile ── */
+        @media (max-width: 480px) {
+            .order-card { flex-direction: column; }
+            .order-right { text-align: left; }
+            nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
+            .page { padding: 16px; }
+        }
+
+        .timeline {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-top: 12px; padding: 12px 0;
+        }
+        .timeline-step {
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+            flex: 1; position: relative;
+        }
+        .timeline-step:not(:last-child)::after {
+            content: ''; position: absolute;
+            top: 14px; left: 50%; width: 100%;
+            height: 2px; background: #ddd; z-index: 0;
+        }
+        .timeline-step.done::after { background: #1a73e8; }
+        .step-dot {
+            width: 28px; height: 28px; border-radius: 50%;
+            background: #ddd; display: flex; align-items: center;
+            justify-content: center; font-size: 0.7rem; z-index: 1;
+            font-weight: 700; color: white;
+        }
+        .timeline-step.done .step-dot { background: #1a73e8; }
+        .timeline-step.current .step-dot { background: #1a73e8; box-shadow: 0 0 0 4px #e8f0fe; }
+        .step-label { font-size: 0.7rem; color: #888; text-align: center; }
+        .timeline-step.done .step-label,
+        .timeline-step.current .step-label { color: #1a73e8; font-weight: 600; }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .modal-box {
+            background: white; border-radius: 16px; padding: 28px;
+            max-width: 400px; width: 90%; text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .modal-box h3 { font-size: 1.1rem; color: #222; margin-bottom: 6px; }
+        .modal-box p { font-size: 0.88rem; color: #666; margin-bottom: 16px; }
+
+        .star-row {
+            display: flex; justify-content: center; gap: 8px;
+            margin-bottom: 16px;
+        }
+        .star {
+            font-size: 2rem; cursor: pointer; color: #ddd;
+            transition: color 0.15s;
+        }
+        .star.active { color: #f4b400; }
+
+        .feedback-input {
+            width: 100%; padding: 10px 14px;
+            border: 1.5px solid #ddd; border-radius: 8px;
+            font-size: 0.9rem; resize: vertical;
+            min-height: 80px; margin-bottom: 16px;
+            font-family: 'Segoe UI', sans-serif;
+            outline: none;
+        }
+        .feedback-input:focus { border-color: #1a73e8; }
+
+        .modal-buttons { display: flex; gap: 10px; }
+        .modal-btn {
+            flex: 1; padding: 11px; border-radius: 8px;
+            font-size: 0.95rem; font-weight: 600; cursor: pointer; border: none;
+        }
+        .modal-btn.primary { background: #1a73e8; color: white; }
+        .modal-btn.primary:hover { background: #1558b0; }
+        .modal-btn.outline {
+            background: white; color: #666; border: 1.5px solid #ddd;
+        }
+        /* ── Order Detail Modal ── */
+        .order-modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+            padding: 16px;
+        }
+        .order-modal-box {
+            background: white; border-radius: 16px;
+            width: 100%; max-width: 520px;
+            max-height: 85vh; overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .order-modal-header {
+            background: #1a73e8; padding: 20px 24px;
+            border-radius: 16px 16px 0 0;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .order-modal-header h3 { color: white; font-size: 1.1rem; }
+        .order-modal-close {
+            background: rgba(255,255,255,0.2); color: white;
+            border: none; border-radius: 50%; width: 30px; height: 30px;
+            cursor: pointer; font-size: 1.1rem; display: flex;
+            align-items: center; justify-content: center;
+        }
+        .order-modal-body { padding: 24px; }
+        .order-modal-section { margin-bottom: 20px; }
+        .order-modal-section h4 {
+            font-size: 0.85rem; color: #888;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            margin-bottom: 10px; font-weight: 600;
+        }
+        .order-detail-row {
+            display: flex; justify-content: space-between;
+            font-size: 0.92rem; padding: 6px 0;
+            border-bottom: 1px solid #f0f0f0; color: #444;
+        }
+        .order-detail-row:last-child { border-bottom: none; }
+        .order-detail-row .label { color: #888; }
+        .order-detail-row .value { font-weight: 600; color: #222; }
+        .order-item-row {
+            display: flex; justify-content: space-between;
+            padding: 8px 12px; background: #f8f9fa;
+            border-radius: 8px; margin-bottom: 6px; font-size: 0.9rem;
+        }
+        .order-item-name { color: #333; font-weight: 500; }
+        .order-item-price { color: #1a73e8; font-weight: 700; }
+        .order-modal-total {
+            display: flex; justify-content: space-between;
+            padding: 12px 0; font-size: 1rem;
+            font-weight: 700; color: #222;
+            border-top: 2px solid #eee; margin-top: 8px;
+        }
+        .order-modal-total .total-amount { color: #1a73e8; font-size: 1.2rem; }
+        .modal-action-btn {
+            width: 100%; padding: 12px; border-radius: 8px;
+            font-size: 0.95rem; font-weight: 600; cursor: pointer;
+            border: none; margin-top: 8px;
+        }
+        .modal-action-btn.cancel-btn {
+            background: white; color: #c5221f;
+            border: 1.5px solid #c5221f;
+        }
+        .modal-action-btn.rate-btn {
+            background: #e8f0fe; color: #1a73e8;
+            border: 1.5px solid #1a73e8;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <div class="nav-links"  id="navLinks">
+        <a href="/customer/products/">Products</a>
+        <a href="/customer/chatbot/">Chat with Us</a>
+        <a href="/customer/my-orders/">My Orders</a>
+        <a href="/customer/profile/">My Profile</a>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+</nav>
+
+<!-- Page -->
+<div class="page">
+    <div class="page-header">
+        <div class="page-title">📋 My Orders</div>
+        <span class="order-count" id="orderCount"></span>
+    </div>
+    <div id="ordersList"></div>
+</div>
+
+<!-- Rating Modal -->
+<div class="modal-overlay" id="ratingModal" style="display:none;">
+    <div class="modal-box">
+        <h3>⭐ Rate Your Order</h3>
+        <p id="ratingProductName">How was your experience?</p>
+
+        <div class="star-row" id="starRow">
+            <span class="star" onclick="setRating(1)">★</span>
+            <span class="star" onclick="setRating(2)">★</span>
+            <span class="star" onclick="setRating(3)">★</span>
+            <span class="star" onclick="setRating(4)">★</span>
+            <span class="star" onclick="setRating(5)">★</span>
+        </div>
+
+        <textarea class="feedback-input" id="feedbackText"
+            placeholder="Share your experience (optional)..."></textarea>
+
+        <div class="modal-buttons">
+            <button class="modal-btn outline" onclick="closeRatingModal()">Cancel</button>
+            <button class="modal-btn primary" onclick="submitRating()">Submit Rating</button>
+        </div>
+    </div>
+</div>
+
+<!-- Order Detail Modal -->
+<div class="order-modal-overlay" id="orderDetailModal" style="display:none;">
+    <div class="order-modal-box">
+        <div class="order-modal-header">
+            <h3 id="modalOrderRef">Order Details</h3>
+            <button class="order-modal-close" onclick="closeOrderModal()">✕</button>
+        </div>
+        <div class="order-modal-body" id="orderModalBody">
+        </div>
+    </div>
+</div>
+
+  
+<script>
+    let ordersData = []; 
+    const token = sessionStorage.getItem('jwt');
+    if (!token) window.location.href = '/customer/login/';    
+    const slotLabel = {
+        MORNING:   '🌅 Morning',
+        AFTERNOON: '☀️ Afternoon',
+        EVENING:   '🌙 Evening'
+    };
+
+    const statusColors = {
+        PENDING:   { bg: '#f0f0f0',  color: '#666'     },
+        CONFIRMED: { bg: '#e8f0fe',  color: '#1a73e8'  },
+        READY:     { bg: '#e6f4ea',  color: '#1e7e34'  },
+        COMPLETED: { bg: '#e8eaed',  color: '#444'     },
+        CANCELLED: { bg: '#fce8e6',  color: '#c5221f'  },
+        EXPIRED:   { bg: '#fff3cd',  color: '#856404'  },
+    };
+
+    function openOrderModal(index) {
+        const o = ordersData[index];
+        if (!o) return;
+
+        const status = o.status || 'PENDING';
+        const sc     = statusColors[status] || statusColors.PENDING;
+
+        document.getElementById('modalOrderRef').textContent =
+            `📄 ${o.ref || o.order_reference || 'Order'}`;
+
+        // Build items list
+        const itemsHTML = o.items && o.items.length > 0
+            ? o.items.map(item => `
+                <div class="order-item-row">
+                    <span class="order-item-name">
+                        ${item.product_name || item.name || item.product} × ${item.quantity}
+                    </span>
+                    <span class="order-item-price">
+                        Rs ${parseFloat((item.unit_price || 0) * item.quantity).toFixed(2)}
+                    </span>
+                </div>`).join('')
+            : `<div class="order-item-row">
+                    <span class="order-item-name">${o.product || 'Products'}</span>
+                    <span class="order-item-price">${o.total || ''}</span>
+            </div>`;
+
+        console.log('Order object:', o);
+        console.log('product_id:', o.product_id);
+        console.log('items:', o.items);
+
+        // Action buttons
+        const hasRating = (o.items || []).some(item => item.rating);
+        const actionBtns = status === 'PENDING'
+            ? `<button class="modal-action-btn cancel-btn"
+                    onclick="closeOrderModal(); cancelOrder(${o.id || 0}, '${o.ref || ''}')">
+                    ❌ Cancel Order
+            </button>`
+        : status === 'COMPLETED' && !hasRating
+        ? `<button class="modal-action-btn rate-btn"
+                onclick="closeOrderModal(); openRatingModal(${parseInt(o.product_id || o.items?.[0]?.product_id || 0)}, '${(o.product || o.items?.[0]?.product_name || '').replace(/'/g, '')}', ${o.id})">                ⭐ Rate This Order
+            </button>`           
+        : '';
+
+        // Rating
+        const ratedItems = (o.items || []).filter(item => item.rating);
+        const ratingHTML = ratedItems.length ? `
+            <div class="order-modal-section">
+                <h4>Your Rating</h4>
+                ${ratedItems.map(item => {
+                    const value = parseInt(item.rating.rating);
+                    return `<div style="color:#f4b400; font-size:1.1rem; margin-bottom:4px;">
+                        ${item.product_name}: ${'★'.repeat(value)}${'☆'.repeat(5 - value)}
+                        <span style="color:#666; font-size:0.85rem; margin-left:8px;">${value}/5</span>
+                    </div>`;
+                }).join('')}
+            </div>` : '';
+
+        document.getElementById('orderModalBody').innerHTML = `
+            <div class="order-modal-section">
+                <h4>Order Status</h4>
+                <span style="background:${sc.bg}; color:${sc.color};
+                    padding:6px 16px; border-radius:12px;
+                    font-weight:700; font-size:0.9rem;">
+                    ${status}
+                </span>
+            </div>
+
+            <div class="order-modal-section">
+                <h4>Pickup Details</h4>
+                <div class="order-detail-row">
+                    <span class="label">Date</span>
+                    <span class="value">📅 ${o.date || o.pickup_date || 'N/A'}</span>
+                </div>
+                <div class="order-detail-row">
+                    <span class="label">Time Slot</span>
+                    <span class="value">
+                        ${slotLabel[o.slot || o.pickup_time_slot] || o.slot || 'N/A'}
+                    </span>
+                </div>
+                <div class="order-detail-row">
+                    <span class="label">Reference</span>
+                    <span class="value">${o.ref || o.order_reference || 'N/A'}</span>
+                </div>
+                <div class="order-detail-row">
+                    <span class="label">Collection deadline</span>
+                    <span class="value">${o.collection_deadline || 'N/A'}</span>
+                </div>
+            </div>
+
+            <div class="order-modal-section">
+                <h4>Items Ordered</h4>
+                ${itemsHTML}
+                <div class="order-modal-total">
+                    <span>Total Amount</span>
+                    <span class="total-amount">${o.total || 'Rs ' + parseFloat(o.total_amount || 0).toFixed(2)}</span>
+                </div>
+            </div>
+
+            ${ratingHTML || `<div class="order-modal-section"><h4>Your Rating</h4><div style="color:#888;">Not rated</div></div>`}
+            ${actionBtns}
+        `;
+
+        document.getElementById('orderDetailModal').style.display = 'flex';
+    }
+
+    function closeOrderModal() {
+        document.getElementById('orderDetailModal').style.display = 'none';
+    }
+
+    // Close when clicking outside
+    document.getElementById('orderDetailModal').addEventListener('click', function(e) {
+        if (e.target === this) closeOrderModal();
+    });
+
+    
+
+    // ── Dynamic nav bar ──────────────────────────────────────────
+    function buildNav() {
+        const token = sessionStorage.getItem('jwt');
+        const nav   = document.getElementById('navLinks');
+
+        if (token) {
+            // Logged in nav
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
+                <a href="/customer/my-orders/">My Orders</a>
+                <a href="/customer/profile/">My Profile</a>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            `;
+        } else {
+            // Guest nav
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
+                <a href="/customer/register/" style="background:white;color:#1a73e8;padding:7px 16px;border-radius:20px;margin-left:20px;font-weight:600;">Register</a>
+                <a href="/customer/login/" style="background:rgba(255,255,255,0.2);color:white;padding:7px 16px;border-radius:20px;margin-left:8px;">Login</a>
+            `;
+        }
+        updateCartBadge();
+    }
+    
+    // ── Show loading state ────────────────────────────────────────
+    function showLoading() {
+        document.getElementById('ordersList').innerHTML = `
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading your orders...</p>
+            </div>`;
+        document.getElementById('orderCount').textContent = '';
+    }
+
+    // ── Show empty state ─────────────────────────────────────────
+    function showEmpty() {
+        document.getElementById('ordersList').innerHTML = `
+            <div class="empty-state">
+                <div class="icon">📋</div>
+                <h3>No orders yet</h3>
+                <p>You haven't placed any orders yet.<br>
+                   Browse our near-expiry deals and grab a bargain!</p>
+                <a href="/customer/products/">Browse Products</a>
+            </div>`;
+        document.getElementById('orderCount').textContent = '0 orders';
+    }
+
+    // ── Render order cards ────────────────────────────────────────
+    function renderOrders(orders) {
+        ordersData = orders; 
+        const list = document.getElementById('ordersList');
+
+        if (orders.length === 0) {
+            showEmpty();
+            return;
+        }
+
+        document.getElementById('orderCount').textContent =
+            `${orders.length} order${orders.length > 1 ? 's' : ''}`;
+
+        list.innerHTML = orders.map(o => {
+            const productName = o.product || o.product_name || o.item || 'Product';
+            const orderId     = o.id || null;
+            const orderRef    = o.ref || o.reference || o.order_reference || 'N/A';
+            const status      = o.status || 'PENDING';
+            const sc          = statusColors[status] || statusColors.PENDING;
+
+        return `
+            <div class="order-card" onclick="openOrderModal(${orders.indexOf(o)})"
+                style="cursor:pointer; padding:16px 20px; margin-bottom:10px;
+                background:white; border-radius:12px;
+                box-shadow:0 2px 8px rgba(0,0,0,0.07);
+                transition: transform 0.15s, box-shadow 0.15s;"
+                onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(0,0,0,0.12)'"
+                onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.07)'">
+
+                <!-- Row 1: Reference + Status -->
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <span style="font-size:0.82rem; color:#888; font-weight:600;">
+                        📄 ${orderRef}
+                    </span>
+                    <span style="background:${sc.bg}; color:${sc.color};
+                        padding:4px 12px; border-radius:12px;
+                        font-size:0.78rem; font-weight:700;">
+                        ${status}
+                    </span>
+                </div>
+
+                <!-- Row 2: Product name -->
+                <div style="font-weight:700; color:#222; font-size:0.95rem; margin-bottom:8px;">
+                    ${productName.length > 60 ? productName.substring(0, 60) + '...' : productName}
+                </div>
+
+                <!-- Row 3: Date + Total + Tap hint -->
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-size:0.82rem; color:#888;">
+                        📅 ${o.date || o.pickup_date || 'N/A'}
+                    </span>
+                    <div style="text-align:right;">
+                        <div style="font-weight:700; color:#1a73e8; font-size:1rem;">
+                            ${o.total || o.total_price || ''}
+                        </div>
+                        <div style="font-size:0.72rem; color:#1a73e8; margin-top:2px;">
+                            Tap for details →
+                        </div>
+                        ${o.rating_count ? ` 
+                        <div style="color:#f4b400; font-size:0.82rem; margin-top:4px;">
+                            ${'★'.repeat(parseInt(o.rating))}${'☆'.repeat(5-parseInt(o.rating))}
+                            (${o.rating}/5)
+                        </div>` : `<div style="font-size:0.76rem; color:#888; margin-top:4px;">Not rated</div>`}
+                    </div>
+                </div>
+
+            </div>`;
+        }).join('');   
+    }
+
+    async function cancelOrder(orderId, ref) {
+        if (!confirm('Are you sure you want to cancel this order?')) return;
+
+        // If no real ID — cancel from sessionStorage only
+        if (!orderId) {
+            const saved = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+            const updated = saved.map(o =>
+                o.ref === ref ? { ...o, status: 'CANCELLED' } : o
+            );
+            sessionStorage.setItem('myOrders', JSON.stringify(updated));
+            loadOrders();
+            return;
+        }
+
+        // Try real API
+        try {
+            const res = await fetch(`/api/orders/${orderId}/`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                }
+            });
+
+            if (res.ok) {
+                loadOrders();
+            } else {
+                alert('Could not cancel order. Please try again.');
+            }
+        } catch (err) {
+            alert('Connection error. Please try again.');
+        }
+    }
+
+    // ── Load orders ───────────────────────────────────────────────
+    async function loadOrders() {
+        showLoading();
+        const token = sessionStorage.getItem('jwt');
+
+        try {
+            const res = await fetch('/api/orders/my-orders/', {
+                headers: { 'Authorization': 'Bearer ' + token },
+                cache: 'no-store'
+            });
+
+            console.log('Orders API status:', res.status);
+
+            if (res.ok) {
+                const orders = await res.json();
+
+                if (orders.length > 0) {
+                    const mapped = orders.map(o => {
+                        // ── Find rating from items ──
+                        // rating is a dict: {rating: 5, feedback_text: ""}
+                        const ratedItem = o.items
+                            ? o.items.find(i => i.rating !== null && i.rating !== undefined)
+                            : null;
+                        const ratingValue = ratedItem?.rating?.rating || null;
+
+                        // ── Get first product ID ──
+                        const firstItem   = o.items && o.items.length > 0 ? o.items[0] : null;
+                        const productId   = firstItem ? parseInt(firstItem.product_id) : null;
+                        const productName = o.items
+                            ? o.items.map(i => i.product_name).join(', ')
+                            : 'Order';
+
+                        return {
+                            id:         o.id,
+                            ref:        o.order_reference,
+                            product:    productName,
+                            product_id: productId,
+                            items:      o.items || [],
+                            rating:     ratingValue,
+                            rating_count: o.items ? o.items.filter(i => i.rating).length : 0,
+                            qty:        o.items
+                                ? o.items.reduce((s, i) => s + i.quantity, 0)
+                                : 1,
+                            total:      `Rs ${parseFloat(o.total_amount || 0).toFixed(2)}`,
+                            date:       o.pickup_date,
+                            slot:       o.pickup_time_slot,
+                            status:     o.status,
+                            collection_deadline: o.collection_deadline
+                        };
+                    });
+
+                    renderOrders(mapped);
+                    return;
+                }
+            }
+        } catch (err) {
+            console.log('API error:', err);
+        }
+
+        // Fallback to sessionStorage
+        const saved = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+        renderOrders(saved);
+    }
+
+    function logout() {
+        const orders = sessionStorage.getItem('myOrders');
+        sessionStorage.clear();
+        if (orders) sessionStorage.setItem('myOrders', orders);
+        window.location.href = '/customer/login/';
+    }
+
+    function getTimeline(status) {
+        const steps = ['PENDING', 'CONFIRMED', 'READY', 'COMPLETED'];
+        const currentIndex = steps.indexOf(status);
+        if (status === 'CANCELLED') return '';
+
+        return `
+            <div class="timeline">
+                ${steps.map((step, i) => `
+                    <div class="timeline-step ${i < currentIndex ? 'done' : ''} ${i === currentIndex ? 'current' : ''}">
+                        <div class="step-dot">${i < currentIndex ? '✓' : i + 1}</div>
+                        <div class="step-label">${step}</div>
+                    </div>`).join('')}
+            </div>`;
+    }
+    // ── Rating ───────────────────────────────────────────────────
+    let currentRating    = 0;
+    let currentOrderId   = null;
+    let currentProductId = null;
+
+    function openRatingModal(productId, productName, orderId) {
+    currentRating    = 0;
+    currentProductId = productId;
+    currentOrderId   = orderId;
+
+        document.getElementById('ratingProductName').textContent =
+            `How was: ${productName}?`;
+        document.getElementById('feedbackText').value = '';
+        updateStars(0);
+        document.getElementById('ratingModal').style.display = 'flex';
+    }
+
+    function closeRatingModal() {
+        document.getElementById('ratingModal').style.display = 'none';
+        currentRating    = 0;
+        currentOrderId   = null;
+        currentProductId = null;
+    }
+
+    function setRating(rating) {
+        currentRating = rating;
+        updateStars(rating);
+    }
+
+    function updateStars(rating) {
+        const stars = document.querySelectorAll('.star');
+        stars.forEach((star, i) => {
+            star.classList.toggle('active', i < rating);
+        });
+    }
+
+    async function submitRating() {
+        if (currentRating === 0) {
+            alert('Please select a star rating!');
+            return;
+        }
+
+        const feedbackText = document.getElementById('feedbackText').value.trim();
+
+        try {
+            const res = await fetch('/api/ratings/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    product:       parseInt(currentProductId),
+                    order:         parseInt(currentOrderId),
+                    rating:        parseInt(currentRating),
+                    feedback_text: feedbackText
+                })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                closeRatingModal();
+                await loadOrders();
+                alert(`✅ Thank you for your rating!${data.is_verified ? ' (Verified purchase ✓)' : ''}`);
+                loadOrders();
+            } else {
+                console.error('Rating error:', data);
+                alert(data.error || JSON.stringify(data) || 'Could not submit rating. Please try again.');
+            } 
+       } catch (err) {
+            console.error('Rating error:', err);
+            alert('Connection error. Please try again.');
+        }
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('ratingModal').addEventListener('click', function(e) {
+        if (e.target === this) closeRatingModal();
+    });
+    
+    loadOrders();
+    
+</script>
+
+</body>
+</html>
