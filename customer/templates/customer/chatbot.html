@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with Us | SmartDeals</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #333; }
+
+        /* ── Nav ── */
+        nav {
+            background: #1a73e8; padding: 14px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
+        nav .nav-links a { color: white; text-decoration: none; margin-left: 20px; font-size: 0.95rem; }
+        nav .nav-links a:hover { text-decoration: underline; }
+        nav .logout-btn {
+            background: rgba(255,255,255,0.2); color: white;
+            border: none; padding: 7px 16px; border-radius: 20px;
+            margin-left: 20px; cursor: pointer; font-size: 0.9rem;
+        }
+
+        /* ── Demo Banner ── */
+        .demo-banner {
+            background: #fff3cd; border-bottom: 1px solid #ffc107;
+            color: #856404; padding: 8px 24px;
+            font-size: 0.88rem; text-align: center;
+        }
+
+        /* ── Page layout ── */
+        .page { padding: 20px; }
+
+        .chat-box {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        /* ── Chat Header ── */
+        .chat-header {
+            background: #1a73e8;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .bot-avatar {
+            width: 44px; height: 44px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0;
+        }
+        .bot-avatar::after { content: "AI"; font-size: 0.8rem; font-weight: 700; color: white; }
+        .bot-info h3 { font-size: 1rem; color: white; }
+        .bot-info p { font-size: 0.8rem; color: rgba(255,255,255,0.8); }
+        .online-dot {
+            width: 8px; height: 8px; background: #4caf50;
+            border-radius: 50%; display: inline-block; margin-right: 4px;
+        }
+
+        /* ── Messages ── */
+        .chat-messages {
+            padding: 20px;
+            height: 420px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            background: #f8f9fa;
+        }
+
+        .message { display: flex; gap: 10px; align-items: flex-end; }
+        .message.user { flex-direction: row-reverse; }
+
+        .avatar {
+            width: 32px; height: 32px; border-radius: 50%;
+            display: flex; align-items: center;
+            justify-content: center; font-size: 0; flex-shrink: 0;
+        }
+        .message.bot .avatar::after { content: "AI"; font-size: 0.7rem; font-weight: 700; }
+        .message.user .avatar::after { content: "You"; font-size: 0.62rem; font-weight: 700; }
+        .message.bot .avatar { background: #e8f0fe; }
+        .message.user .avatar { background: #e8f0fe; }
+
+        .bubble {
+            max-width: 70%; padding: 12px 16px;
+            border-radius: 18px; font-size: 0.93rem; line-height: 1.6;
+        }
+        .message.bot .bubble {
+            background: white; color: #333;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .message.user .bubble {
+            background: #1a73e8; color: white;
+            border-bottom-right-radius: 4px;
+        }
+        .chat-list-item { display: block; margin: 4px 0 4px 4px; padding-left: 14px; }
+        .chat-list-item::before { content: "•"; margin-left: -14px; margin-right: 8px; }
+
+        /* ── Product cards inside chat ── */
+        .product-list { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+        .mini-card {
+            background: #f0f4f8; border-radius: 8px; padding: 10px 12px;
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 8px;
+        }
+        .mini-card .pname { font-weight: 600; font-size: 0.88rem; color: #222; }
+        .mini-card .pprice { font-size: 0.8rem; color: #888; margin-top: 2px; }
+        .mini-card .pdiscount { color: #1a73e8; font-weight: 700; }
+        .order-link {
+            background: #1a73e8; color: white; border: none;
+            padding: 6px 12px; border-radius: 6px; cursor: pointer;
+            font-size: 0.8rem; white-space: nowrap; flex-shrink: 0;
+        }
+        .order-link:hover { background: #1558b0; }
+
+        /* ── Typing indicator ── */
+        .typing { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+        .typing span {
+            width: 8px; height: 8px; background: #bbb;
+            border-radius: 50%; animation: bounce 1.2s infinite;
+        }
+        .typing span:nth-child(2) { animation-delay: 0.2s; }
+        .typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-6px); }
+        }
+
+        /* ── Quick suggestions ── */
+        .suggestions {
+            padding: 12px 16px;
+            display: flex; gap: 8px; flex-wrap: wrap;
+            border-top: 1px solid #eee;
+            background: white;
+        }
+        .suggestion-btn {
+            background: #e8f0fe; color: #1a73e8; border: none;
+            padding: 7px 14px; border-radius: 20px;
+            cursor: pointer; font-size: 0.83rem; font-weight: 500;
+        }
+        .suggestion-btn:hover { background: #d2e3fc; }
+
+        /* ── Input row ── */
+        .chat-input-row {
+            padding: 14px 16px;
+            display: flex; gap: 10px; align-items: center;
+            border-top: 1px solid #eee;
+            background: white;
+        }
+        .chat-input-row input {
+            flex: 1; padding: 11px 16px;
+            border: 1.5px solid #ddd; border-radius: 24px;
+            font-size: 0.95rem; outline: none;
+        }
+        .chat-input-row input:focus { border-color: #1a73e8; }
+        .send-btn {
+            width: 44px; height: 44px; background: #1a73e8;
+            border: none; border-radius: 50%; cursor: pointer;
+            font-size: 1.1rem; color: white; flex-shrink: 0;
+        }
+        .send-btn:hover { background: #1558b0; }
+        .send-btn { font-size: 0; }
+        .send-btn::after { content: "Send"; font-size: 0.7rem; font-weight: 700; }
+
+        /* ── Mobile ── */
+        @media (max-width: 480px) {
+            .bubble { max-width: 88%; }
+            .chat-messages { height: 350px; }
+            nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <div class="nav-links" id="navLinks"></div>
+</nav>
+
+
+
+<!-- Chat Box -->
+<div class="page">
+    <div class="chat-box">
+
+        <!-- Header -->
+        <div class="chat-header">
+            <div class="bot-avatar">🤖</div>
+            <div class="bot-info">
+                <h3>SmartDeals Assistant</h3>
+                <p><span class="online-dot"></span>Online - ready to help!</p>
+            </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="chat-messages" id="chatMessages"></div>
+
+        <!-- Quick Suggestions -->
+        <div class="suggestions">
+            <button class="suggestion-btn" onclick="sendSuggestion('Show me today\'s deals')">Today's deals</button>
+            <button class="suggestion-btn" onclick="sendSuggestion('Items under Rs 200')">Under Rs 200</button>
+            <button class="suggestion-btn" onclick="sendSuggestion('Price of Milo')">Price of Milo</button>
+            <button class="suggestion-btn" onclick="sendSuggestion('Do you have milk?')">Do you have milk?</button>
+            <button class="suggestion-btn" onclick="sendSuggestion('Expiring soon')">Expiring soon</button>
+        </div>
+
+        <!-- Input -->
+        <div class="chat-input-row">
+            <input type="text" id="chatInput"
+                   placeholder="Type anything e.g. price of Milo, items under Rs 300...">
+            <button class="send-btn" onclick="sendMessage()">➤</button>
+        </div>
+
+    </div>
+</div>
+
+<script>
+
+    function updateCartBadge() {
+        const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        const total = cart.reduce((sum, item) => sum + (item.qty || 0), 0);
+        const badge = document.getElementById('cartBadge');
+        if (badge) {
+            badge.textContent = total;
+            badge.style.display = total > 0 ? 'inline' : 'none';
+        }
+    }
+
+    // ── Dynamic nav bar ──────────────────────────────────────────
+    function buildNav() {
+        const token = sessionStorage.getItem('jwt');
+        const nav   = document.getElementById('navLinks');
+        if (!nav) return;
+
+        if (token) {
+            // ── Logged in — show full menu WITH Logout ──
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart
+                    <span id="cartBadge" style="background:red;color:white;
+                    border-radius:50%;padding:1px 6px;font-size:0.75rem;
+                    display:none;">0</span>
+                </a>
+                <a href="/customer/my-orders/">My Orders</a>
+                <a href="/customer/profile/">My Profile</a>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            `;
+        } else {
+            // ── Guest — show all nav links + Register + Login, NO Logout ──
+            nav.innerHTML = `
+                <a href="/customer/products/">Products</a>
+                <a href="/customer/chatbot/">Chat with Us</a>
+                <a href="/customer/cart/">🛒 Cart
+                    <span id="cartBadge" style="background:red;color:white;
+                    border-radius:50%;padding:1px 6px;font-size:0.75rem;
+                    display:none;">0</span>
+                </a>
+                <a href="/customer/register/"
+                    style="background:white;color:#1a73e8;padding:7px 16px;
+                    border-radius:20px;margin-left:12px;font-weight:600;
+                    text-decoration:none;">
+                    Register
+                </a>
+                <a href="/customer/login/"
+                    style="background:rgba(255,255,255,0.2);color:white;
+                    padding:7px 16px;border-radius:20px;margin-left:8px;
+                    text-decoration:none;">
+                    Login
+                </a>
+            `;
+        }
+        updateCartBadge();
+    }
+    
+    function escapeHtml(value) {
+        const element = document.createElement('div');
+        element.textContent = String(value ?? '');
+        return element.innerHTML;
+    }
+
+    function formatBotMessage(value) {
+        // Gemini occasionally escapes Markdown punctuation. Normalise it,
+        // then render only the small, safe subset used by chatbot replies.
+        const normalised = String(value ?? '')
+            .replace(/\r\n?/g, '\n')
+            .replace(/\\([*_])/g, '$1')
+            .replace(/([^\n])\s+([*-])\s+(?=\*\*|[A-Za-z0-9])/g, '$1\n$2 ');
+        return escapeHtml(normalised)
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/^\s*[-*]\s+(.+)$/gm, '<span class="chat-list-item">$1</span>')
+            .replace(/\n/g, '<br>');
+    }
+
+    function addMessage(text, sender, products = []) {
+        const messages = document.getElementById('chatMessages');
+        const messageHTML = sender === 'bot' ? formatBotMessage(text) : escapeHtml(text);
+
+        const productHTML = products.length > 0 ? `
+            <div class="product-list">
+                ${products.map(p => `
+                    <div class="mini-card">
+                        <div>
+                            <div class="pname">${escapeHtml(p.name)}</div>
+                            <div class="pprice">
+                                <s>Rs ${p.price}</s> →
+                                <span class="pdiscount">Rs ${p.discounted}</span>
+                                (${p.discount}% off)
+                            </div>
+                            <div style="margin-top:4px;">
+                                <span style="background:#e6f4ea; color:#1e7e34;
+                                    font-size:0.75rem; padding:2px 8px;
+                                    border-radius:10px; font-weight:600;">
+                                    ✅ Available
+                                </span>
+                                <span style="color:#e65100; font-size:0.78rem; margin-left:8px;">
+                                    ⏰ Exp: ${p.expiry}
+                                </span>
+                            </div>
+                        </div>
+                        <button class="order-link"
+                            onclick="window.location.href='/customer/order/?product=${p.id}'">
+                            Order
+                        </button>
+                    </div>`).join('')}
+            </div>` : '';
+
+        const div = document.createElement('div');
+        div.className = `message ${sender}`;
+        div.innerHTML = `
+            <div class="avatar">${sender === 'bot' ? '🤖' : '👤'}</div>
+            <div class="bubble">${messageHTML}${productHTML}</div>`;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    function showTyping() {
+        const messages = document.getElementById('chatMessages');
+        const div = document.createElement('div');
+        div.className = 'message bot';
+        div.id = 'typingIndicator';
+        div.innerHTML = `
+            <div class="avatar">🤖</div>
+            <div class="bubble">
+                <div class="typing"><span></span><span></span><span></span></div>
+            </div>`;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    function hideTyping() {
+        const el = document.getElementById('typingIndicator');
+        if (el) el.remove();
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('chatInput');
+        const text  = input.value.trim();
+        if (!text) return;
+
+        addMessage(text, 'user');
+        input.value = '';
+        showTyping();
+
+        const token = sessionStorage.getItem('jwt');
+        // Anonymous visitors have no JWT — only attach the header when a
+        // real token exists so the request is never sent as 'Bearer null'.
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+
+        try {
+            const res = await fetch('/api/chatbot/query/', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ message: text })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                console.log('Chatbot response:', data); // check in F12
+
+                hideTyping();
+
+                // Extract reply text — try all possible field names
+                const replyText = data.bot_response || '';
+
+                // Extract products — try all possible field names
+                const rawProducts = data.products
+                    || data.items
+                    || data.results
+                    || data.data
+                    || [];
+
+                const products = rawProducts.map(p => ({
+                    id:         p.id,
+                    name:       p.product_name || p.name,
+                    price:      parseFloat(p.unit_price   || p.price || 0),
+                    discounted: parseFloat(p.discounted_price || p.unit_price || p.price || 0),
+                    expiry:     p.expiry_date  || 'Soon',
+                    discount:   p.discount_pct || 0
+                }));
+
+                // If no reply text but has products
+                const displayText = replyText || 'I could not find matching current data for that request.';
+
+                addMessage(displayText, 'bot', products);
+                return;
+            }
+            const data = await res.json().catch(() => ({}));
+            hideTyping();
+            addMessage(data.bot_response || data.error || 'The chatbot is temporarily unavailable. Please try again.', 'bot');
+        } catch (err) {
+            hideTyping();
+            addMessage('The chatbot is temporarily unavailable. Please try again.', 'bot');
+        }
+    }
+
+    function sendSuggestion(text) {
+        document.getElementById('chatInput').value = text;
+        sendMessage();
+    }
+
+    document.getElementById('chatInput').addEventListener('keypress', e => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    function logout() {
+    const orders = sessionStorage.getItem('myOrders');
+    sessionStorage.clear();
+    if (orders) sessionStorage.setItem('myOrders', orders);
+    window.location.href = '/customer/login/';
+}
+
+    buildNav();
+
+    // Welcome message on load
+    window.onload = () => {
+        setTimeout(() => {
+            addMessage('Welcome to SmartDeals. Ask about products, prices, or availability.', 'bot');
+        }, 400);
+    };
+</script>
+
+</body>
+</html>

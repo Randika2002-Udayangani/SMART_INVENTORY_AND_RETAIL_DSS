@@ -1,22 +1,46 @@
 """
 URL configuration for smart_inventory project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/4.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
+from django.http import HttpResponse
+from customer import views
+
+from rest_framework_simplejwt.views import TokenRefreshView
+from users.views import LockoutTokenObtainPairView
+
+def home(request):
+    return HttpResponse("Frontend Working ✅")
 
 urlpatterns = [
+    # Home
+    path('', home),
+
+    # Admin
     path('admin/', admin.site.urls),
-]
+
+    # JWT Authentication
+    path('api/auth/login/', LockoutTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # Customer frontend pages
+    path('customer/', include('customer.urls')),
+    path('cart/', views.cart, name='cart'),
+
+    # App API endpoints
+    path('api/', include('core.urls')), 
+    path('api/', include('users.urls')),
+    path('api/', include('products.urls')),
+    path('api/', include('suppliers.urls')),
+    path('api/', include('purchases.urls')),
+    path('api/', include('inventory.urls')),
+    path('api/', include('orders.urls')),
+    path('api/', include('sales.urls')),
+    path('api/', include('analytics.urls')),
+
+    # Dashboard
+    path('dashboard/', include('dashboard.urls')),
+
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -1,3 +1,946 @@
+from rest_framework import generics, permissions, status
+from decimal import Decimal
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import render
+from django.utils import timezone
+from django.db.models import Min, Q, Sum
+from purchases.models import PurchaseBatch
+from core.authentication import LenientJWTAuthentication
+from users.audit import log_action
+import pandas as pd
+from users.permissions import IsAdmin, IsManagerOrAdmin
 
-# Create your views here.
+from .models import Brand, Category, StoreZone, Product, ZoneRecommendation, ProductZoneOverride, ZoneCalculationRun
+from .serializers import (
+    BrandSerializer, CategorySerializer,
+    StoreZoneSerializer, ProductSerializer, ProductPublicSerializer,
+    ZoneRecommendationSerializer, ZoneRecommendationStatusSerializer,
+    ProductZoneOverrideSerializer, ProductZoneOverrideStatusSerializer,
+    ZoneCalculationRunSerializer
+)
+from sales.models import UploadLog
+from core.pagination import StandardResultsPagination
+
+
+def product_list(request):
+    return render(request, "customer/products.html")
+
+
+class ProductPickerOptionsView(APIView):
+    """
+    GET /api/products/picker/
+
+    Scoped fix for a real regression the audit found: loss_analysis.html,
+    purchases.html, and zone_recommendations.html all populate a product
+    datalist by calling /api/products/ and assuming it returns every
+    active product. Since ProductListCreateView is paginated
+    (StandardResultsPagination, page_size=25), any store with more than
+    25 active products silently lost everything past whatever the default
+    ordering puts in position 26+ — no crash (extractArray() defends
+    against the shape change), just missing products in the picker.
+
+    This is deliberately a separate, lightweight endpoint rather than
+    reverting ProductListCreateView's pagination or giving it a special
+    unpaginated mode — same pattern already used for the inventory Stock
+    Levels tab (see InventoryProductOptionsView in inventory/views.py).
+    Returns {id, name} only, no annotations/joins, so it stays cheap
+    regardless of catalogue size.
+    """
+    def get(self, request):
+        products = Product.objects.filter(is_active=True).values('id', 'product_name').order_by('product_name')
+        return Response({'products': list(products)})
+
+
+# ─────────────────────────────────────────────
+# Brand
+# ─────────────────────────────────────────────
+class BrandListCreateView(generics.ListCreateAPIView):
+    queryset = Brand.objects.all()
+    serializer_class = BrandSerializer
+
+
+class BrandDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Brand.objects.all()
+    serializer_class = BrandSerializer
+
+
+# ─────────────────────────────────────────────
+# Category
+# ─────────────────────────────────────────────
+class CategoryListCreateView(generics.ListCreateAPIView):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+
+
+class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+
+
+# ─────────────────────────────────────────────
+# StoreZone — staff-only, no customer traffic, default auth is fine
+# ─────────────────────────────────────────────
+class StoreZoneListCreateView(generics.ListCreateAPIView):
+    queryset = StoreZone.objects.all()
+    serializer_class = StoreZoneSerializer
+
+
+class StoreZoneDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = StoreZone.objects.all()
+    serializer_class = StoreZoneSerializer
+
+
+# ─────────────────────────────────────────────
+# Product
+# ─────────────────────────────────────────────
+class ProductListCreateView(generics.ListCreateAPIView):
+    authentication_classes = [LenientJWTAuthentication]
+    pagination_class = StandardResultsPagination
+
+    def get_queryset(self):
+        queryset = Product.objects.filter(is_active=True).annotate(
+            earliest_expiry=Min(
+                'purchasebatch__expiry_date',
+                filter=Q(
+                    purchasebatch__status__in=['ACTIVE', 'PENDING_EXPIRY'],
+                    purchasebatch__remaining_quantity__gt=0,
+                ),
+            ),
+        )
+        category = self.request.query_params.get('category')
+        brand    = self.request.query_params.get('brand')
+        search   = self.request.query_params.get('search')
+        if category:
+            queryset = queryset.filter(category__id=category)
+        if brand:
+            queryset = queryset.filter(brand__id=brand)
+        if search:
+            queryset = queryset.filter(product_name__icontains=search)
+        return queryset.order_by('id')
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return ProductSerializer
+        if self.request.user and self.request.user.is_authenticated:
+            return ProductSerializer
+        return ProductPublicSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [permissions.IsAuthenticated()]
+        return [permissions.AllowAny()]
+
+    def perform_create(self, serializer):
+        product = serializer.save()
+        log_action(
+            user=self.request.user,
+            action='CREATE',
+            table_name='product',
+            record_id=product.id,
+            old_value=None,
+            new_value=ProductSerializer(product).data,
+            request=self.request,
+        )
+
+
+# ─────────────────────────────────────────────
+# Customer-safe stock check  (F01, API Design Doc v3.1 §5.4)
+# GET /api/products/<id>/availability/
+# Public (Auth: No). Used by M3 Chalani (product detail/browse)
+# and Kiritharan's Chatbot AVAILABILITY_QUERY intent — the chatbot
+# is meant to call THIS endpoint rather than query stock directly,
+# since exact quantity must never be exposed to customers.
+# Logic: >10 units = AVAILABLE, 1–10 = LIMITED_STOCK, 0 = UNAVAILABLE.
+# ─────────────────────────────────────────────
+class ProductAvailabilityView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = [LenientJWTAuthentication]
+
+    def get(self, request, pk):
+        try:
+            product = Product.objects.get(pk=pk, is_active=True)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        current_stock = PurchaseBatch.objects.filter(
+            product=product, status='ACTIVE'
+        ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
+
+        if current_stock == 0:
+            availability_status = 'UNAVAILABLE'
+            can_order = False
+        elif current_stock <= 10:
+            availability_status = 'LIMITED_STOCK'
+            can_order = True
+        else:
+            availability_status = 'AVAILABLE'
+            can_order = True
+
+        return Response({
+            'status': availability_status,
+            'can_order': can_order,
+            'stock': int(current_stock),
+
+        })
+
+
+class ProductReorderThresholdView(APIView):
+    """Admin-only update for a product's manual reorder point."""
+
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+
+    def patch(self, request, pk):
+        value = request.data.get('reorder_threshold')
+        try:
+            if isinstance(value, bool):
+                raise ValueError
+            threshold = int(value)
+        except (TypeError, ValueError):
+            return Response({'error': 'reorder_threshold must be a whole number.'}, status=status.HTTP_400_BAD_REQUEST)
+        if threshold < 0 or threshold > 1_000_000:
+            return Response({'error': 'reorder_threshold must be between 0 and 1,000,000.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            product = Product.objects.get(pk=pk)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        previous_threshold = product.reorder_threshold
+        product.reorder_threshold = threshold
+        product.save(update_fields=['reorder_threshold'])
+        log_action(
+            user=request.user,
+            action='UPDATE',
+            table_name='product',
+            record_id=product.id,
+            old_value={'reorder_threshold': previous_threshold},
+            new_value={'reorder_threshold': threshold},
+            request=request,
+        )
+        return Response({
+            'product_id': product.id,
+            'product_name': product.product_name,
+            'reorder_threshold': product.reorder_threshold,
+        })
+
+
+class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Product.objects.all().annotate(
+        earliest_expiry=Min(
+            'purchasebatch__expiry_date',
+            filter=Q(
+                purchasebatch__status__in=['ACTIVE', 'PENDING_EXPIRY'],
+                purchasebatch__remaining_quantity__gt=0,
+            ),
+        ),
+    )
+    authentication_classes = [LenientJWTAuthentication]
+
+    def get_serializer_class(self):
+        if self.request.method in ('PUT', 'PATCH', 'DELETE'):
+            return ProductSerializer
+        if self.request.user and self.request.user.is_authenticated:
+            return ProductSerializer
+        return ProductPublicSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'DELETE':
+            return [permissions.IsAuthenticated(), IsManagerOrAdmin()]
+        if self.request.method in ('PUT', 'PATCH'):
+             return [permissions.IsAuthenticated()]
+        return [permissions.AllowAny()]
+
+    def perform_update(self, serializer):
+        old_data = ProductSerializer(self.get_object()).data
+        product = serializer.save()
+        new_data = ProductSerializer(product).data
+
+        # API Design Doc §22 lists 'price_change' as a mandatory audit
+        # action distinct from a generic field edit — flag it specifically
+        # when unit_price or cost_price actually moved, otherwise log as a
+        # plain UPDATE so non-price edits (name, category, etc.) still show.
+        price_changed = (
+            str(old_data.get('unit_price')) != str(new_data.get('unit_price')) or
+            str(old_data.get('cost_price')) != str(new_data.get('cost_price'))
+        )
+        log_action(
+            user=self.request.user,
+            action='PRICE_CHANGE' if price_changed else 'UPDATE',
+            table_name='product',
+            record_id=product.id,
+            old_value=old_data,
+            new_value=new_data,
+            request=self.request,
+        )
+
+    def perform_destroy(self, instance):
+        # FIX: API Design Doc §5.4 requires DELETE to *deactivate*
+        # (is_active=False), never hard-delete — a real delete would break
+        # every PurchaseBatch/ZoneRecommendation/etc. FK pointing at this
+        # product. The previous version had no perform_destroy() override,
+        # so it fell through to DRF's default instance.delete().
+        #
+        # NOT YET IMPLEMENTED: the spec also says this should be "Blocked
+        # if product has PENDING/CONFIRMED online orders" — that check
+        # needs the Orders app's Order model, which doesn't exist in this
+        # codebase yet. Add that guard here once orders/models.py lands.
+        old_data = ProductSerializer(instance).data
+        instance.is_active = False
+        instance.save(update_fields=['is_active'])
+        log_action(
+            user=self.request.user,
+            action='PRODUCT_DEACTIVATION',
+            table_name='product',
+            record_id=instance.id,
+            old_value=old_data,
+            new_value=ProductSerializer(instance).data,
+            request=self.request,
+        )
+
+
+# ─────────────────────────────────────────────
+# Item Master Excel Upload (Pipeline 1)
+# POST /api/products/import/
+# ─────────────────────────────────────────────
+class ItemMasterUploadView(APIView):
+    parser_classes     = [MultiPartParser, FormParser]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        file = request.FILES.get('file')
+
+        if not file:
+            return Response(
+                {'error': 'No file uploaded. Send file as form-data with key "file"'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not file.name.endswith('.xlsx'):
+            return Response(
+                {'error': 'File must be an Excel .xlsx file'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        upload_log = UploadLog.objects.create(
+            file_name=file.name,
+            upload_type='ITEM_MASTER',
+            status='PARTIAL',
+            error_message='',
+            uploaded_by=request.user.id
+        )
+
+        try:
+            df = pd.read_excel(file, header=None)
+        except Exception as e:
+            upload_log.status = 'FAILED'
+            upload_log.error_message = f'Could not read Excel file: {str(e)}'
+            upload_log.save()
+            return Response(
+                {'error': f'Could not read file: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        products_by_sku  = {
+            p.sku_code: p
+            for p in Product.objects.exclude(sku_code__isnull=True)
+                                    .exclude(sku_code='')
+        }
+        products_by_name = {
+            p.product_name.lower(): p
+            for p in Product.objects.all()
+        }
+
+        inserted = 0
+        updated  = 0
+        skipped  = 0
+        flagged  = 0
+        errors   = []
+        seen_skus  = {}
+        seen_names = {}
+
+        for index, row in df.iterrows():
+            row_num = index + 1
+
+            if len(row) < 6:
+                skipped += 1
+                errors.append(
+                    f'Row {row_num}: Only {len(row)} columns found — '
+                    f'expected at least 6. Row skipped.'
+                )
+                continue
+
+            raw_name     = row.iloc[1] if not pd.isna(row.iloc[1]) else ''
+            product_name = str(raw_name).strip()
+
+            if product_name == 'DEFAULT ITEM':
+                skipped += 1
+                continue
+
+            if not product_name:
+                skipped += 1
+                errors.append(f'Row {row_num}: Empty product name — skipped')
+                continue
+
+            raw_sku  = row.iloc[3] if not pd.isna(row.iloc[3]) else None
+            sku_code = str(raw_sku).strip() if raw_sku is not None else None
+            if not sku_code or sku_code.lower() in ('nan', 'none', ''):
+                sku_code = None
+
+            try:
+                unit_price = float(row.iloc[5]) if not pd.isna(row.iloc[5]) else 0.0
+            except (ValueError, TypeError):
+                unit_price = 0.0
+
+            if unit_price <= 0:
+                skipped += 1
+                errors.append(
+                    f'Row {row_num}: "{product_name}" price={unit_price} — skipped'
+                )
+                continue
+
+            if sku_code:
+                if sku_code in seen_skus:
+                    skipped += 1
+                    errors.append(
+                        f'Row {row_num}: Duplicate SKU "{sku_code}" '
+                        f'(first seen row {seen_skus[sku_code]}) — skipped'
+                    )
+                    continue
+                seen_skus[sku_code] = row_num
+
+            if not sku_code:
+                normalized_name = product_name.lower()
+                if normalized_name in seen_names:
+                    skipped += 1
+                    errors.append(
+                        f'Row {row_num}: Duplicate name "{product_name}" '
+                        f'(first seen row {seen_names[normalized_name]}) — skipped'
+                    )
+                    continue
+                seen_names[normalized_name] = row_num
+
+            existing = None
+            if sku_code:
+                existing = products_by_sku.get(sku_code)
+            if not existing:
+                existing = products_by_name.get(product_name.lower())
+
+            if existing:
+                existing.unit_price = unit_price
+                if sku_code and not existing.sku_code:
+                    existing.sku_code = sku_code
+                    existing.save(update_fields=['unit_price', 'sku_code'])
+                    products_by_sku[sku_code] = existing
+                else:
+                    existing.save(update_fields=['unit_price'])
+                updated += 1
+
+            else:
+                new_product = Product.objects.create(
+                    product_name      = product_name,
+                    sku_code          = sku_code,
+                    unit_price        = unit_price,
+                    cost_price        = 0,
+                    avg_cost_price    = 0,
+                    is_active         = True,
+                    category          = None,
+                    brand             = None,
+                    reorder_threshold = 0,
+                    introduced_date   = timezone.now().date(),
+                )
+                inserted += 1
+                flagged  += 1
+                products_by_name[product_name.lower()] = new_product
+                if sku_code:
+                    products_by_sku[sku_code] = new_product
+                errors.append(
+                    f'Row {row_num}: NEW product "{product_name}" inserted — '
+                    f'needs category assignment'
+                )
+
+        if inserted == 0 and updated == 0:
+            upload_log.status = 'FAILED'
+        elif skipped == 0 and flagged == 0:
+            upload_log.status = 'SUCCESS'
+        else:
+            upload_log.status = 'PARTIAL'
+
+        upload_log.error_message = '\n'.join(errors[:100])
+        upload_log.save()
+
+        return Response({
+            'message'       : 'Item Master upload complete',
+            'file'          : file.name,
+            'total_rows'    : len(df),
+            'inserted'      : inserted,
+            'updated'       : updated,
+            'skipped'       : skipped,
+            'flagged_new'   : flagged,
+            'upload_log_id' : upload_log.id,
+            'notes'         : errors[:20],
+        }, status=status.HTTP_201_CREATED)
+
+
+# ─────────────────────────────────────────────
+# Zone Recommendation
+# ─────────────────────────────────────────────
+class ZoneRecommendationListView(generics.ListAPIView):
+    queryset = ZoneRecommendation.objects.select_related(
+        'product', 'current_zone', 'suggested_zone'
+    ).order_by('-recommendation_date')
+    serializer_class   = ZoneRecommendationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+
+# ─────────────────────────────────────────────
+# Recalculate WAC
+# ─────────────────────────────────────────────
+class RecalculateWACView(APIView):
+    """
+    POST /api/products/<id>/recalculate-wac/
+
+    IMPORTANT FIX: this previously used a DIFFERENT, inconsistent formula
+    from the one already fixed in purchases/views.py's
+    _recalculate_avg_cost_price() (see that function's docstring history —
+    "All three WAC code paths in the system now agree" — this endpoint was
+    apparently a fourth path that got missed):
+
+      - OLD (this view): summed quantity_received across ALL batches
+        regardless of status — including EXPIRED, DISPOSED, and
+        PENDING_EXPIRY batches that hold zero real stock. Manually
+        clicking "Recalculate WAC" on a product could therefore produce
+        a different number than the automatic invoice-upload pipeline
+        computes for the exact same data.
+      - NEW (this fix): ACTIVE-status batches only, using
+        remaining_quantity (current stock) instead of quantity_received
+        (original arrival quantity) — identical formula and semantics to
+        _recalculate_avg_cost_price() in purchases/views.py, including
+        the same "leave avg_cost_price unchanged if zero remaining
+        stock" edge case, instead of resetting it to a misleading value.
+
+    Also fixes a performance issue: the old code iterated the `batches`
+    queryset twice in Python (once for total_units, once for total_cost),
+    which re-ran the query twice since a queryset isn't cached until
+    evaluated. Replaced with a single .aggregate() call.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        from purchases.models import PurchaseBatch
+        from django.db.models import Sum, F, DecimalField
+        from django.db.models.functions import Coalesce
+
+        try:
+            product = Product.objects.get(pk=pk)
+        except Product.DoesNotExist:
+            return Response(
+                {'error': 'Product not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        active_batches = PurchaseBatch.objects.filter(product=product, status='ACTIVE')
+
+        agg = active_batches.aggregate(
+            total_cost=Coalesce(
+                Sum(
+                    F('remaining_quantity') * F('cost_price'),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+                Decimal('0'),
+            ),
+            total_qty=Coalesce(Sum('remaining_quantity'), 0),
+        )
+        total_units = agg['total_qty']
+        total_cost = agg['total_cost']
+
+        if not total_units or total_units == 0:
+            return Response(
+                {'error': 'No ACTIVE purchase batches with remaining stock found for '
+                          'this product — cannot calculate WAC'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        old_wac = product.avg_cost_price
+        new_wac = (total_cost / total_units).quantize(Decimal('0.01'))
+
+        product.avg_cost_price = new_wac
+        product.save(update_fields=['avg_cost_price'])
+
+        log_action(
+            user=request.user,
+            action='PRICE_CHANGE',
+            table_name='product',
+            record_id=product.id,
+            old_value={'avg_cost_price': str(old_wac)},
+            new_value={'avg_cost_price': str(new_wac)},
+            request=request,
+        )
+
+        return Response({
+            'product_id'          : product.id,
+            'product_name'        : product.product_name,
+            'old_avg_cost_price'  : old_wac,
+            'new_avg_cost_price'  : new_wac,
+            'total_units_received': total_units,
+            'batches_used'        : active_batches.count(),
+        })
+
+
+
+
+class ReclassifyProductsView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsManagerOrAdmin]
+
+    def post(self, request):
+        from inventory.services.auto_categorise import classify_all_products
+        from django.db import models as django_models
+
+        products_to_classify = Product.objects.filter(
+            is_active=True
+        ).filter(
+            django_models.Q(category__isnull=True) | django_models.Q(brand__isnull=True)
+        )
+
+        result = classify_all_products(products_to_classify)
+
+        log_action(
+            user=request.user,
+            action='RECLASSIFY',
+            table_name='product',
+            record_id=None,
+            old_value=None,
+            new_value={
+                'classified': result['classified'],
+                'already_had_category': result['already_had_category'],
+                'total_processed': result['total_processed'],
+            },
+            request=request,
+        )
+
+        return Response({
+            'message':              'Reclassification complete',
+            'classified':           result['classified'],
+            'already_had_category': result['already_had_category'],
+            'errors':               result['errors'],
+            'total_processed':      result['total_processed'],
+        }, status=status.HTTP_200_OK)
+
+
+
+class ZoneRecommendationCalculateView(APIView):
+    """
+    POST /api/zones/recommendations/calculate/
+
+    Manager triggers zone placement recalculation for all active
+    products. Reads each product's latest InventoryHealthScore and
+    writes ZoneRecommendation rows for products that should move —
+    see inventory/services/zone_recommendation.py for the scoring
+    rule and the StoreZone data-model limitation noted there (no
+    zone "purpose" field, so this maps onto traffic_level only).
+    """
+    permission_classes = [permissions.IsAuthenticated, IsManagerOrAdmin]
+
+    def post(self, request):
+        # Local import — same reasoning as RecalculateWACView above:
+        # avoids any risk of a circular import between products and
+        # inventory apps.
+        from inventory.services.zone_recommendation import calculate_zone_recommendations
+
+        result = calculate_zone_recommendations()
+
+        # Persisted so the page's "Last calculated" / KPI strip reflects
+        # the real last run for anyone loading the page, not just the
+        # browser session that clicked the button.
+        run = ZoneCalculationRun.objects.create(
+            products_evaluated=result.get('products_evaluated', 0),
+            recommendations_created=result.get('recommendations_created', 0),
+            skipped_no_health_score=result.get('skipped_no_health_score', 0),
+            skipped_no_current_zone=result.get('skipped_no_current_zone', 0),
+            skipped_duplicate=result.get('skipped_duplicate', 0),
+            categories_unmapped_count=len(
+                result.get('zone_assignment', {}).get('categories_unmapped', [])
+            ),
+        )
+
+        log_action(
+            user=request.user,
+            action='ZONE_RECALCULATE',
+            table_name='zone_recommendation',
+            record_id=None,
+            old_value=None,
+            new_value=result,
+            request=request,
+        )
+
+        return Response({
+            "message": "Zone recommendations recalculated",
+            "run_id": run.id,
+            "run_at": run.run_at,
+            **result,
+        })
+
+
+# ─────────────────────────────────────────────
+# Zone Calculation Run — last-run info for the page's KPI strip,
+# so a fresh page load (any browser, any user) shows the real last
+# run instead of only what happened in the triggering session.
+# ─────────────────────────────────────────────
+class ZoneCalculationRunLatestView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        run = ZoneCalculationRun.objects.order_by('-run_at').first()
+        if run is None:
+            return Response(None)
+        return Response(ZoneCalculationRunSerializer(run).data)
+
+# ─────────────────────────────────────────────
+# Zone Recommendation — status workflow (accept/reject/apply)
+# ─────────────────────────────────────────────
+class CanUpdateZoneRecommendationStatus(permissions.BasePermission):
+    """
+    Manager/Admin can set any status (accept/reject/apply). Staff can
+    only mark an already-ACCEPTED recommendation as APPLIED once it's
+    been physically moved on the floor — they can't accept, reject,
+    or touch a still-PENDING one.
+    """
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        if IsManagerOrAdmin().has_permission(request, view):
+            return True
+        return obj.status == 'ACCEPTED' and request.data.get('status') == 'APPLIED'
+
+
+class ZoneRecommendationStatusUpdateView(generics.UpdateAPIView):
+    """
+    PATCH /api/zones/recommendations/<pk>/status/
+    Body: {"status": "ACCEPTED" | "REJECTED" | "APPLIED"}
+
+    Manager decision workflow — a recommendation is calculated as PENDING,
+    then the manager accepts or rejects it, and later marks an accepted
+    one APPLIED once the product has actually been moved on the floor.
+    Only `status` is editable through this endpoint.
+    """
+    queryset = ZoneRecommendation.objects.all()
+    serializer_class = ZoneRecommendationStatusSerializer
+    permission_classes = [CanUpdateZoneRecommendationStatus]
+    http_method_names = ['patch']
+
+    def perform_update(self, serializer):
+        old_status = serializer.instance.status
+        recommendation = serializer.save(updated_by=self.request.user)
+        log_action(
+            user=self.request.user,
+            action='ZONE_STATUS_CHANGE',
+            table_name='zone_recommendation',
+            record_id=recommendation.id,
+            old_value={'status': old_status},
+            new_value={'status': recommendation.status, 'updated_by': self.request.user.username},
+            request=self.request,
+        )
+
+        # Shared notification — same pattern as ReorderRecommendationDetailView
+        # (orders.models.Notification, user=None/customer=None = visible to
+        # everyone). Only fires on an actual transition into the new status,
+        # so a repeated identical PATCH doesn't create a duplicate — same
+        # guard reorder uses (there it's `previous_status != 'ORDERED'`).
+        if old_status != recommendation.status:
+            from orders.models import Notification
+
+            product_name = recommendation.product.product_name
+            notif_copy = {
+                'ACCEPTED': (
+                    'MEDIUM',
+                    f'Zone recommendation accepted: {product_name}',
+                    f'{self.request.user.username} accepted the zone recommendation for '
+                    f'{product_name} — move to {recommendation.suggested_zone.zone_name}.',
+                ),
+                'REJECTED': (
+                    'LOW',
+                    f'Zone recommendation rejected: {product_name}',
+                    f'{self.request.user.username} rejected the zone recommendation for '
+                    f'{product_name}.',
+                ),
+                'APPLIED': (
+                    'MEDIUM',
+                    f'Zone recommendation applied: {product_name}',
+                    f'{self.request.user.username} applied the zone move for {product_name} — '
+                    f'moved from {recommendation.current_zone.zone_name} to '
+                    f'{recommendation.suggested_zone.zone_name}.',
+                ),
+            }.get(recommendation.status)
+
+            if notif_copy:
+                priority, title, message = notif_copy
+                Notification.objects.create(
+                    user=None,
+                    customer=None,
+                    type='ZONE_RECOMMENDATION',
+                    priority=priority,
+                    title=title,
+                    message=message,
+                    reference_table='zone_recommendation',
+                    reference_id=recommendation.id,
+                )
+
+
+# ─────────────────────────────────────────────
+# Category → Zone mapping (read-only view of what
+# assign_zones_from_groups() has already assigned)
+# ─────────────────────────────────────────────
+class CategoryZoneMappingView(APIView):
+    """
+    GET /api/zones/category-mapping/
+
+    Read-only summary of the current category→zone assignment, grouped
+    by zone, plus categories that still have no default_zone. Doesn't
+    recalculate anything — that only happens via the calculate endpoint,
+    which runs assign_zones_from_groups() as its first step.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        zones = StoreZone.objects.prefetch_related('category_set').all()
+        mapping = [
+            {
+                "zone_id": zone.id,
+                "zone_name": zone.zone_name,
+                "zone_type": zone.zone_type,
+                "category_count": zone.category_set.count(),
+                "categories": list(
+                    zone.category_set.values_list('category_name', flat=True)
+                ),
+            }
+            for zone in zones
+        ]
+        unmapped = list(
+            Category.objects.filter(default_zone__isnull=True)
+            .values_list('category_name', flat=True)
+        )
+        return Response({
+            "zones": mapping,
+            "categories_unmapped": unmapped,
+        })
+
+
+# ─────────────────────────────────────────────
+# Product Zone Override
+# ─────────────────────────────────────────────
+class ProductZoneOverrideListCreateView(generics.ListCreateAPIView):
+    queryset = ProductZoneOverride.objects.select_related('product', 'zone').order_by('-start_date')
+    serializer_class = ProductZoneOverrideSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [permissions.IsAuthenticated(), IsManagerOrAdmin()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        # NOTE: this class previously had perform_create() defined TWICE.
+        # Python silently uses only the last definition, so the first
+        # version (action='CREATE', no updated_by, an older notification
+        # copy) was completely dead code — never executed. This is that
+        # surviving second version, kept as-is; the dead first one has
+        # been removed rather than merged, since it was never running in
+        # the first place and merging risks changing real behavior.
+        override = serializer.save(updated_by=self.request.user)
+        log_action(
+            user=self.request.user,
+            action='ZONE_OVERRIDE_CREATE',
+            table_name='product_zone_override',
+            record_id=override.id,
+            old_value=None,
+            new_value=ProductZoneOverrideSerializer(override).data,
+            request=self.request,
+        )
+
+        # Shared notification — a new override is created PENDING and
+        # needs a staff member to physically move the product and mark
+        # it Applied, so this is the "there's work to do" signal,
+        # distinct from the "it's done" notification on the status view.
+        from orders.models import Notification
+
+        date_range = (
+            f'{override.start_date} to {override.end_date}'
+            if override.end_date else f'{override.start_date}, open-ended'
+        )
+        Notification.objects.create(
+            user=None,
+            customer=None,
+            type='ZONE_OVERRIDE',
+            priority='MEDIUM',
+            title=f'New zone override: {override.product.product_name}',
+            message=(
+                f'{self.request.user.username} created a zone override for '
+                f'{override.product.product_name} — move to {override.zone.zone_name} '
+                f'({date_range}). Awaiting apply.'
+            ),
+            reference_table='product_zone_override',
+            reference_id=override.id,
+        )
+
+
+class ProductZoneOverrideDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = ProductZoneOverride.objects.select_related('product', 'zone')
+    serializer_class = ProductZoneOverrideSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.IsAuthenticated()]
+        return [permissions.IsAuthenticated(), IsManagerOrAdmin()]
+
+
+# ─────────────────────────────────────────────
+# Product Zone Override — status workflow (staff marks Applied)
+# ─────────────────────────────────────────────
+class ProductZoneOverrideStatusUpdateView(generics.UpdateAPIView):
+    """
+    PATCH /api/zones/overrides/<pk>/status/
+    Body: {"status": "APPLIED"}
+
+    A manager creates the override as PENDING; a staff member marks it
+    APPLIED once the product has actually been physically moved to the
+    override zone. Unlike ZoneRecommendationStatusUpdateView there's no
+    accept/reject step here — just PENDING -> APPLIED — so this is open
+    to any authenticated user rather than gated to Manager/Admin.
+    """
+    queryset = ProductZoneOverride.objects.all()
+    serializer_class = ProductZoneOverrideStatusSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ['patch']
+
+    def perform_update(self, serializer):
+        old_status = serializer.instance.status
+        override = serializer.save(updated_by=self.request.user)
+        log_action(
+            user=self.request.user,
+            action='ZONE_OVERRIDE_STATUS_CHANGE',
+            table_name='product_zone_override',
+            record_id=override.id,
+            old_value={'status': old_status},
+            new_value={'status': override.status, 'updated_by': self.request.user.username},
+            request=self.request,
+        )
+
+        # Shared notification — same pattern as ZoneRecommendationStatusUpdateView.
+        # Only fires on an actual transition into APPLIED, so a repeated
+        # identical PATCH doesn't create a duplicate.
+        if old_status != override.status and override.status == 'APPLIED':
+            from orders.models import Notification
+
+            Notification.objects.create(
+                user=None,
+                customer=None,
+                type='ZONE_OVERRIDE',
+                priority='MEDIUM',
+                title=f'Zone override applied: {override.product.product_name}',
+                message=(
+                    f'{self.request.user.username} applied the zone override for '
+                    f'{override.product.product_name} — moved to {override.zone.zone_name}.'
+                ),
+                reference_table='product_zone_override',
+                reference_id=override.id,
+            )

@@ -1,0 +1,73 @@
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    # ── Stock snapshot ───────────────────────────────────
+    path('inventory/stock/', views.StockSnapshotView.as_view(), name='stock-snapshot'),
+    path('inventory/stock/summary/', views.StockSummaryView.as_view(), name='stock-summary'),
+    path('inventory/products/picker/', views.InventoryProductOptionsView.as_view(), name='inventory-product-picker'),
+    path('inventory/stock/<int:product_id>/', views.ProductStockDetailView.as_view(), name='product-stock-detail'),
+    path('inventory/stock/<int:product_id>/history/', views.ProductStockHistoryView.as_view(), name='inventory-stock-history'),
+    path('stock/<int:product_id>/history/', views.ProductStockHistoryView.as_view(), name='stock-history'),
+    path('inventory/sync-date/', views.SyncDateView.as_view(), name='inventory-sync-date'),
+    path('inventory/last-uploads-by-type/', views.LastUploadsByTypeView.as_view(), name='last-uploads-by-type'),
+
+    # ── Alert views ──────────────────────────────────────
+    path('inventory/low-stock/', views.LowStockView.as_view(), name='low-stock'),
+    path('inventory/out-of-stock/', views.OutOfStockView.as_view(), name='out-of-stock'),
+
+    # ── Ledger & Adjustments ─────────────────────────────
+    path('inventory/ledger/', views.StockLedgerView.as_view(), name='stock-ledger'),
+    path('inventory/adjust/', views.StockAdjustmentView.as_view(), name='stock-adjust'),
+
+    # ── F06 Product Lifecycle ─────────────────────────────
+    path('lifecycle/calculate/', views.LifecycleCalculateView.as_view(), name='lifecycle-calculate'),
+    path('lifecycle/declining/', views.LifecycleDecliningView.as_view(), name='lifecycle-declining'),
+    path('lifecycle/', views.LifecycleListView.as_view(), name='lifecycle-list'),
+    path('lifecycle/<int:product_id>/', views.LifecycleProductHistoryView.as_view(), name='lifecycle-product-history'),
+
+    # ── F07 Loss Records ──────────────────────────────────
+    path('losses/summary/', views.LossSummaryView.as_view(), name='loss-summary'),
+    path('losses/auto-detect/', views.LossAutoDetectView.as_view(), name='loss-auto-detect'),
+    path('losses/', views.LossRecordView.as_view(), name='loss-list'),
+
+    # ── F07 Supplier Returns ──────────────────────────────
+    path('supplier-returns/summary/', views.SupplierReturnSummaryView.as_view(), name='supplier-return-summary'),
+    path('supplier-returns/<int:pk>/status/', views.SupplierReturnStatusView.as_view(), name='supplier-return-status'),
+    path('supplier-returns/upload/', views.SupplierReturnUploadView.as_view(), name='supplier-return-upload'),
+    path('supplier-returns/', views.SupplierReturnView.as_view(), name='supplier-return-list'),
+
+    # ── F08 Inventory Health Score ────────────────────────
+    path('health-scores/calculate/', views.HealthScoreCalculateView.as_view(), name='health-score-calculate'),
+    path('health-scores/summary/', views.HealthScoreSummaryView.as_view(), name='health-score-summary'),
+    path('health-scores/categories/', views.CategoryHealthScoreView.as_view(), name='health-score-categories'),
+    path('health-scores/critical/', views.HealthScoreCriticalView.as_view(), name='health-score-critical'),
+    path('health-scores/history/<int:product_id>/', views.HealthScoreHistoryView.as_view(), name='health-score-history'),
+    path('health-scores/', views.HealthScoreListView.as_view(), name='health-score-list'),
+    path('health-scores/<int:product_id>/', views.HealthScoreDetailView.as_view(), name='health-score-detail'),
+
+    # ── F09 Discount Rules (config CRUD — NOT the calculation engine) ──
+    path('discount-rules/', views.DiscountRuleListCreateView.as_view(), name='discount-rule-list'),
+    path('discount-rules/<int:pk>/', views.DiscountRuleDetailView.as_view(), name='discount-rule-detail'),
+
+    # ── F09 Discount Recommendations (read + review only) ──
+    path('discounts/recommendations/', views.DiscountRecommendationListView.as_view(), name='discount-recommendation-list'),
+    path('discounts/recommendations/<int:pk>/', views.DiscountRecommendationDetailView.as_view(), name='discount-recommendation-detail'),
+
+    # ── F10 Reorder Recommendations ───────────────────────── 
+    path('reorder/calculate/', views.ReorderCalculateView.as_view(), name='reorder-calculate'),
+    path('reorder/recommendations/', views.ReorderRecommendationListView.as_view(), name='reorder-recommendation-list'),
+    path('reorder/recommendations/<int:pk>/', views.ReorderRecommendationDetailView.as_view(), name='reorder-recommendation-detail'),
+
+
+
+    path('notifications/', views.NotificationListView.as_view(), name='notification-list'),
+    path('notifications/unread-count/', views.NotificationUnreadCountView.as_view(), name='notification-unread-count'),
+    path('notifications/<int:pk>/read/', views.NotificationMarkReadView.as_view(), name='notification-mark-read'),
+    path('notifications/<int:pk>/', views.NotificationDetailView.as_view(), name='notification-detail'),
+
+
+    path('discounts/calculate/', views.DiscountCalculateView.as_view(), name='discount-calculate'),
+ 
+
+]

@@ -1,0 +1,440 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Suppliers — Smart Inventory DSS{% endblock %}
+{% block nav_suppliers %}active{% endblock %}
+
+{% block extra_css %}
+    <style>
+        .table thead th { position:sticky; top:var(--topbar-height, 56px); z-index:10; background:var(--card2); }
+        .btn-primary { background:var(--sidebar); border:none; }
+        .btn-primary:hover { background:#0a2b2c; }
+        .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
+        .supplier-tab-panel { display:none; }
+        .supplier-tab-panel.active { display:block; }
+        .returns-history-table { min-width:700px; table-layout:auto; }
+        /* The page's supplier table uses sticky headings.  A short return
+           history table must remain in normal document flow; otherwise its
+           heading can detach below the first row while the page scrolls. */
+        .returns-history-table thead th { position:static !important; top:auto; z-index:auto; white-space:nowrap; background:var(--card2); }
+        .returns-history-table th:nth-child(1) { min-width:95px; }
+        .returns-history-table th:nth-child(2), .returns-history-table th:nth-child(4) { min-width:105px; }
+        .returns-history-table th:nth-child(5), .returns-history-table th:nth-child(6) { min-width:90px; }
+        .returns-history-table td { vertical-align:middle; }
+        .returns-history-table .return-product { min-width:220px; white-space:normal; }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="topbar">
+    <div>
+        <h1>Suppliers</h1>
+        <div class="sub">Samanala Super Mart — supplier master records</div>
+    </div>
+    <div>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+    </div>
+</div>
+
+<div class="container-fluid px-4">
+    <div class="border-bottom mb-3">
+        <button class="btn btn-sm btn-outline-success active me-2" onclick="showSupplierTab('suppliersTab', this)">Suppliers</button>
+        <button class="btn btn-sm btn-outline-success" onclick="showSupplierTab('returnsTab', this)">Supplier Returns</button>
+    </div>
+
+    <div id="suppliersTab" class="supplier-tab-panel active">
+    <div class="d-flex justify-content-between mb-3">
+        <input type="text" id="supSearch" class="form-control form-control-sm" style="width:280px;" placeholder="Search supplier name..." oninput="onSupplierSearchInput()">
+        <button class="btn btn-primary btn-sm" onclick="showAddForm()">+ Add Supplier</button>
+    </div>
+
+    <!-- Add/Edit Form (hidden by default) -->
+    <div id="supForm" class="card p-4 mb-3" style="display:none;">
+        <h6 class="fw-bold mb-3" id="formTitle">Add Supplier</h6>
+        <input type="hidden" id="supId">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Supplier Name</label>
+                <input type="text" id="supName" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Email</label>
+                <input type="email" id="supEmail" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Contact Number</label>
+                <input type="text" id="supPhone" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Lead Time (days)</label>
+                <input type="number" id="supLeadTime" class="form-control">
+            </div>
+            <div class="col-md-12">
+                <label class="form-label">Return Policy</label>
+                <input type="text" id="supReturnPolicy" class="form-control">
+            </div>
+        </div>
+        <div class="mt-3">
+            <button class="btn btn-primary" onclick="saveSupplier()">Save</button>
+            <button class="btn btn-outline-secondary" onclick="hideForm()">Cancel</button>
+        </div>
+        <div id="supMsg" class="mt-3"></div>
+    </div>
+
+    <div class="card p-4">
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr><th>Name</th><th>Email</th><th>Contact</th><th>Lead Time</th><th>Return Policy</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="supBody">
+                <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
+            </tbody>
+        </table>
+        <div id="supPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
+    </div>
+    </div>
+
+    <div id="returnsTab" class="supplier-tab-panel">
+        <div class="card p-4 mb-3">
+            <h6 class="fw-bold mb-1">Upload Supplier Return File</h6>
+            <p class="small text-muted mb-3">Upload the Samanala Super Mart <strong>SUPPLY RETURN</strong> PDF. Products are matched by invoice description and stock is reduced from the latest active batch.</p>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-8"><label class="form-label small fw-semibold">Return PDF</label><input id="returnFile" type="file" class="form-control form-control-sm" accept=".pdf"></div>
+                <div class="col-md-4"><button id="returnUploadButton" class="btn btn-primary btn-sm w-100" onclick="uploadSupplierReturns()">Upload Returns</button></div>
+            </div>
+            <div id="returnUploadMessage" class="mt-3"></div>
+        </div>
+        <div class="card p-4">
+            <div class="d-flex justify-content-between align-items-center mb-2"><h6 class="fw-bold mb-0">Uploaded Returns</h6><button class="btn btn-outline-secondary btn-sm" onclick="loadSupplierReturns()">Refresh</button></div>
+            <div class="table-responsive"><table class="table table-hover table-sm returns-history-table"><thead class="table-light"><tr><th>Return ID</th><th>Supplier ID</th><th>Product Name</th><th>Batch ID</th><th>Quantity</th><th>Status</th></tr></thead><tbody id="returnsBody"><tr><td colspan="6" class="text-center text-muted">Open this tab to load returns.</td></tr></tbody></table></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="supplierModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="supplierModalTitle">Supplier details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="hideSupplierModal()" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="supplierModalBody"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+const token = sessionStorage.getItem('access_token');
+if (!token) { window.location.href = '/dashboard/login/'; }
+
+let allSuppliers = [];
+let canManageSuppliers = false;
+let supplierPage = 1;
+const supplierPageSize = 25;
+
+function showSupplierTab(tabId, button) {
+    document.querySelectorAll('.supplier-tab-panel').forEach(panel => panel.classList.remove('active'));
+    document.getElementById(tabId).classList.add('active');
+    document.querySelectorAll('.border-bottom > button').forEach(tab => tab.classList.remove('active'));
+    button.classList.add('active');
+    if (tabId === 'returnsTab') loadSupplierReturns();
+}
+
+async function uploadSupplierReturns() {
+    const fileInput = document.getElementById('returnFile');
+    const message = document.getElementById('returnUploadMessage');
+    const button = document.getElementById('returnUploadButton');
+    if (!fileInput.files.length) {
+        message.innerHTML = '<div class="alert alert-warning py-2">Select a supplier return PDF first.</div>';
+        return;
+    }
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    button.disabled = true;
+    button.textContent = 'Uploading...';
+    try {
+        const res = await fetch('/api/supplier-returns/upload/', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Return upload failed.');
+        const imported = data.processed_count ?? data.created_count ?? 0;
+        const flagged = data.flagged_count ?? data.failed_count ?? 0;
+        const supplierName = String(data.supplier ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+        const supplierNote = data.supplier_created ? ` Added new supplier: ${supplierName}.` : '';
+        const productsNote = data.created_products?.length ? ` Added ${data.created_products.length} new product(s) from the PDF.` : '';
+        message.innerHTML = `<div class="alert alert-success py-2">Imported ${imported} return record(s).${flagged ? ` ${flagged} row(s) need review.` : ''}${supplierNote}${productsNote}</div>`;
+        fileInput.value = '';
+        loadSupplierReturns();
+    } catch (error) {
+        message.innerHTML = `<div class="alert alert-danger py-2">${error.message}</div>`;
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Upload Returns';
+    }
+}
+
+async function loadSupplierReturns() {
+    const tbody = document.getElementById('returnsBody');
+    try {
+        const res = await fetch('/api/supplier-returns/', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!res.ok) throw new Error('Could not load returns.');
+        const rows = await res.json();
+        tbody.innerHTML = rows.length ? rows.map(r => `<tr><td>${r.id}</td><td>${r.supplier ?? '—'}</td><td class="return-product">${String(r.product_name ?? '—').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])}</td><td>${r.batch ?? '—'}</td><td>${r.quantity_returned ?? 0}</td><td><span class="badge bg-success">${r.status ?? '—'}</span></td></tr>`).join('') : '<tr><td colspan="6" class="text-center text-muted">No supplier returns found.</td></tr>';
+    } catch (error) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Could not load supplier returns.</td></tr>';
+    }
+}
+
+function extractArray(data) {
+    if (Array.isArray(data)) return data;
+    return data.results ?? data.suppliers ?? data.data ?? [];
+}
+
+// Pagination + search are now server-side (see SupplierListCreateView /
+// core.pagination). Previously loadSuppliers() fetched every supplier
+// row once, then renderSuppliers() did an instant client-side substring
+// filter + 25-row slice over the full in-memory list. Real server-side
+// pagination can't coexist with a client-only search over an unloaded
+// remainder, so search moved server-side too (?search=) — the backend
+// now does the substring match, not the browser.
+let supplierTotalPages = 1;
+let supplierSearchTimer = null;
+
+function onSupplierSearchInput() {
+    // Debounced — avoids firing a request on every keystroke.
+    window.clearTimeout(supplierSearchTimer);
+    supplierSearchTimer = window.setTimeout(() => {
+        supplierPage = 1; // new search — back to page 1
+        loadSuppliers();
+    }, 300);
+}
+
+async function loadSuppliers() {
+    const search = document.getElementById('supSearch').value.trim();
+    const params = new URLSearchParams({ page: supplierPage, page_size: supplierPageSize });
+    if (search) params.set('search', search);
+
+    try {
+        const res = await fetch(`/api/suppliers/?${params.toString()}`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        allSuppliers = extractArray(data);
+        // Defensive fallback in case this is ever called against an
+        // older unpaginated response shape (a bare array).
+        supplierTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
+        supplierPage = Array.isArray(data) ? supplierPage : (data.page ?? supplierPage);
+        renderSuppliers();
+    } catch(e) {
+        document.getElementById('supBody').innerHTML = '<tr><td colspan="6" class="text-center text-muted">Could not load suppliers.</td></tr>';
+    }
+}
+
+function renderSuppliers() {
+    const rows = allSuppliers;
+    const tbody = document.getElementById('supBody');
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No suppliers found.</td></tr>';
+        document.getElementById('supPagination').innerHTML = '';
+        return;
+    }
+    tbody.innerHTML = rows.map(s => `
+        <tr>
+            <td style="font-weight:600">${s.name ?? s.supplier_name ?? '—'}</td>
+            <td>${s.email ?? '—'}</td>
+            <td>${s.contact_number ?? s.phone ?? '—'}</td>
+            <td>${s.lead_time_days ?? '—'} days</td>
+            <td>${s.return_policy ?? '—'}</td>
+                    <td>
+                        <div class="d-flex gap-1 flex-wrap">
+                            ${canManageSuppliers ? `<button class="btn btn-sm btn-outline-secondary" onclick="editSupplierById(${s.id ?? s.supplier_id})">Edit</button>` : ''}
+                            <button class="btn btn-sm btn-outline-primary" onclick="showScorecard(${s.id ?? s.supplier_id})">Scorecard</button>
+                            <button class="btn btn-sm btn-outline-info" onclick="showCostTrend(${s.id ?? s.supplier_id})">Cost trend</button>
+                            <button class="btn btn-sm btn-outline-dark" onclick="showPurchaseHistory(${s.id ?? s.supplier_id})">Purchases</button>
+                            ${canManageSuppliers ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteSupplier(${s.id ?? s.supplier_id})">Delete</button>` : ''}
+                        </div>
+                    </td>
+        </tr>
+    `).join('');
+    document.getElementById('supPagination').innerHTML = supplierTotalPages > 1 ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeSupplierPage(-1)" ${supplierPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${supplierPage} of ${supplierTotalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeSupplierPage(1)" ${supplierPage === supplierTotalPages ? 'disabled' : ''}>Next</button>` : '';
+}
+
+function changeSupplierPage(delta) {
+    supplierPage += delta;
+    loadSuppliers(); // server-side pagination — re-fetch the requested page
+}
+
+function editSupplierById(id) {
+    const supplier = allSuppliers.find(item => String(item.id ?? item.supplier_id) === String(id));
+    if (supplier) editSupplier(supplier);
+}
+
+function showAddForm() {
+    document.getElementById('formTitle').innerText = 'Add Supplier';
+    document.getElementById('supId').value = '';
+    document.getElementById('supName').value = '';
+    document.getElementById('supEmail').value = '';
+    document.getElementById('supPhone').value = '';
+    document.getElementById('supLeadTime').value = '';
+    document.getElementById('supReturnPolicy').value = '';
+    document.getElementById('supMsg').innerHTML = '';
+    document.getElementById('supForm').style.display = 'block';
+}
+
+function editSupplier(s) {
+    document.getElementById('formTitle').innerText = 'Edit Supplier';
+    document.getElementById('supId').value = s.id ?? s.supplier_id ?? '';
+    document.getElementById('supName').value = s.name ?? s.supplier_name ?? '';
+    document.getElementById('supEmail').value = s.email ?? '';
+    document.getElementById('supPhone').value = s.contact_number ?? s.phone ?? '';
+    document.getElementById('supLeadTime').value = s.lead_time_days ?? '';
+    document.getElementById('supReturnPolicy').value = s.return_policy ?? '';
+    document.getElementById('supMsg').innerHTML = '';
+    document.getElementById('supForm').style.display = 'block';
+}
+
+function hideForm() {
+    document.getElementById('supForm').style.display = 'none';
+}
+
+function showSupplierModal(title, body) {
+    document.getElementById('supplierModalTitle').textContent = title;
+    document.getElementById('supplierModalBody').innerHTML = body;
+    const modal = document.getElementById('supplierModal');
+    if (window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modal).show();
+    } else {
+        modal.style.display = 'block';
+        modal.classList.add('show');
+    }
+}
+
+function hideSupplierModal() {
+    const modal = document.getElementById('supplierModal');
+    if (window.bootstrap?.Modal) {
+        bootstrap.Modal.getInstance(modal)?.hide();
+    } else {
+        modal.style.display = 'none';
+        modal.classList.remove('show');
+    }
+}
+
+async function deleteSupplier(id) {
+    if (!id || !confirm('Permanently delete this supplier?')) return;
+    try {
+        const res = await fetch(`/api/suppliers/${id}/`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({}));
+            throw new Error(error.detail ?? error.error ?? `Delete failed (${res.status})`);
+        }
+        loadSuppliers();
+    } catch (e) {
+        alert(e.message || 'Could not delete supplier.');
+    }
+}
+
+async function showScorecard(id) {
+    showSupplierModal('Supplier Scorecard', '<div class="text-muted">Loading...</div>');
+    try {
+        const res = await fetch(`/api/suppliers/${id}/scorecard/`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) throw new Error('Request failed');
+        const score = await res.json();
+        const components = score.components ?? {};
+        showSupplierModal('Supplier Scorecard', `
+            <h6>${score.supplier_name ?? 'Supplier'}</h6>
+            <p class="fs-4 fw-bold mb-3">Overall score: ${score.overall_score ?? '—'}</p>
+            <table class="table table-sm">
+                <tbody>${Object.entries(components).map(([name, value]) => `<tr><td>${name.replaceAll('_', ' ')}</td><td>${value}</td></tr>`).join('') || '<tr><td class="text-muted">Insufficient data</td></tr>'}</tbody>
+            </table>`);
+    } catch (e) {
+        showSupplierModal('Supplier Scorecard', '<div class="text-danger">Could not load scorecard.</div>');
+    }
+}
+
+async function showCostTrend(id) {
+    showSupplierModal('Supplier Cost Trend', '<div class="text-muted">Loading...</div>');
+    try {
+        const res = await fetch(`/api/suppliers/${id}/cost-trend/`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) throw new Error('Request failed');
+        const rows = await res.json();
+        const groups = Array.isArray(rows) ? rows : (rows.data ?? []);
+        showSupplierModal('Supplier Cost Trend', groups.map(group => `
+            <h6>${group.product_name ?? 'Product'}</h6>
+            <table class="table table-sm"><thead><tr><th>Purchase date</th><th>Cost</th><th>Change</th></tr></thead><tbody>
+                ${(group.history ?? []).map(item => `<tr><td>${item.purchase_date ?? '—'}</td><td>${item.cost_price ?? '—'}</td><td>${item.increase_pct ?? 0}%</td></tr>`).join('')}
+            </tbody></table>`).join('') || '<div class="text-muted">No cost history found.</div>');
+    } catch (e) {
+        showSupplierModal('Supplier Cost Trend', '<div class="text-danger">Could not load cost trend.</div>');
+    }
+}
+
+async function showPurchaseHistory(id) {
+    showSupplierModal('Supplier Purchase History', '<div class="text-muted">Loading...</div>');
+    try {
+        const res = await fetch('/api/purchases/', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) throw new Error('Request failed');
+        const data = await res.json();
+        const purchases = extractArray(data).filter(p => String(p.supplier ?? p.supplier_id) === String(id));
+        showSupplierModal('Supplier Purchase History', purchases.length ? `<table class="table table-sm"><thead><tr><th>Invoice</th><th>Date</th><th>Total</th></tr></thead><tbody>${purchases.map(p => `<tr><td>${p.invoice_number ?? '—'}</td><td>${p.purchase_date ?? '—'}</td><td>${p.total_amount ?? '—'}</td></tr>`).join('')}</tbody></table>` : '<div class="text-muted">No purchases found.</div>');
+    } catch (e) {
+        showSupplierModal('Supplier Purchase History', '<div class="text-danger">Could not load purchase history.</div>');
+    }
+}
+
+async function saveSupplier() {
+    const id = document.getElementById('supId').value;
+    const body = {
+        supplier_name: document.getElementById('supName').value,
+        email: document.getElementById('supEmail').value,
+        contact_number: document.getElementById('supPhone').value,
+        lead_time_days: Number(document.getElementById('supLeadTime').value),
+        return_policy: document.getElementById('supReturnPolicy').value
+    };
+    const msgBox = document.getElementById('supMsg');
+
+    if (!body.supplier_name || (!body.email && !body.contact_number) || !body.lead_time_days) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Name, lead time, and at least one contact method (email or phone) are required.</div>';
+        return;
+    }
+
+    try {
+        const url = id ? `/api/suppliers/${id}/` : '/api/suppliers/';
+        const method = id ? 'PUT' : 'POST';
+        const res = await fetch(url, {
+            method,
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (res.ok) {
+            msgBox.innerHTML = '<div class="alert alert-success py-2">Saved successfully.</div>';
+            loadSuppliers();
+            setTimeout(hideForm, 1000);
+        } else {
+            const err = await res.json().catch(() => ({}));
+            msgBox.innerHTML = `<div class="alert alert-danger py-2">Error: ${JSON.stringify(err)}</div>`;
+        }
+    } catch(e) {
+        msgBox.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
+    }
+}
+
+fetchCurrentUser().then(role => {
+    canManageSuppliers = ['ADMIN', 'MANAGER'].includes(String(role ?? '').toUpperCase());
+    renderSuppliers();
+});
+
+loadSuppliers();
+</script>
+{% endblock %}

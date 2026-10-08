@@ -1,0 +1,306 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Sales Upload — Smart Inventory DSS{% endblock %}
+
+{% block extra_css %}
+<style>
+  .sales-upload-header { margin-bottom: 24px; }
+  .upload-card h5 { color: var(--sidebar); }
+  .muted { color: var(--muted); }
+  .message { min-height: 24px; }
+  .upload-table-wrap { overflow: visible; }
+  .upload-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  .upload-table thead th {
+    position: sticky;
+    top: calc(var(--topbar-height, 58px) + 1px);
+    z-index: 10;
+    background: var(--card2) !important;
+    box-shadow: 0 1px 0 var(--border);
+  }
+  .badge-success { background: #dcfce7; color: #166534; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-failed { background: #fee2e2; color: #b91c1c; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-partial { background: #fef9c3; color: #854d0e; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+
+  @media (max-width: 960px) {
+    .upload-table-wrap { overflow-x: auto; }
+    .upload-table { min-width: 760px; }
+  }
+
+  /* Upload details modal — replaces the native alert() popup */
+  .upload-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(15,23,42,0.45);
+    display: none; align-items: center; justify-content: center; z-index: 1050; padding: 16px;
+  }
+  .upload-modal-backdrop.show { display: flex; }
+  .upload-modal-box {
+    background: var(--card); border-radius: 12px; width: 100%; max-width: 520px;
+    max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+  }
+  .upload-modal-header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 18px 22px; border-bottom: 1px solid var(--border);
+  }
+  .upload-modal-header h5 { margin:0; font-weight:700; color: var(--txt); }
+  .upload-modal-close { background:none; border:none; font-size:20px; color: var(--muted); cursor:pointer; line-height:1; }
+  .upload-modal-body { padding: 20px 22px; }
+  .upload-detail-item { margin-bottom: 14px; }
+  .upload-detail-item .lbl { font-size:11px; text-transform:uppercase; letter-spacing:.03em; color: var(--muted); margin-bottom:4px; }
+  .upload-detail-item .val { font-weight:600; color: var(--txt); word-break: break-word; }
+  .upload-modal-footer { padding: 14px 22px; border-top: 1px solid var(--border); text-align:right; }
+</style>
+{% endblock %}
+
+{% block nav_sales_upload %}active{% endblock %}
+
+{% block content %}
+  <div class="topbar sales-upload-header">
+    <div>
+      <h1>Sales Upload</h1>
+      <div class="sub">Import daily bills and item sales ledger files</div>
+    </div>
+    <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+      <i class="bi bi-box-arrow-right"></i> Logout
+    </button>
+  </div>
+
+  <div id="pageError" class="alert alert-danger" role="alert" hidden></div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-lg-6">
+      <div class="card p-4 upload-card h-100">
+        <h5 class="mb-1">Upload Daily Bills</h5>
+        <p class="muted mb-3">Upload a PDF daily sales report.</p>
+        <input id="dailyBillsFile" type="file" class="form-control mb-3" accept=".pdf">
+        <button id="dailyBillsButton" class="btn btn-primary" onclick="uploadDailyBills()">Upload Daily Bills</button>
+        <div id="dailyBillsMessage" class="message mt-3" aria-live="polite"></div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card p-4 upload-card h-100">
+        <h5 class="mb-1">Upload Item Sales Ledger</h5>
+        <p class="muted mb-3">Upload a PDF item sales ledger.</p>
+        <input id="itemLedgerFile" type="file" class="form-control mb-3" accept=".pdf">
+        <button id="itemLedgerButton" class="btn btn-primary" onclick="uploadItemLedger()">Upload Item Sales Ledger</button>
+        <div id="itemLedgerMessage" class="message mt-3" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0">Upload History</h5>
+      <button class="btn btn-outline-secondary btn-sm" onclick="refreshLogs(this)">Refresh</button>
+    </div>
+    <div class="upload-table-wrap">
+      <table class="table table-hover align-middle upload-table">
+        <thead>
+          <tr><th>Date</th><th>Filename</th><th>Type</th><th>Status</th><th>Uploaded By</th><th>Details</th></tr>
+        </thead>
+        <tbody id="uploadBody">
+          <tr><td colspan="6" class="text-center muted">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="uploadPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
+  </div>
+
+  <!-- Upload Details Modal -->
+  <div id="uploadDetailsBackdrop" class="upload-modal-backdrop" onclick="if(event.target===this) closeUploadDetails()">
+    <div class="upload-modal-box">
+        <div class="upload-modal-header">
+            <h5>Upload Details</h5>
+            <button type="button" class="upload-modal-close" onclick="closeUploadDetails()">&times;</button>
+        </div>
+        <div class="upload-modal-body" id="uploadDetailsBody">
+            <!-- populated by showDetails() -->
+        </div>
+        <div class="upload-modal-footer">
+            <button class="btn btn-outline-secondary btn-sm" onclick="closeUploadDetails()">Close</button>
+        </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, character => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[character]));
+  }
+
+  function showPageError(message) {
+    const pageError = document.getElementById('pageError');
+    pageError.innerText = message;
+    pageError.hidden = false;
+  }
+
+  function clearPageError() {
+    document.getElementById('pageError').hidden = true;
+  }
+
+  function showMessage(elementId, message, type) {
+    document.getElementById(elementId).innerHTML = `<div class="alert alert-${type} py-2 mb-0">${escapeHtml(message)}</div>`;
+  }
+
+  function uploadMessage(data, label) {
+    const details = [];
+    if (data.message) details.push(data.message);
+    if (data.product) details.push(`Product: ${data.product}`);
+    if (data.inserted !== undefined) details.push(`Inserted: ${data.inserted}`);
+    if (data.skipped !== undefined) details.push(`Skipped: ${data.skipped}`);
+    if (data.dates_inserted !== undefined) details.push(`Dates inserted: ${data.dates_inserted}`);
+    if (data.dates_skipped !== undefined) details.push(`Dates skipped: ${data.dates_skipped}`);
+    if (Array.isArray(data.errors) && data.errors.length) details.push(`Errors: ${data.errors.join('; ')}`);
+    return `${label}: ${details.join(' | ') || 'Upload complete.'}`;
+  }
+
+  async function uploadFile(inputId, buttonId, messageId, endpoint, label) {
+    const input = document.getElementById(inputId);
+    const button = document.getElementById(buttonId);
+    const file = input.files[0];
+    if (!file) {
+      showMessage(messageId, 'Please select a file first.', 'warning');
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      showMessage(messageId, 'Please select a PDF file.', 'warning');
+      return;
+    }
+
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Uploading...';
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const data = await apiFetch(endpoint, { method: 'POST', body: formData });
+      showMessage(messageId, uploadMessage(data, label), 'success');
+      input.value = '';
+      uploadPage = 1; // new upload — jump back to page 1 so it's visible
+      await loadLogs();
+    } catch (error) {
+      const responseError = error.data?.error || error.data?.errors?.join('; ');
+      showMessage(messageId, responseError || error.message, 'danger');
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+
+  function uploadDailyBills() {
+    return uploadFile('dailyBillsFile', 'dailyBillsButton', 'dailyBillsMessage', '/api/sales/upload/daily-bills/', 'Daily bills upload');
+  }
+
+  function uploadItemLedger() {
+    return uploadFile('itemLedgerFile', 'itemLedgerButton', 'itemLedgerMessage', '/api/sales/upload/item-ledger/', 'Item ledger upload');
+  }
+
+  function statusBadge(status) {
+    const normalized = String(status ?? '').toUpperCase();
+    const className = normalized === 'SUCCESS' ? 'badge-success' : (normalized === 'FAILED' ? 'badge-failed' : 'badge-partial');
+    return `<span class="${className}">${escapeHtml(normalized || '-')}</span>`;
+  }
+
+  // Pagination — server-side (see UploadLogListView / core.pagination).
+  // Was previously client-side: fetched every upload log row on every
+  // load, then sliced 25 at a time in the browser. Now fetches only
+  // the requested page from the backend.
+  let allUploads = [];
+  let uploadPage = 1;
+  let uploadTotalPages = 1;
+  const uploadPageSize = 25;
+
+  async function loadLogs() {
+    clearPageError();
+    try {
+      const data = await apiFetch(`/api/sales/upload-log/?page=${uploadPage}&page_size=${uploadPageSize}`);
+      // Defensive fallback in case this is ever called against an older
+      // unpaginated response shape.
+      allUploads = Array.isArray(data) ? data : (data.results ?? []);
+      uploadTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
+      uploadPage = Array.isArray(data) ? uploadPage : (data.page ?? uploadPage);
+      renderLogs();
+    } catch (error) {
+      document.getElementById('uploadBody').innerHTML = `<tr><td colspan="6" class="text-center text-danger">${escapeHtml(error.message)}</td></tr>`;
+      document.getElementById('uploadPagination').innerHTML = '';
+      showPageError('Upload history could not be loaded. Please try again.');
+    }
+  }
+
+  function renderLogs() {
+    const rows = allUploads;
+    const body = document.getElementById('uploadBody');
+
+    if (rows.length === 0) {
+      body.innerHTML = '<tr><td colspan="6" class="text-center muted">No upload history found.</td></tr>';
+      document.getElementById('uploadPagination').innerHTML = '';
+      return;
+    }
+
+    body.innerHTML = rows.map(log => `
+        <tr>
+          <td>${log.upload_date ? escapeHtml(new Date(log.upload_date).toLocaleString()) : '-'}</td>
+          <td>${escapeHtml(log.file_name)}</td>
+          <td>${escapeHtml(log.upload_type)}</td>
+          <td>${statusBadge(log.status)}</td>
+          <td>${escapeHtml(log.uploaded_by_username ?? '-')}</td>
+          <td><button class="btn btn-outline-secondary btn-sm" onclick="showDetails(${log.id})">Details</button></td>
+        </tr>
+      `).join('');
+
+    document.getElementById('uploadPagination').innerHTML = uploadTotalPages > 1 ? `
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeUploadPage(-1)" ${uploadPage === 1 ? 'disabled' : ''}>Previous</button>
+        <span class="text-muted small">Page ${uploadPage} of ${uploadTotalPages}</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="changeUploadPage(1)" ${uploadPage === uploadTotalPages ? 'disabled' : ''}>Next</button>` : '';
+  }
+
+  function changeUploadPage(delta) {
+    uploadPage += delta;
+    loadLogs(); // server-side pagination — re-fetch the requested page
+  }
+
+  async function refreshLogs(button) {
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Refreshing...';
+    await loadLogs();
+    button.textContent = 'Refreshed';
+    setTimeout(() => {
+      button.textContent = original;
+      button.disabled = false;
+    }, 900);
+  }
+
+  async function showDetails(id) {
+    try {
+      const data = await apiFetch(`/api/sales/upload-log/${id}/`);
+      const errorMessage = data.error_message || 'No error message recorded.';
+
+      const field = (label, value) => `
+        <div class="upload-detail-item">
+            <div class="lbl">${escapeHtml(label)}</div>
+            <div class="val">${escapeHtml(value ?? '—')}</div>
+        </div>`;
+
+      document.getElementById('uploadDetailsBody').innerHTML =
+        field('File', data.file_name) +
+        field('Type', data.upload_type) +
+        field('Status', data.status) +
+        field('Details', errorMessage);
+
+      document.getElementById('uploadDetailsBackdrop').classList.add('show');
+    } catch (error) {
+      showPageError(error.message);
+    }
+  }
+
+  function closeUploadDetails() {
+    document.getElementById('uploadDetailsBackdrop').classList.remove('show');
+  }
+
+  fetchCurrentUser();
+  loadLogs();
+</script>
+{% endblock %}
