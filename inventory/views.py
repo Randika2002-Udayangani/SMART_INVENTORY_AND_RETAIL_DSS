@@ -2208,6 +2208,27 @@ class DiscountRecommendationListView(generics.ListAPIView):
         if status_filter:
             queryset = queryset.filter(status=status_filter)
         return queryset
+
+class PublicDiscountRecommendationListView(generics.ListAPIView):
+    """
+    GET /api/discounts/public/
+    Public endpoint — returns only PENDING discount recommendations
+    with minimal customer-safe fields only.
+    """
+    permission_classes     = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        from .models import DiscountRecommendation
+        discounts = DiscountRecommendation.objects.filter(
+            status='PENDING'
+        ).select_related('product').values(
+            'product_id',
+            'recommended_discount_pct',
+            'recommended_price'
+        )
+        return Response(list(discounts))
+
  
  
 class DiscountRecommendationDetailView(APIView):
