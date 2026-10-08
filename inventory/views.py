@@ -38,7 +38,7 @@ from sales.models import ItemSalesRecord
 from sales.models import UploadLog
 from inventory.services.reorder_logic import get_urgency
 from inventory.services.fefo import deduct_stock_fefo
-
+from rest_framework.exceptions import ValidationError
 
 from inventory.services.reorder_logic import check_reorder_needs
 
@@ -2489,30 +2489,70 @@ class ReorderRecommendationDetailView(APIView):
     PATCH /api/reorder/recommendations/{id}/
     Staff/Manager marks recommendation ORDERED or IGNORED.
     Body: {"status": "ORDERED"} or {"status": "IGNORED"}
+
+    Marking a recommendation ORDERED (for the first time) also creates one
+    shared REORDER notification. An unmapped urgency returns 400 and leaves
+    the recommendation unchanged.
     """
     permission_classes = [IsManagerOrAdmin]
- 
+
+    URGENCY_TO_PRIORITY = {
+        'CRITICAL': 'CRITICAL',
+        'HIGH': 'HIGH',
+        'MEDIUM': 'MEDIUM',
+        'NORMAL': 'MEDIUM',
+        'LOW': 'MEDIUM',
+    }
+
     def patch(self, request, pk):
         try:
-            rec = ReorderRecommendation.objects.get(pk=pk)
+            rec = ReorderRecommendation.objects.select_related('product').get(pk=pk)
         except ReorderRecommendation.DoesNotExist:
             return Response({'error': 'Reorder recommendation not found'}, status=status.HTTP_404_NOT_FOUND)
- 
+
         new_status = request.data.get('status')
         if new_status not in ['ORDERED', 'IGNORED']:
             return Response({'error': 'status must be ORDERED or IGNORED'}, status=status.HTTP_400_BAD_REQUEST)
- 
+
         old_value = {'status': rec.status}
-        rec.status = new_status
-        rec.actioned_by = request.user
-        rec.save()
- 
+        places_order = rec.status != 'ORDERED' and new_status == 'ORDERED'
+
+        # Validate BEFORE saving anything, so a bad urgency returns 400
+        # and leaves the recommendation unchanged.
+        if places_order and rec.urgency not in self.URGENCY_TO_PRIORITY:
+            raise ValidationError({
+                'urgency': (
+                    f'No notification priority mapping for reorder urgency '
+                    f'{rec.urgency!r}'
+                )
+            })
+
+        with transaction.atomic():
+            rec.status = new_status
+            rec.actioned_by = request.user
+            rec.save()
+
+            if places_order:
+                Notification.objects.create(
+                    user=None,
+                    customer=None,
+                    type='REORDER',
+                    priority=self.URGENCY_TO_PRIORITY[rec.urgency],
+                    title=f'Reorder placed: {rec.product.product_name}',
+                    message=(
+                        f'Reorder placed for {rec.product.product_name} by '
+                        f'{request.user.username} ({rec.suggested_quantity} units).'
+                    ),
+                    reference_table='reorder_recommendation',
+                    reference_id=rec.id,
+                )
+
         log_action(
             user=request.user, action='UPDATE', table_name='reorder_recommendation',
             record_id=rec.id, old_value=old_value,
             new_value={'status': rec.status}, request=request,
         )
- 
+
         return Response(ReorderRecommendationSerializer(rec).data)
  
 
