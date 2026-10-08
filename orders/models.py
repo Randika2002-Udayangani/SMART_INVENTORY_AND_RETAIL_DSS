@@ -32,6 +32,12 @@ class OnlineOrder(models.Model):
         ('EXPIRED', 'Expired'),
     ]
 
+    # Statuses that can never represent a completed physical sale, no
+    # matter what other fields say (e.g. a stale picked_up_at). Used by
+    # the Item Ledger reconciliation to be explicit instead of relying
+    # on picked_up_at__isnull=False alone.
+    NEVER_PICKED_STATUSES = ('CANCELLED', 'EXPIRED')
+
     PAYMENT_STATUS_CHOICES = [
         ('UNPAID', 'Unpaid'),
         ('PAID', 'Paid'),
@@ -71,6 +77,13 @@ class OnlineOrder(models.Model):
         choices=PAYMENT_STATUS_CHOICES,
         default='UNPAID'
     )
+
+    # Explicit "customer physically collected this order" timestamp.
+    # NOT a status mirror: only set at the actual pickup/completion
+    # transition. Used by the Item Ledger upload reconciliation to avoid
+    # double-deducting stock for picked-up online orders (the ONLINE_ORDER
+    # FEFO deduction at order creation is the authoritative deduction).
+    picked_up_at = models.DateTimeField(null=True, blank=True)
 
     notes = models.CharField(max_length=255, blank=True)
 
