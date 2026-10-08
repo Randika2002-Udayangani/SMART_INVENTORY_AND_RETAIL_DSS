@@ -1,5 +1,6 @@
 from datetime import date, timedelta, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from rest_framework.decorators import api_view, permission_classes
 from users.permissions import IsManagerOrAdmin
@@ -18,7 +19,7 @@ from sales.services.profit_engine import (
 from sales.models import ItemSalesRecord
 from products.models import Product
 from core.utils import get_last_sync_date
-from django.db.models import Max, Sum
+from django.db.models import Count, Max, Q, Sum
 
 from django.db.models.functions import TruncMonth  
 from inventory.models import InventoryHealthScore, ProductLifecycle
@@ -48,6 +49,16 @@ from sales.services.profit_engine import product_monthly_trend as _product_month
 # ?period=&months= instead, per its own spec in §10.
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Same fix pattern as notify_expiring_batches.py, notify_missing_uploads.py,
+# lifecycle.py and health_score.py: date.today() reads the SERVER's own OS
+# clock, not Django's TIME_ZONE setting. Local dev machines are typically
+# already set to Sri Lanka time, so this silently worked in local testing —
+# but cloud hosts (Render included) default to a UTC system clock, so this
+# would have shifted every default date range app-wide the moment this was
+# deployed. Fixed here before that happened rather than after.
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
+
+
 def _parse_date_range(request, default_days=30):
     """
     Shared date_from/date_to parsing, mirroring the validation
@@ -57,7 +68,7 @@ def _parse_date_range(request, default_days=30):
     raw_to   = request.query_params.get('date_to')
     raw_from = request.query_params.get('date_from')
 
-    date_to = datetime.strptime(raw_to, '%Y-%m-%d').date() if raw_to else date.today()
+    date_to = datetime.strptime(raw_to, '%Y-%m-%d').date() if raw_to else datetime.now(LOCAL_TZ).date()
     date_from = datetime.strptime(raw_from, '%Y-%m-%d').date() if raw_from else date_to - timedelta(days=default_days)
 
     if date_from > date_to:
@@ -289,19 +300,14 @@ def overview(request):
 
     # ── Data quality — computed off product_ids actually in this period ──────
     product_ids = [r['product_id'] for r in product_results]
-    products_missing_wac = Product.objects.filter(
-        id__in=product_ids
-    ).filter(
-        avg_cost_price__isnull=True
-    ).count() + Product.objects.filter(
-        id__in=product_ids, avg_cost_price=0
-    ).count()
-    sales_record_count = ItemSalesRecord.objects.filter(
+    products_missing_wac = Product.objects.filter(id__in=product_ids).aggregate(
+        missing=Count('id', filter=Q(avg_cost_price__isnull=True) | Q(avg_cost_price=0))
+    )['missing'] or 0
+    sales_quality = ItemSalesRecord.objects.filter(
         sale_date__range=(date_from, date_to)
-    ).count()
-    latest_sales_date = ItemSalesRecord.objects.filter(
-        sale_date__range=(date_from, date_to)
-    ).aggregate(latest=Max('sale_date'))['latest']
+    ).aggregate(count=Count('id'), latest=Max('sale_date'))
+    sales_record_count = sales_quality['count'] or 0
+    latest_sales_date = sales_quality['latest']
 
     data_quality = {
         'sales_records': sales_record_count,
@@ -560,7 +566,7 @@ def product_analysis(request, product_id):
 
     # ── Stock position — same 30-day lookback constant reorder_logic.py uses ──
     current_stock = _get_current_stock(product_id)
-    since = date.today() - timedelta(days=SALES_LOOKBACK_DAYS)
+    since = datetime.now(LOCAL_TZ).date() - timedelta(days=SALES_LOOKBACK_DAYS)
     recent_sold = ItemSalesRecord.objects.filter(
         product_id=product_id, sale_date__gte=since
     ).aggregate(total=Sum('quantity_sold'))['total'] or 0

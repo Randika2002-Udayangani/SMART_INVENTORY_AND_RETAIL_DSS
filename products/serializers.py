@@ -1,8 +1,11 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 # products/serializers.py
 from rest_framework import serializers
 from .models import Brand, Category, StoreZone, Product
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 # ─────────────────────────────────────────────
@@ -63,10 +66,9 @@ class CategorySerializer(serializers.ModelSerializer):
 # until staff assigns a category.
 # ─────────────────────────────────────────────
 class ProductPublicSerializer(serializers.ModelSerializer):
-    # Customer-facing expiry should reflect the nearest valid batch, not a stale
-    # product-level field. If every active batch is expired, return None so the
-    # frontend treats the product as unavailable rather than showing a dead date.
-    expiry_date = serializers.SerializerMethodField()
+    expiry_date = serializers.DateField(
+        source='earliest_expiry', read_only=True, allow_null=True
+    )
     category_name = serializers.CharField(
         source='category.category_name',
         read_only=True,
@@ -80,8 +82,6 @@ class ProductPublicSerializer(serializers.ModelSerializer):
         default=None    # returns null instead of crashing for unbranked products
     )
     is_near_expiry = serializers.SerializerMethodField()
-    discounted_price = serializers.SerializerMethodField()
-    discount_percentage = serializers.SerializerMethodField()
 
     class Meta:
         model  = Product
@@ -93,54 +93,17 @@ class ProductPublicSerializer(serializers.ModelSerializer):
             'brand', 'brand_name',
             'expiry_date',
             'is_near_expiry',
-            'discounted_price', 'discount_percentage',
             # cost_price    — excluded: internal supplier cost
             # avg_cost_price — excluded: internal WAC used for profit calc
         ]
 
     def get_is_near_expiry(self, obj):
-        expiry_date = self.get_expiry_date(obj)
-        if not expiry_date:
-            return False
+        expiry_date = getattr(obj, 'earliest_expiry', None)
+        today = datetime.now(LOCAL_TZ).date()
         return bool(
-            date.today() <= date.fromisoformat(expiry_date) <= date.today() + timedelta(days=30)
+            expiry_date
+            and today <= expiry_date <= today + timedelta(days=30)
         )
-
-    def get_expiry_date(self, obj):
-        from inventory.services.stock import get_sellable_batches
-
-        batch = (
-            get_sellable_batches(obj.id)
-            .order_by('expiry_date')
-            .first()
-        )
-        return batch.expiry_date.isoformat() if batch and batch.expiry_date else None
-
-    def _get_customer_discount(self, obj):
-        from inventory.models import DiscountRecommendation
-
-        return (
-            DiscountRecommendation.objects
-            .filter(
-                product=obj,
-                status__in=['PENDING', 'APPLIED'],
-                best_action='DISCOUNT',
-                batch__status='ACTIVE',
-                batch__remaining_quantity__gt=0,
-                batch__expiry_date__gte=date.today(),
-                recommended_price__lt=obj.unit_price,
-            )
-            .order_by('days_until_expiry', '-calculated_date', '-id')
-            .first()
-        )
-
-    def get_discounted_price(self, obj):
-        recommendation = self._get_customer_discount(obj)
-        return recommendation.recommended_price if recommendation else None
-
-    def get_discount_percentage(self, obj):
-        recommendation = self._get_customer_discount(obj)
-        return recommendation.recommended_discount_pct if recommendation else None
 
 # ─────────────────────────────────────────────
 # Product — STAFF serializer
@@ -173,8 +136,6 @@ class ProductSerializer(serializers.ModelSerializer):
         default=None
     )
     is_near_expiry = serializers.SerializerMethodField()
-    discounted_price = serializers.SerializerMethodField()
-    discount_percentage = serializers.SerializerMethodField()
 
     class Meta:
         model  = Product
@@ -186,52 +147,15 @@ class ProductSerializer(serializers.ModelSerializer):
             'brand', 'brand_name',
             'expiry_date',
             'is_near_expiry',
-            'discounted_price', 'discount_percentage',
         ]
 
     def get_is_near_expiry(self, obj):
-        expiry_date = self.get_expiry_date(obj)
-        if not expiry_date:
-            return False
+        expiry_date = getattr(obj, 'earliest_expiry', None)
+        today = datetime.now(LOCAL_TZ).date()
         return bool(
-            date.today() <= date.fromisoformat(expiry_date) <= date.today() + timedelta(days=30)
+            expiry_date
+            and today <= expiry_date <= today + timedelta(days=30)
         )
-
-    def get_expiry_date(self, obj):
-        from inventory.services.stock import get_sellable_batches
-
-        batch = (
-            get_sellable_batches(obj.id)
-            .order_by('expiry_date')
-            .first()
-        )
-        return batch.expiry_date.isoformat() if batch and batch.expiry_date else None
-
-    def _get_customer_discount(self, obj):
-        from inventory.models import DiscountRecommendation
-
-        return (
-            DiscountRecommendation.objects
-            .filter(
-                product=obj,
-                status__in=['PENDING', 'APPLIED'],
-                best_action='DISCOUNT',
-                batch__status='ACTIVE',
-                batch__remaining_quantity__gt=0,
-                batch__expiry_date__gte=date.today(),
-                recommended_price__lt=obj.unit_price,
-            )
-            .order_by('days_until_expiry', '-calculated_date', '-id')
-            .first()
-        )
-
-    def get_discounted_price(self, obj):
-        recommendation = self._get_customer_discount(obj)
-        return recommendation.recommended_price if recommendation else None
-
-    def get_discount_percentage(self, obj):
-        recommendation = self._get_customer_discount(obj)
-        return recommendation.recommended_discount_pct if recommendation else None
 
     def to_internal_value(self, data):
         # sku_code is unique=True + null=True + blank=True on the model.

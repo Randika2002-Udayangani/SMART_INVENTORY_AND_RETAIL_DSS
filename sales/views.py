@@ -10,6 +10,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 import os
 from datetime import date, timedelta, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -29,6 +30,8 @@ from users.audit import log_action
 from users.models import SystemConfig
 from inventory.models import PurchaseBatch, StockLedger, LossRecord, InventoryHealthScore, ReorderRecommendation
 from inventory.services.fefo import deduct_stock_fefo
+
+LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 from .models import (
     UploadLog,
@@ -778,7 +781,7 @@ def sales_summary(request):
     date_from_str = request.query_params.get('date_from')
 
     try:
-        date_to   = date.fromisoformat(date_to_str)  if date_to_str   else date.today()
+        date_to   = date.fromisoformat(date_to_str)  if date_to_str   else datetime.now(LOCAL_TZ).date()
         date_from = date.fromisoformat(date_from_str) if date_from_str else date_to - timedelta(days=30)
     except ValueError:
         return Response(
@@ -924,7 +927,7 @@ def expiry_summary(request):
     Auth: Staff JWT required
     """
 
-    today = date.today()
+    today = datetime.now(LOCAL_TZ).date()
     d7    = today + timedelta(days=7)
     d14   = today + timedelta(days=14)
     d30   = today + timedelta(days=30)
@@ -1038,7 +1041,7 @@ def profit_summary(request):
     raw_from = request.query_params.get('date_from')
 
     try:
-        date_to = datetime.strptime(raw_to, '%Y-%m-%d').date() if raw_to else date.today()
+        date_to = datetime.strptime(raw_to, '%Y-%m-%d').date() if raw_to else datetime.now(LOCAL_TZ).date()
     except ValueError:
         return Response({'error': 'Invalid date_to format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1119,7 +1122,7 @@ def _report_date_range(request):
     to_str = request.query_params.get('date_to')
     from_str = request.query_params.get('date_from')
 
-    date_to = date.fromisoformat(to_str) if to_str else date.today()
+    date_to = date.fromisoformat(to_str) if to_str else datetime.now(LOCAL_TZ).date()
     date_from = date.fromisoformat(from_str) if from_str else date_to - timedelta(days=30)
 
     if date_from > date_to:
@@ -1250,32 +1253,31 @@ def _excel_response(filename, headers, rows, summary=None):
     Excel cells do not need HTML escaping: values are written as raw text,
     including ampersands, so we intentionally do not call html.escape() here.
     """
+    from openpyxl.cell import WriteOnlyCell
     from openpyxl.styles import Font
 
-    wb = Workbook()
-    ws = wb.active
+    # Write-only mode prevents openpyxl from retaining a cell object for the
+    # entire worksheet. Export callers may still provide their row data as an
+    # iterable, but the workbook itself remains bounded by the current row.
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet()
 
     if summary:
         for label, value in summary:
-            ws.append([label, value])
+            label_cell = WriteOnlyCell(ws, value=label)
+            label_cell.font = Font(bold=True)
+            ws.append([label_cell, value])
         ws.append([])  # blank separator row
-        for i in range(1, len(summary) + 1):
-            ws.cell(row=i, column=1).font = Font(bold=True)
 
-    header_row_idx = ws.max_row + 1
-    ws.append(headers)
-    for cell in ws[header_row_idx]:
+    header_cells = []
+    for header in headers:
+        cell = WriteOnlyCell(ws, value=header)
         cell.font = Font(bold=True)
+        header_cells.append(cell)
+    ws.append(header_cells)
 
     for row in rows:
         ws.append(list(row))
-
-    for i, header in enumerate(headers, start=1):
-        col_letter = ws.cell(row=header_row_idx, column=i).column_letter
-        widths = [len(str(header))] + [len(str(r[i - 1])) for r in rows]
-        if summary and i <= 2:
-            widths += [len(str(s[i - 1])) for s in summary]
-        ws.column_dimensions[col_letter].width = min(max(widths) + 2, 40)
 
     buffer = io.BytesIO()
     wb.save(buffer)
@@ -1576,7 +1578,7 @@ def inventory_report_export(request):
         ('Total Stock Value', f'Rs. {total_stock_value:,.2f}'),
     ]
 
-    today = date.today()
+    today = datetime.now(LOCAL_TZ).date()
     filename_base = f'inventory_report_{today}'
     if fmt == 'excel':
         response = _excel_response(f'{filename_base}.xlsx', headers, rows, summary=summary)
@@ -1637,12 +1639,13 @@ def health_score_report_export(request):
         for r in queryset
     ]
 
-    filename_base = f'health_score_report_{date.today()}'
+    report_date = datetime.now(LOCAL_TZ).date()
+    filename_base = f'health_score_report_{report_date}'
     if fmt == 'excel':
         response = _excel_response(f'{filename_base}.xlsx', headers, rows)
         logged_name = f'{filename_base}.xlsx'
     else:
-        response = _pdf_response(f'{filename_base}.pdf', f'Health Score Report ({date.today()})', headers, rows)
+        response = _pdf_response(f'{filename_base}.pdf', f'Health Score Report ({report_date})', headers, rows)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
@@ -1693,12 +1696,13 @@ def supplier_report_export(request):
             s['overall_score'] if s['overall_score'] is not None else 'N/A',
         ))
 
-    filename_base = f'supplier_report_{date.today()}'
+    report_date = datetime.now(LOCAL_TZ).date()
+    filename_base = f'supplier_report_{report_date}'
     if fmt == 'excel':
         response = _excel_response(f'{filename_base}.xlsx', headers, rows)
         logged_name = f'{filename_base}.xlsx'
     else:
-        response = _pdf_response(f'{filename_base}.pdf', f'Supplier Performance Report ({date.today()})', headers, rows)
+        response = _pdf_response(f'{filename_base}.pdf', f'Supplier Performance Report ({report_date})', headers, rows)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
@@ -1728,12 +1732,13 @@ def lifecycle_report_export(request):
         for r in data
     ]
 
-    filename_base = f'lifecycle_report_{date.today()}'
+    report_date = datetime.now(LOCAL_TZ).date()
+    filename_base = f'lifecycle_report_{report_date}'
     if fmt == 'excel':
         response = _excel_response(f'{filename_base}.xlsx', headers, rows)
         logged_name = f'{filename_base}.xlsx'
     else:
-        response = _pdf_response(f'{filename_base}.pdf', f'Product Lifecycle Report ({date.today()})', headers, rows)
+        response = _pdf_response(f'{filename_base}.pdf', f'Product Lifecycle Report ({report_date})', headers, rows)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)
@@ -1894,12 +1899,13 @@ def reorder_report_export(request):
         for r in queryset
     ]
 
-    filename_base = f'reorder_report_{date.today()}'
+    report_date = datetime.now(LOCAL_TZ).date()
+    filename_base = f'reorder_report_{report_date}'
     if fmt == 'excel':
         response = _excel_response(f'{filename_base}.xlsx', headers, rows, summary=summary)
         logged_name = f'{filename_base}.xlsx'
     else:
-        response = _pdf_response(f'{filename_base}.pdf', f'Reorder Recommendations Report ({date.today()})', headers, rows, summary=summary)
+        response = _pdf_response(f'{filename_base}.pdf', f'Reorder Recommendations Report ({report_date})', headers, rows, summary=summary)
         logged_name = f'{filename_base}.pdf'
 
     _log_export(request, logged_name)

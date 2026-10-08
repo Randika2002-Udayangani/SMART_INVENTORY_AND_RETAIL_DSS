@@ -46,6 +46,5 @@ urlpatterns = [
     # written+tested in profit_engine.py but unwired per API_Design_Document_v3.2 §26.3.
     path('analytics/overview/', overview, name='analytics-overview'),
     path('analytics/products/', products, name='analytics-products'),
-    path('analytics/products/', products, name='analytics-products'),
     path('analytics/products/<int:product_id>/analysis/', product_analysis, name='analytics-product-analysis'),
 ]
