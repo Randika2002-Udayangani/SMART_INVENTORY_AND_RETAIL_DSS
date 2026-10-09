@@ -83,7 +83,9 @@ class ProductListCreateView(generics.ListCreateAPIView):
                 filter=Q(
                     purchasebatch__status__in=['ACTIVE', 'PENDING_EXPIRY'],
                     purchasebatch__remaining_quantity__gt=0,
-                    purchasebatch__expiry_date__gt=today,
+                ) & (
+                    Q(purchasebatch__expiry_date__isnull=True)
+                    | Q(purchasebatch__expiry_date__gt=today)
                 ),
             ),
         )
@@ -212,7 +214,9 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
             filter=Q(
                 purchasebatch__status__in=['ACTIVE', 'PENDING_EXPIRY'],
                 purchasebatch__remaining_quantity__gt=0,
-                purchasebatch__expiry_date__gt=timezone.now().date(),
+            ) & (
+                Q(purchasebatch__expiry_date__isnull=True)
+                | Q(purchasebatch__expiry_date__gt=timezone.now().date())
             ),
         ),
     )

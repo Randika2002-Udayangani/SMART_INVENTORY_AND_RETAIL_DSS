@@ -11,6 +11,8 @@ from core.authentication import LenientJWTAuthentication
 from django.db import transaction
 from django.db.models import F, Sum
 from rest_framework import generics, status
+from django.db.models import Sum
+from rest_framework import generics, status,permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -61,6 +63,7 @@ from core.utils import get_last_sync_date, get_latest_sync_uploads
 class StockSnapshotView(APIView):
     def get(self, request):
         last_sync = get_last_sync_date()
+
         products  = Product.objects.filter(is_active=True).select_related('category', 'brand')
         result    = []
         stock_by_product = dict(
@@ -69,6 +72,25 @@ class StockSnapshotView(APIView):
             .annotate(total=Sum('remaining_quantity'))
             .values_list('product_id', 'total')
         )
+
+        products  = list(Product.objects.filter(is_active=True).select_related('category', 'brand'))
+
+        stock_by_product = {
+            row['product']: row['total'] or 0
+            for row in get_sellable_batches().filter(
+                product_id__in=[p.id for p in products],
+            ).values('product').annotate(total=Sum('remaining_quantity'))
+        }
+
+        search = request.query_params.get('search', '').strip().lower()
+        status_filter = request.query_params.get('status', '').strip().upper()
+        if status_filter and status_filter not in ('AVAILABLE', 'LOW', 'OUT'):
+            return Response(
+                {'error': "status must be one of: AVAILABLE, LOW, OUT."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        result = []
 
         for product in products:
             current_stock = stock_by_product.get(product.id, 0)
@@ -100,6 +122,70 @@ class StockSnapshotView(APIView):
             'count'         : len(result),
             'stock'         : result
         })
+
+
+class StockSummaryView(APIView):
+    """
+    GET /api/inventory/stock/summary/
+
+    Total/Low/Out/Available counts for the inventory.html KPI cards.
+    Paired with the pagination fix on StockSnapshotView above — those KPI
+    cards must read from here, not from counting a paginated results list,
+    or they'll silently show only the current page's counts instead of the
+    real totals. Same fix pattern as HealthScoreSummaryView.
+
+    Reuses the identical bulk-fetch (no N+1) that StockSnapshotView uses,
+    just returns counts instead of per-product rows.
+    """
+    def get(self, request):
+        products = list(Product.objects.filter(is_active=True))
+
+        stock_by_product = {
+            row['product']: row['total'] or 0
+            for row in get_sellable_batches().filter(
+                product_id__in=[p.id for p in products],
+            ).values('product').annotate(total=Sum('remaining_quantity'))
+        }
+
+        total = low = out = available = 0
+        for product in products:
+            current_stock = stock_by_product.get(product.id, 0)
+            reorder = product.reorder_threshold or 0
+            total += 1
+            if current_stock == 0:
+                out += 1
+            elif current_stock <= reorder:
+                low += 1
+            else:
+                available += 1
+
+        return Response({
+            'total_products': total,
+            'low_stock'     : low,
+            'out_of_stock'  : out,
+            'available'     : available,
+        })
+
+
+class InventoryProductOptionsView(APIView):
+    """
+    GET /api/inventory/products/picker/
+
+    Lightweight {id, name} pairs for every active product — nothing else.
+    Feeds inventory.html's <datalist id="inventoryProductOptions">, shared
+    across the Stock Ledger and Manual Adjustment tabs' product-ID inputs.
+
+    Deliberately separate from StockSnapshotView: the datalist doesn't need
+    stock levels, categories, brands, or WAC — just enough to let someone
+    type a product name and get its ID. No PurchaseBatch query at all here,
+    so this stays cheap even at 2000+ products, and doesn't inherit
+    StockSnapshotView's pagination (a <datalist> needs the full option set
+    to be useful — paginating it would just move the problem, not solve it;
+    this endpoint solves it by making the per-row payload small instead).
+    """
+    def get(self, request):
+        products = Product.objects.filter(is_active=True).values('id', 'product_name').order_by('product_name')
+        return Response({'products': list(products)})
 
 
 STOCK_LEDGER_HISTORY_LIMIT = 100
@@ -234,6 +320,7 @@ class ProductStockDetailView(APIView):
                             status=status.HTTP_404_NOT_FOUND)
 
         batches = get_sellable_batches(product.id).order_by('expiry_date')
+        batches     = get_sellable_batches(product.id).order_by('expiry_date')
         total_stock = batches.aggregate(
             total=Sum('remaining_quantity'))['total'] or 0
 
@@ -467,10 +554,10 @@ class LowStockView(APIView):
         # Use the same future-expiry batch set as the inventory snapshot and
         # customer availability so alert counts describe sellable stock.
         stock_by_product = {
-            row['product_id']: row['total']
-            for row in get_sellable_batches()
-            .values('product_id')
-            .annotate(total=Sum('remaining_quantity'))
+            row['product']: row['total']
+            for row in get_sellable_batches().values('product').annotate(
+                total=Sum('remaining_quantity')
+            )
         }
  
         # Bulk-fetch 30-day sales per product (avoid N+1)
@@ -535,10 +622,10 @@ class OutOfStockView(APIView):
     def get(self, request):
         products = Product.objects.filter(is_active=True)
         stock_by_product = {
-            row['product_id']: row['total']
-            for row in get_sellable_batches()
-            .values('product_id')
-            .annotate(total=Sum('remaining_quantity'))
+            row['product']: row['total'] or 0
+            for row in get_sellable_batches().filter(
+                product_id__in=[p.id for p in products],
+            ).values('product').annotate(total=Sum('remaining_quantity'))
         }
         out = [
             {
@@ -2205,6 +2292,21 @@ class ReorderCalculateView(APIView):
         }, status=status.HTTP_201_CREATED)
 
  
+def _reorder_notification_priority(urgency):
+    """Normalize reorder urgency into the shared notification priority set."""
+    normalized = str(urgency or '').strip().upper()
+    mapping = {
+        'CRITICAL': 'CRITICAL',
+        'HIGH': 'HIGH',
+        'MEDIUM': 'MEDIUM',
+        'NORMAL': 'MEDIUM',
+        'LOW': 'LOW',
+    }
+    if normalized not in mapping:
+        raise ValueError(f"No notification priority mapping for urgency '{urgency}'")
+    return mapping[normalized]
+
+
 class ReorderRecommendationListView(generics.ListAPIView):
     """
     GET /api/reorder/recommendations/
@@ -2243,10 +2345,40 @@ class ReorderRecommendationDetailView(APIView):
         if new_status not in ['ORDERED', 'IGNORED']:
             return Response({'error': 'status must be ORDERED or IGNORED'}, status=status.HTTP_400_BAD_REQUEST)
  
+        if new_status == 'ORDERED':
+            try:
+                priority = _reorder_notification_priority(rec.urgency)
+            except ValueError as exc:
+                return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         old_value = {'status': rec.status}
         rec.status = new_status
         rec.actioned_by = request.user
         rec.save()
+
+        if new_status == 'ORDERED':
+            notification = Notification.objects.filter(
+                reference_table='reorder_recommendation',
+                reference_id=rec.id,
+            ).first()
+            if notification is None:
+                notification = Notification.objects.create(
+                    user=None,
+                    customer=None,
+                    type='REORDER',
+                    priority=priority,
+                    title='Reorder recommendation actioned',
+                    message=f"{request.user.username} ordered {rec.product.product_name} for reorder.",
+                    reference_table='reorder_recommendation',
+                    reference_id=rec.id,
+                )
+            else:
+                notification.priority = priority
+                notification.title = 'Reorder recommendation actioned'
+                notification.message = (
+                    f"{request.user.username} ordered {rec.product.product_name} for reorder."
+                )
+                notification.save(update_fields=['priority', 'title', 'message'])
  
         log_action(
             user=request.user, action='UPDATE', table_name='reorder_recommendation',
