@@ -10,8 +10,7 @@ from users.audit import log_action
 
 from django.db import transaction
 from django.db.models import Sum
-from rest_framework import generics, status
-from rest_framework import permissions
+from rest_framework import generics, status,permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -38,7 +37,8 @@ from sales.models import ItemSalesRecord
 from sales.models import UploadLog
 from inventory.services.reorder_logic import get_urgency
 from inventory.services.fefo import deduct_stock_fefo
-from rest_framework.exceptions import ValidationError
+from inventory.services.stock import get_sellable_batches
+
 
 from inventory.services.reorder_logic import check_reorder_needs
 
@@ -111,9 +111,8 @@ class StockSnapshotView(APIView):
 
         stock_by_product = {
             row['product']: row['total'] or 0
-            for row in PurchaseBatch.objects.filter(
+            for row in get_sellable_batches().filter(
                 product_id__in=[p.id for p in products],
-                status='ACTIVE',
             ).values('product').annotate(total=Sum('remaining_quantity'))
         }
 
@@ -200,9 +199,8 @@ class StockSummaryView(APIView):
 
         stock_by_product = {
             row['product']: row['total'] or 0
-            for row in PurchaseBatch.objects.filter(
+            for row in get_sellable_batches().filter(
                 product_id__in=[p.id for p in products],
-                status='ACTIVE',
             ).values('product').annotate(total=Sum('remaining_quantity'))
         }
 
@@ -378,9 +376,7 @@ class ProductStockDetailView(APIView):
             return Response({'error': 'Product not found'},
                             status=status.HTTP_404_NOT_FOUND)
 
-        batches     = PurchaseBatch.objects.filter(
-            product=product, status='ACTIVE'
-        ).order_by('expiry_date')
+        batches     = get_sellable_batches(product.id).order_by('expiry_date')
         total_stock = batches.aggregate(
             total=Sum('remaining_quantity'))['total'] or 0
 
@@ -614,10 +610,9 @@ class LowStockView(APIView):
         # Bulk-fetch all active batch stock in one query (avoid N+1)
         stock_by_product = {
             row['product']: row['total']
-            for row in PurchaseBatch.objects.filter(
-                status__in=['ACTIVE', 'PENDING_EXPIRY'],
-                remaining_quantity__gt=0,
-            ).values('product').annotate(total=Sum('remaining_quantity'))
+            for row in get_sellable_batches().values('product').annotate(
+                total=Sum('remaining_quantity')
+            )
         }
  
         # Bulk-fetch 30-day sales per product (avoid N+1)
@@ -691,9 +686,8 @@ class OutOfStockView(APIView):
 
         stock_by_product = {
             row['product']: row['total'] or 0
-            for row in PurchaseBatch.objects.filter(
+            for row in get_sellable_batches().filter(
                 product_id__in=[p.id for p in products],
-                status='ACTIVE',
             ).values('product').annotate(total=Sum('remaining_quantity'))
         }
 
@@ -2462,6 +2456,21 @@ class ReorderCalculateView(APIView):
         }, status=status.HTTP_201_CREATED)
 
  
+def _reorder_notification_priority(urgency):
+    """Normalize reorder urgency into the shared notification priority set."""
+    normalized = str(urgency or '').strip().upper()
+    mapping = {
+        'CRITICAL': 'CRITICAL',
+        'HIGH': 'HIGH',
+        'MEDIUM': 'MEDIUM',
+        'NORMAL': 'MEDIUM',
+        'LOW': 'LOW',
+    }
+    if normalized not in mapping:
+        raise ValueError(f"No notification priority mapping for urgency '{urgency}'")
+    return mapping[normalized]
+
+
 class ReorderRecommendationListView(generics.ListAPIView):
     """
     GET /api/reorder/recommendations/
@@ -2489,70 +2498,60 @@ class ReorderRecommendationDetailView(APIView):
     PATCH /api/reorder/recommendations/{id}/
     Staff/Manager marks recommendation ORDERED or IGNORED.
     Body: {"status": "ORDERED"} or {"status": "IGNORED"}
-
-    Marking a recommendation ORDERED (for the first time) also creates one
-    shared REORDER notification. An unmapped urgency returns 400 and leaves
-    the recommendation unchanged.
     """
     permission_classes = [IsManagerOrAdmin]
-
-    URGENCY_TO_PRIORITY = {
-        'CRITICAL': 'CRITICAL',
-        'HIGH': 'HIGH',
-        'MEDIUM': 'MEDIUM',
-        'NORMAL': 'MEDIUM',
-        'LOW': 'MEDIUM',
-    }
-
+ 
     def patch(self, request, pk):
         try:
-            rec = ReorderRecommendation.objects.select_related('product').get(pk=pk)
+            rec = ReorderRecommendation.objects.get(pk=pk)
         except ReorderRecommendation.DoesNotExist:
             return Response({'error': 'Reorder recommendation not found'}, status=status.HTTP_404_NOT_FOUND)
-
+ 
         new_status = request.data.get('status')
         if new_status not in ['ORDERED', 'IGNORED']:
             return Response({'error': 'status must be ORDERED or IGNORED'}, status=status.HTTP_400_BAD_REQUEST)
+ 
+        if new_status == 'ORDERED':
+            try:
+                priority = _reorder_notification_priority(rec.urgency)
+            except ValueError as exc:
+                return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         old_value = {'status': rec.status}
-        places_order = rec.status != 'ORDERED' and new_status == 'ORDERED'
+        rec.status = new_status
+        rec.actioned_by = request.user
+        rec.save()
 
-        # Validate BEFORE saving anything, so a bad urgency returns 400
-        # and leaves the recommendation unchanged.
-        if places_order and rec.urgency not in self.URGENCY_TO_PRIORITY:
-            raise ValidationError({
-                'urgency': (
-                    f'No notification priority mapping for reorder urgency '
-                    f'{rec.urgency!r}'
-                )
-            })
-
-        with transaction.atomic():
-            rec.status = new_status
-            rec.actioned_by = request.user
-            rec.save()
-
-            if places_order:
-                Notification.objects.create(
+        if new_status == 'ORDERED':
+            notification = Notification.objects.filter(
+                reference_table='reorder_recommendation',
+                reference_id=rec.id,
+            ).first()
+            if notification is None:
+                notification = Notification.objects.create(
                     user=None,
                     customer=None,
                     type='REORDER',
-                    priority=self.URGENCY_TO_PRIORITY[rec.urgency],
-                    title=f'Reorder placed: {rec.product.product_name}',
-                    message=(
-                        f'Reorder placed for {rec.product.product_name} by '
-                        f'{request.user.username} ({rec.suggested_quantity} units).'
-                    ),
+                    priority=priority,
+                    title='Reorder recommendation actioned',
+                    message=f"{request.user.username} ordered {rec.product.product_name} for reorder.",
                     reference_table='reorder_recommendation',
                     reference_id=rec.id,
                 )
-
+            else:
+                notification.priority = priority
+                notification.title = 'Reorder recommendation actioned'
+                notification.message = (
+                    f"{request.user.username} ordered {rec.product.product_name} for reorder."
+                )
+                notification.save(update_fields=['priority', 'title', 'message'])
+ 
         log_action(
             user=request.user, action='UPDATE', table_name='reorder_recommendation',
             record_id=rec.id, old_value=old_value,
             new_value={'status': rec.status}, request=request,
         )
-
+ 
         return Response(ReorderRecommendationSerializer(rec).data)
  
 

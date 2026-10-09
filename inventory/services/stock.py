@@ -24,17 +24,22 @@ a verified future expiry date. This is the same definition used by customer
 availability, so expired or undated stock cannot inflate available counts.
 """
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 from purchases.models import PurchaseBatch
 
 
 def get_sellable_batches(product_id=None):
-    """Return batches eligible for sale and customer availability counts."""
+    """Return batches eligible for sale and customer availability counts.
+
+    Non-perishable items may legitimately have no expiry date, so they must not
+    be treated as out of stock just because their expiry field is null.
+    """
     batches = PurchaseBatch.objects.filter(
         status__in=['ACTIVE', 'PENDING_EXPIRY'],
         remaining_quantity__gt=0,
-        expiry_date__gt=timezone.now().date(),
+    ).filter(
+        Q(expiry_date__isnull=True) | Q(expiry_date__gt=timezone.now().date())
     )
     if product_id is not None:
         batches = batches.filter(product_id=product_id)

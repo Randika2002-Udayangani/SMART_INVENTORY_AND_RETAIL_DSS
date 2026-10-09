@@ -125,7 +125,7 @@ class ProductAvailabilityRestockTests(TestCase):
 		)
 		inventory_response = client.get('/api/inventory/stock/')
 		product_stock = next(
-			row for row in inventory_response.data['stock']
+			row for row in inventory_response.data['results']
 			if row['product_id'] == product.id
 		)
 		detail_response = client.get(f'/api/inventory/stock/{product.id}/')
@@ -136,3 +136,32 @@ class ProductAvailabilityRestockTests(TestCase):
 		self.assertEqual(
 			detail_response.data['total_current_stock'], response.data['stock']
 		)
+
+	def test_non_perishable_batch_without_expiry_is_counted_as_available(self):
+		product = Product.objects.create(
+			product_name='Rice Pack',
+			unit_price=Decimal('120.00'),
+			cost_price=Decimal('80.00'),
+		)
+		supplier = Supplier.objects.create(supplier_name='Dry Goods Supplier')
+		purchase = Purchase.objects.create(
+			supplier=supplier,
+			purchase_date=date.today(),
+		)
+		PurchaseBatch.objects.create(
+			purchase=purchase,
+			product=product,
+			quantity_received=9,
+			cost_price=Decimal('80.00'),
+			expiry_date=None,
+			remaining_quantity=9,
+			status='ACTIVE',
+		)
+
+		response = APIClient().get(f'/api/products/{product.id}/availability/')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data['status'], 'LIMITED_STOCK')
+		self.assertEqual(response.data['stock'], 9)
+		self.assertIsNone(response.data['earliest_expiry'])
+		self.assertEqual(ProductPublicSerializer(product).data['expiry_date'], None)
