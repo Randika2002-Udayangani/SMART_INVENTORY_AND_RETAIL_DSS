@@ -21,7 +21,7 @@
     .loss-table-wrap, .returns-table-wrap { overflow: visible; }
     .loss-table, .returns-table { width:100%; table-layout:fixed; border-collapse:separate; border-spacing:0; }
     .loss-table thead th, .returns-table thead th {
-        position: sticky; top: calc(var(--topbar-height, 58px) + 1px); z-index: 10;
+        position: sticky; top: 0; z-index: 10;
         background: var(--card2) !important; box-shadow: 0 1px 0 var(--border);
     }
     .staff-damage-heading { display:none; }
@@ -62,6 +62,11 @@
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Decision Support</span><span>›</span><span class="current-page">Loss Analysis</span></div>
+  <h1 class="page-title">Loss Analysis</h1>
+  <p class="page-subtitle">Analyze damaged, expired, and returned stock to reduce inventory loss.</p>
+</div>
 <div class="topbar">
     <div>
         <h1>Loss Analysis</h1>
@@ -113,7 +118,7 @@
                 <select id="lossTypeFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadLosses()">
                     <option value="">All Types</option>
                     <option value="EXPIRY">EXPIRY</option>
-                    <option value="SLOW_MOVING">SLOW_MOVING</option>
+                    <option value="SLOW_MOVING">Slow Moving</option>
                     <option value="DAMAGE">DAMAGE</option>
                     <option value="OTHER">OTHER</option>
                 </select>
@@ -121,7 +126,8 @@
             </div>
         </div>
         <div class="loss-table-wrap">
-        <table class="table table-hover loss-table">
+        <div class="table-scroll-wrap">
+<table class="table table-hover loss-table">
             <thead class="table-light">
                 <tr><th>Product</th><th>Loss Type</th><th>Quantity</th><th>Loss Value</th><th>Date</th></tr>
             </thead>
@@ -129,6 +135,7 @@
                 <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         </div>
         <div id="lossPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
@@ -164,7 +171,7 @@
                 <select id="dmgType" class="form-select">
                     <option value="DAMAGE">DAMAGE</option>
                     <option value="EXPIRY">EXPIRY</option>
-                    <option value="SLOW_MOVING" data-manager-only> SLOW_MOVING</option>
+                    <option value="SLOW_MOVING" data-manager-only> Slow Moving</option>
                     <option value="OTHER" data-manager-only>OTHER</option>
                 </select>
             </div>
@@ -188,7 +195,8 @@
     <div id="supplierReturnsCard" class="card p-4 mb-4">
         <h6 class="fw-bold mb-3">Supplier Returns</h6>
         <div class="returns-table-wrap">
-        <table class="table table-hover returns-table">
+        <div class="table-scroll-wrap">
+<table class="table table-hover returns-table">
             <thead class="table-light">
                 <tr><th>Supplier</th><th>Product</th><th>Quantity</th><th>Status</th><th>Actions</th></tr>
             </thead>
@@ -196,6 +204,7 @@
                 <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         </div>
         <div id="returnsPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
@@ -527,5 +536,3 @@ fetchCurrentUser().then(role => {
 });
 </script>
 {% endblock %}
-
-

@@ -25,6 +25,7 @@
       --orange:   #F97316;
       --sidebar-w: 220px;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--bg); font-family: 'Inter', sans-serif; color: var(--txt); min-height: 100vh; }
 
@@ -37,12 +38,17 @@
       transition: transform 0.25s ease;
       overflow-y: auto;
     }
-    /* Collapsed state — slides fully off-canvas */
+    .sidebar .sb-toggle {
+      position: absolute; top: 18px; right: 12px; left: auto;
+    }
+    /* Collapsed state — show the independent reopen control */
     body.sidebar-collapsed .sidebar { transform: translateX(-100%); }
-    body.sidebar-collapsed .main { margin-left: 0; }
-    body.sidebar-collapsed .sb-toggle { left: 16px; }
+    body.sidebar-collapsed .main { margin-left: 0; width: 100%; max-width: 100%; }
+    body.sidebar-collapsed .sb-toggle-reopen { display: flex; }
+    body.sidebar-collapsed .page-header-breadcrumb { padding-left: 64px; }
 
     .sb-logo { padding: 20px 18px 14px; border-bottom: 1px solid rgba(255,255,255,0.15); }
+    .sidebar .sb-logo { padding-right: 60px; }
     .sb-logo .lt { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #F0FDF4; }
     .sb-logo .ls { font-size: 9.5px; color: rgba(255,255,255,0.5); margin-top: 2px; }
     .sb-nav { padding: 12px 8px; flex: 1; overflow-y: auto; }
@@ -73,11 +79,79 @@
       cursor: pointer; transition: left 0.25s ease, box-shadow 0.15s ease;
       box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     }
+    .sb-toggle-reopen {
+      display: none;
+      left: 16px;
+    }
+    .mobile-header-actions {
+      display: contents;
+    }
+    .sidebar-backdrop {
+      display: none;
+      border: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      cursor: default;
+    }
     .sb-toggle:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
     .sb-toggle i { font-size: 17px; color: var(--sidebar); }
 
     /* ── MAIN ────────────────────────────────────────────── */
-    .main { margin-left: var(--sidebar-w); padding: 68px 28px 40px; transition: margin-left 0.25s ease; }
+    .main {
+      width: calc(100% - var(--sidebar-w)); max-width: calc(100% - var(--sidebar-w)); min-width: 0;
+      margin-left: var(--sidebar-w); padding: 0 28px 40px;
+      transition: margin-left 0.25s ease, width 0.25s ease;
+    }
+    .page-header-breadcrumb {
+      padding: 16px 190px 12px 24px;
+      background: #fff;
+      border-bottom: 1px solid #E2E8F0;
+      margin-bottom: 20px;
+    }
+    .breadcrumb-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+      font-size: 0.7rem;
+      color: #94A3B8;
+    }
+    .breadcrumb-nav a {
+      color: #22C55E;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .breadcrumb-nav a:hover { text-decoration: underline; }
+    .breadcrumb-nav span { color: #CBD5E1; }
+    .page-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #1E293B;
+      margin-bottom: 3px;
+    }
+    .page-subtitle {
+      font-size: 0.72rem;
+      color: #94A3B8;
+      margin: 0;
+    }
+    .main button[onclick="doLogout()"] { display: none !important; }
+    .table-scroll-wrap {
+      overflow-x: auto;
+      overflow-y: auto;
+      max-height: 480px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .table-responsive {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .table-scroll-wrap thead th {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      z-index: 5;
+    }
 
     /* ── SHARED TOPBAR (kept minimal — pages can extend) ─── */
     .topbar {
@@ -86,14 +160,44 @@
       position: sticky; top: 0; z-index: 150;
       background: var(--bg);
       padding: 12px 0 8px;
-      margin-left: -28px; margin-right: -28px; padding-left: 28px; padding-right: 28px;
+      padding-left: 56px;
     }
     .topbar h1 { font-size: 19px; font-weight: 700; }
     .topbar .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-    .tooltip-icon { display:inline-block; margin-left:3px; color:var(--sidebar); cursor:help; font-size:.9em; }
+    /* Breadcrumb headers provide the page title and description consistently. */
+    .topbar > div:first-child:has(h1) { display: none; }
+    .topbar:not(:has(button)):not(:has(a)) { display: none; }
+    .page-header > div:first-child:has(h4) { display: none; }
+    .page-header:not(:has(button)):not(:has(a)) { display: none; }
+    .tooltip-icon,
+    [data-tooltip] {
+      display:inline-block; margin-left:3px; color:var(--sidebar); cursor:help; font-size:.9em;
+      position:relative;
+    }
+    [data-tooltip]::after {
+      content:attr(data-tooltip); position:absolute; left:50%; bottom:calc(100% + 8px);
+      transform:translateX(-50%); width:max-content; padding:7px 9px;
+      border-radius:6px; background:#1E293B; color:#fff; font-size:11px; font-weight:400;
+      line-height:1.35; text-align:left; opacity:0; pointer-events:none; z-index:300;
+      transition:opacity .12s ease;
+    }
+    [data-tooltip]:hover::after,
+    [data-tooltip]:focus-visible::after,
+    [data-tooltip].tooltip-open::after { opacity:1; }
+    th [data-tooltip]::after { bottom:auto; top:calc(100% + 8px); }
+    [data-tooltip]::after { max-width:min(260px, 70vw); }
 
     /* ── NOTIFICATION NAVBAR ─────────────────────────────── */
-    .notification-nav { position:fixed; top:18px; right:140px; z-index:260; }
+    .notification-nav {
+      position:fixed; top:18px; right:28px; z-index:260;
+      display:flex; align-items:center; gap:8px;
+    }
+    .header-logout {
+      height:36px; border:0; border-radius:8px; padding:0 12px;
+      background:#EF4444; color:#fff; cursor:pointer; font-size:12px;
+      box-shadow:0 1px 4px rgba(0,0,0,0.06);
+    }
+    .header-logout:hover { background:#DC2626; }
     .notification-bell {
       position:relative; width:36px; height:36px; border:1px solid var(--border);
       border-radius:8px; background:var(--card); color:var(--sidebar); cursor:pointer;
@@ -139,8 +243,107 @@
 
     /* ── RESPONSIVE — on small screens default to collapsed ── */
     @media (max-width: 960px) {
-      .main { padding-top: 68px; }
-      .notification-nav { right: 88px; }
+      .mobile-header-actions {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        z-index: 260;
+      }
+      .main {
+        width: 100%;
+        max-width: 100%;
+        margin-left: 0;
+        padding-top: 82px;
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+      .sidebar {
+        transform: translateX(-100%);
+        box-shadow: 4px 0 18px rgba(0,0,0,0.18);
+      }
+      body:not(.sidebar-collapsed) .sidebar {
+        transform: translateX(0);
+        z-index: 270;
+      }
+      body:not(.sidebar-collapsed) .sidebar .sb-toggle {
+        top: 12px;
+        right: 12px;
+        left: auto;
+        z-index: 280;
+        display: flex;
+        background: #fff;
+      }
+      body:not(.sidebar-collapsed) .sidebar .sb-toggle i {
+        color: var(--sidebar);
+      }
+      body:not(.sidebar-collapsed) .sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 190;
+        background: rgba(15, 23, 42, 0.38);
+      }
+      .sb-toggle {
+        left: 16px;
+      }
+      body:not(.sidebar-collapsed) .sb-toggle {
+        left: calc(var(--sidebar-w) + 12px);
+      }
+      .sb-toggle-reopen {
+        display: flex;
+        position: static;
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        background: var(--sidebar);
+        border: 2px solid #fff;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.28);
+      }
+      .sb-toggle-reopen i {
+        color: #fff;
+        font-size: 20px;
+      }
+      body:not(.sidebar-collapsed) .sb-toggle-reopen {
+        display: none;
+      }
+      .notification-nav {
+        position: static;
+        margin-left: auto;
+      }
+      .page-header-breadcrumb,
+      body.sidebar-collapsed .page-header-breadcrumb { padding: 14px 12px 10px; }
+    }
+    @media (max-width: 560px) {
+      .main {
+        padding-top: 82px;
+        padding-left: 10px;
+        padding-right: 10px;
+      }
+      .topbar {
+        padding-top: 8px;
+      }
+      .page-header-breadcrumb {
+        padding: 14px 12px 10px;
+      }
+      .notification-nav {
+        margin-left: auto;
+      }
+      .notification-dropdown {
+        position: fixed;
+        top: 58px;
+        left: 10px;
+        right: 10px;
+        width: auto;
+      }
+      .sb-toggle-reopen { width: 48px; height: 48px; }
     }
   </style>
   {% block extra_css %}{% endblock %}
@@ -238,14 +441,17 @@
 </head>
 <body>
 
-<!-- ── HAMBURGER TOGGLE ──────────────────────────────────── -->
-<button class="sb-toggle" id="sbToggle" title="Toggle sidebar" aria-label="Toggle sidebar">
-  <i class="bi bi-list"></i>
-</button>
-
-<div class="notification-nav" id="notificationNav">
+<button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation"></button>
+<div class="mobile-header-actions">
+  <button class="sb-toggle sb-toggle-reopen" id="sbToggleReopen" title="Show sidebar" aria-label="Show sidebar">
+    <i class="bi bi-list"></i>
+  </button>
+  <div class="notification-nav" id="notificationNav">
   <button class="notification-bell" id="notificationBell" type="button" aria-label="Notifications" aria-expanded="false" aria-controls="notificationDropdown">
     🔔<span class="notification-count is-empty" id="notificationCount" aria-label="0 unread notifications">0</span>
+  </button>
+  <button class="header-logout" type="button" onclick="doLogout()">
+    <i class="bi bi-box-arrow-right"></i> Logout
   </button>
   <section class="notification-dropdown" id="notificationDropdown" aria-label="Notifications">
     <div class="notification-header">
@@ -260,12 +466,16 @@
     <div class="notification-list" id="notificationList"><div class="notification-empty">Loading notifications...</div></div>
     <div class="notification-footer"><a href="/dashboard/notifications/">View all notifications &rarr;</a></div>
   </section>
+  </div>
 </div>
 
 <!-- ── SIDEBAR — shared across every dashboard page ─────────
      Include this partial and set request.resolver_match.url_name
      (or a page-specific block variable) to control which link gets .active -->
 <aside class="sidebar" id="sidebar">
+  <button class="sb-toggle" id="sbToggle" title="Toggle sidebar" aria-label="Toggle sidebar">
+    <i class="bi bi-list"></i>
+  </button>
   <div class="sb-logo">
     <div class="lt">Smart Inventory</div>
     <div class="ls">Decision Support System — Samanala Super Mart</div>
@@ -292,7 +502,7 @@
     <a href="/dashboard/health-score/" class="{% block nav_health %}{% endblock %}"><i class="bi bi-heart-pulse"></i> Health Score</a>
     <a href="/dashboard/discount-engine/" class="{% block nav_discount %}{% endblock %}"><i class="bi bi-tag"></i> Discount Engine</a>
     <a href="/dashboard/loss-analysis/" class="{% block nav_loss %}{% endblock %}"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
-    <a href="/dashboard/lifecycle/" class="{% block nav_lifecycle %}{% endblock %}"><i class="bi bi-activity"></i> Lifecycle</a>
+    <a href="/dashboard/lifecycle/" class="{% block nav_lifecycle %}{% endblock %}"><i class="bi bi-activity"></i> Product stage</a>
     <a href="/dashboard/zone-recommendations/" class="{% block nav_zone_recommendations %}{% endblock %}"><i class="bi bi-signpost-split"></i> Zone Recommendations</a>
 
     <div class="sb-sec">Operations</div>
@@ -320,7 +530,7 @@
 <script>
   const HEALTH_LABELS = {
     'HEALTHY': '🟢 Healthy',
-    'WATCH': '🟡 Watch',
+    'WATCH': '🟡 Needs Attention',
     'AT_RISK': '🟠 At Risk',
     'CRITICAL': '🔴 Act Now'
   };
@@ -339,6 +549,18 @@
     'SLOW_MOVING': '🟡 Slow Moving',
     'DECLINING': '🟠 Declining'
   };
+  const STATUS_LABELS = {
+    'PENDING': 'Pending', 'CONFIRMED': 'Confirmed', 'READY': 'Ready',
+    'COMPLETED': 'Completed', 'CANCELLED': 'Cancelled', 'REJECTED': 'Rejected',
+    'APPLIED': 'Applied', 'IGNORED': 'Ignored', 'ACTIVE': 'Active', 'INACTIVE': 'Inactive'
+  };
+  const TRANSACTION_LABELS = {
+    'PURCHASE': 'Purchase', 'SALE_SYNC': 'Sale Sync', 'MANUAL_ADJUSTMENT': 'Manual Adjustment'
+  };
+  const PRIORITY_LABELS = {
+    'CRITICAL': '🔴 Act Now', 'HIGH': '🟠 High Priority',
+    'MEDIUM': '🟡 Medium Priority', 'LOW': '⚪ Low Priority'
+  };
 
   function displayLabel(labels, value) {
     const key = String(value ?? '').replaceAll(' ', '_');
@@ -346,30 +568,125 @@
   }
 
   function formatMoney(amount) {
-    return 'Rs. ' + parseFloat(amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (amount === null || amount === undefined || amount === '') return '—';
+    const value = Number(amount);
+    return Number.isFinite(value)
+      ? 'Rs. ' + value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+      : '—';
   }
+
+  function enhanceTooltips(root) {
+    (root || document).querySelectorAll('.tooltip-icon[title]').forEach(function(element) {
+      if (element.matches('#sbToggle, #sbToggleReopen')) return;
+      const text = element.getAttribute('title');
+      if (!text) return;
+      element.setAttribute('data-tooltip', text);
+      element.setAttribute('tabindex', element.getAttribute('tabindex') || '0');
+      element.removeAttribute('title');
+    });
+  }
+
+  function wrapTables(root) {
+    (root || document).querySelectorAll('table').forEach(function(table) {
+      if (table.closest('.table-responsive, .table-scroll-wrap')) return;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'table-responsive';
+      table.parentNode.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+    });
+  }
+
+  document.addEventListener('click', function(event) {
+    const target = event.target.closest('[data-tooltip]');
+    document.querySelectorAll('[data-tooltip].tooltip-open').forEach(function(item) {
+      if (item !== target) item.classList.remove('tooltip-open');
+    });
+    if (target) target.classList.toggle('tooltip-open');
+  });
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+      document.querySelectorAll('[data-tooltip].tooltip-open').forEach(item => item.classList.remove('tooltip-open'));
+    }
+  });
+  enhanceTooltips();
+  wrapTables();
+  new MutationObserver(function(records) {
+    records.forEach(record => record.addedNodes.forEach(node => {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        enhanceTooltips(node);
+        wrapTables(node);
+      }
+    }));
+  }).observe(document.body, { childList: true, subtree: true });
 
   // ── SIDEBAR TOGGLE — persists collapsed/open state across pages ──
   (function() {
     const STORAGE_KEY = 'sidebar_collapsed';
-    const toggle = document.getElementById('sbToggle');
+    const toggles = document.querySelectorAll('#sbToggle, #sbToggleReopen');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    const sidebarLinks = document.querySelectorAll('.sb-nav a');
     const body = document.body;
 
-    // Restore saved state on load (per-browser preference, not per-page)
-    if (localStorage.getItem(STORAGE_KEY) === 'true') {
+    function setCollapsed(collapsed) {
+      body.classList.toggle('sidebar-collapsed', collapsed);
+      if (window.innerWidth > 960) localStorage.setItem(STORAGE_KEY, collapsed);
+      toggles.forEach(function(toggle) {
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+      });
+    }
+
+    // Restore saved state on desktop. Small screens always start collapsed so
+    // the page remains usable even when a desktop preference was saved.
+    if (window.innerWidth <= 960 || localStorage.getItem(STORAGE_KEY) === 'true') {
       body.classList.add('sidebar-collapsed');
     }
 
-    toggle.addEventListener('click', function() {
-      body.classList.toggle('sidebar-collapsed');
-      localStorage.setItem(STORAGE_KEY, body.classList.contains('sidebar-collapsed'));
+    toggles.forEach(function(toggle) {
+      toggle.setAttribute('aria-expanded', String(!body.classList.contains('sidebar-collapsed')));
+      toggle.addEventListener('click', function() {
+        setCollapsed(!body.classList.contains('sidebar-collapsed'));
+      });
+    });
+    backdrop.addEventListener('click', function() { setCollapsed(true); });
+    sidebarLinks.forEach(function(link) {
+      link.addEventListener('click', function() {
+        if (window.innerWidth <= 960) setCollapsed(true);
+      });
+    });
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape' && window.innerWidth <= 960 && !body.classList.contains('sidebar-collapsed')) {
+        setCollapsed(true);
+      }
     });
 
-    // Default to collapsed on small screens the first time a user visits,
-    // but don't override an explicit choice they've already made
-    if (window.innerWidth <= 960 && localStorage.getItem(STORAGE_KEY) === null) {
-      body.classList.add('sidebar-collapsed');
-    }
+    let wasMobile = window.innerWidth <= 960;
+    window.addEventListener('resize', function() {
+      const isMobile = window.innerWidth <= 960;
+      if (isMobile === wasMobile) return; // ignore mobile address-bar resizes
+      wasMobile = isMobile;
+      if (isMobile) body.classList.add('sidebar-collapsed');
+      else body.classList.toggle('sidebar-collapsed', localStorage.getItem(STORAGE_KEY) === 'true');
+    });
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    document.addEventListener('touchstart', function(event) {
+      if (window.innerWidth > 960 || !event.touches.length) return;
+      touchStartX = event.touches[0].clientX;
+      touchStartY = event.touches[0].clientY;
+    }, { passive: true });
+    document.addEventListener('touchend', function(event) {
+      if (window.innerWidth > 960 || !event.changedTouches.length) return;
+      const touch = event.changedTouches[0];
+      const deltaX = touch.clientX - touchStartX;
+      const deltaY = Math.abs(touch.clientY - touchStartY);
+      if (deltaY > 80 || Math.abs(deltaX) < 60) return;
+      if (body.classList.contains('sidebar-collapsed') && touchStartX < 32 && deltaX > 0) {
+        setCollapsed(false);
+      } else if (!body.classList.contains('sidebar-collapsed') && deltaX < 0) {
+        setCollapsed(true);
+      }
+    }, { passive: true });
   })();
 
   // ── STICKY TOPBAR HEIGHT — exposed as a CSS variable ──
@@ -524,7 +841,7 @@
       list.innerHTML = visible.map(item => {
         const priority = String(item.priority || 'LOW').toLowerCase();
         const dotClass = item.is_read ? 'read' : (['critical', 'high', 'medium', 'low'].includes(priority) ? priority : 'low');
-        return `<article class="notification-item${item.is_read ? '' : ' unread'}">
+        return `<article class="notification-item${item.is_read ? '' : ' unread'}" tabindex="0" data-notification-read="${escapeHtml(item.id)}">
           <span class="notification-dot ${dotClass}" aria-hidden="true"></span>
           <div class="notification-content">
             <div class="notification-title">${escapeHtml(item.title)}</div>
@@ -577,22 +894,39 @@
 
     list.addEventListener('click', async function(event) {
       const dismissButton = event.target.closest('[data-notification-dismiss]');
-      if (!dismissButton) return;
-      const id = dismissButton.dataset.notificationDismiss;
+      const item = event.target.closest('[data-notification-read]');
+      if (dismissButton) {
+        const id = dismissButton.dataset.notificationDismiss;
+        try {
+          await notificationFetch(`/api/notifications/${id}/`, { method: 'DELETE' });
+          notifications = notifications.filter(item => String(item.id) !== String(id));
+          updateCounts(notifications.filter(item => !item.is_read).length);
+          renderNotifications();
+        } catch (error) { console.error('dismiss notification failed:', error); }
+        return;
+      }
+      if (!item) return;
+      const id = item.dataset.notificationRead;
+      const notification = notifications.find(entry => String(entry.id) === String(id));
+      if (!notification || notification.is_read) return;
       try {
-        await notificationFetch(`/api/notifications/${id}/`, { method: 'DELETE' });
-        notifications = notifications.filter(item => String(item.id) !== String(id));
+        await notificationFetch(`/api/notifications/${id}/read/`, { method: 'PATCH' });
+        notification.is_read = true;
         updateCounts(notifications.filter(item => !item.is_read).length);
         renderNotifications();
-      } catch (error) { console.error('dismiss notification failed:', error); }
+      } catch (error) { console.error('mark notification read failed:', error); }
     });
 
     document.getElementById('markAllNotifications').addEventListener('click', async function() {
       const unread = notifications.filter(item => !item.is_read);
-      await Promise.all(unread.map(item => notificationFetch(`/api/notifications/${item.id}/read/`, { method: 'PATCH' })));
-      notifications = notifications.map(item => ({ ...item, is_read: true }));
-      updateCounts(0);
-      renderNotifications();
+      try {
+        await Promise.all(unread.map(item => notificationFetch(`/api/notifications/${item.id}/read/`, { method: 'PATCH' })));
+        notifications = notifications.map(item => ({ ...item, is_read: true }));
+        updateCounts(0);
+        renderNotifications();
+      } catch (error) {
+        console.error('mark all notifications read failed:', error);
+      }
     });
 
     refreshUnreadCount();
@@ -627,5 +961,3 @@
 {% block page_scripts %}{% endblock %}
 </body>
 </html>
-
-

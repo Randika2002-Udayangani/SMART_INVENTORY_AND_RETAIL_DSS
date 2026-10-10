@@ -7,7 +7,7 @@
         .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
         .btn-primary { background:var(--sidebar); border:none; }
         .btn-primary:hover { background:#14532d; }
-        .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
+        .table thead.table-light th { position:sticky; top:0; z-index:120; background:var(--card2); }
         .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
         .nav-tabs .nav-link { color:var(--txt); }
         .zone-header-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
@@ -43,10 +43,16 @@
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Decision Support</span><span>›</span><span class="current-page">Zone Recommendations</span></div>
+  <h1 class="page-title">Zone Recommendations</h1>
+  <p class="page-subtitle">Review recommended shelf zones for better product placement.</p>
+</div>
 <div class="topbar">
     <div>
-        <h1>Store Zone Recommendations</h1>
-        <div class="sub">Placement recommendations based on sales speed, <span title="Margin percentage — the share of each sale left after the product cost">margin <span class="tooltip-icon">ⓘ</span></span>, and expiry risk.</div>
+        <h1>Shelf Placement</h1>
+        <div class="sub">Store Zone Recommendations</div>
+        <div class="sub">based on how fast products sell, how much profit they make, and how close they are to expiry</div>
         <div class="zone-last-calculated" id="lastCalculated">Last calculated: —</div>
     </div>
     <div class="zone-header-actions">
@@ -66,14 +72,14 @@
         <div class="kpi-card"><div class="val" id="kpiEvaluated">—</div><div class="lbl">Products Checked</div></div>
         <div class="kpi-card warn"><div class="val" id="kpiHighPriority">—</div><div class="lbl">High Priority</div></div>
         <div class="kpi-card risk"><div class="val" id="kpiNearExpiry">—</div><div class="lbl">Near Expiry</div></div>
-        <div class="kpi-card warn"><div class="val" id="kpiUnmapped">—</div><div class="lbl">Unmapped Categories</div></div>
+        <div class="kpi-card warn"><div class="val" id="kpiUnmapped">—</div><div class="lbl">Categories without a store area <span class="tooltip-icon" title="Product categories not yet assigned to a store zone">ⓘ</span></div></div>
     </div>
 
     <ul class="nav nav-tabs mb-3 flex-wrap" id="zoneTabs">
         <li class="nav-item"><button class="nav-link active" onclick="switchZoneTab('recommendations', this)">Recommendations</button></li>
         <li class="nav-item"><button class="nav-link" onclick="switchZoneTab('zone-overview', this)">Zone Overview</button></li>
-        <li class="nav-item"><button class="nav-link" onclick="switchZoneTab('category-mapping', this)">Category Mapping</button></li>
-        <li class="nav-item"><button class="nav-link" onclick="switchZoneTab('product-override', this)">Product Override</button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchZoneTab('category-mapping', this)">Category areas <span class="tooltip-icon" title="Assign product categories to a store area">ⓘ</span></button></li>
+        <li class="nav-item"><button class="nav-link" onclick="switchZoneTab('product-override', this)">Temporary product placement <span class="tooltip-icon" title="Place a specific product in a store area temporarily">ⓘ</span></button></li>
     </ul>
 
     <!-- Recommendations tab -->
@@ -92,11 +98,12 @@
                     </select>
                 </div>
             </div>
-            <table class="table table-hover align-middle">
+            <div class="table-scroll-wrap">
+<table class="table table-hover align-middle">
                 <thead class="table-light">
                     <tr>
                         <th>Product</th><th>Category</th><th>Current Zone</th>
-                        <th>Recommended Zone</th><th>Reason</th><th>Score</th>
+                        <th>Recommended Zone</th><th>Reason</th><th>Priority score <span class="tooltip-icon" title="The recommendation priority, scored out of 100">ⓘ</span></th>
                         <th>Status</th><th></th>
                     </tr>
                 </thead>
@@ -104,6 +111,7 @@
                     <tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+</div>
             <div id="recPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         </div>
     </div>
@@ -179,7 +187,8 @@
                 </div>
             </div>
             <div class="table-responsive">
-                <table class="table table-sm table-hover">
+                <div class="table-scroll-wrap">
+<table class="table table-sm table-hover">
                     <thead>
                         <tr style="background:var(--card2);"><th>Product</th><th>Zone</th><th>Start</th><th>End</th><th>Reason</th><th>Status</th><th></th></tr>
                     </thead>
@@ -187,6 +196,7 @@
                         <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
                     </tbody>
                 </table>
+</div>
             </div>
             <div id="ovPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         </div>
@@ -446,7 +456,7 @@ function openDetail(id) {
         const s = r.health_scores;
         scoresBox.innerHTML = ['velocity_score','margin_score','expiry_risk_score','overall_score']
             .map(key => {
-                const label = {velocity_score:'Velocity', margin_score:'Margin', expiry_risk_score:'Expiry risk', overall_score:'Overall health'}[key];
+                const label = {velocity_score:'Sales speed', margin_score:'Profit', expiry_risk_score:'Expiry safety', overall_score:'Health score'}[key];
                 const val = s[key] != null ? Math.round(s[key]) : 0;
                 return `<div class="score-bar-row">
                     <div class="lbl">${label}</div>
@@ -755,5 +765,3 @@ fetchCurrentUser().then(() => {
 });
 </script>
 {% endblock %}
-
-

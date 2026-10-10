@@ -10,7 +10,7 @@
   .users-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
   .users-table thead th {
     position: sticky;
-    top: calc(var(--topbar-height, 58px) + 1px);
+    top: 0;
     z-index: 10;
     background: var(--card2) !important;
     box-shadow: 0 1px 0 var(--border);
@@ -28,10 +28,15 @@
 {% block nav_users %}active{% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Operations</span><span>›</span><span class="current-page">User Management</span></div>
+  <h1 class="page-title">User Management</h1>
+  <p class="page-subtitle">Manage dashboard users, roles, and access status.</p>
+</div>
   <div class="topbar users-page-header">
     <div>
       <h1>User Management</h1>
-      <div class="sub">Staff accounts, roles, status, and lockout recovery</div>
+      <div class="sub">Staff accounts, roles, status, and unlocking locked accounts</div>
     </div>
     <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
       <i class="bi bi-box-arrow-right"></i> Logout
@@ -63,12 +68,14 @@
         <button class="btn btn-outline-secondary btn-sm" onclick="refreshUsers(this)">Refresh</button>
       </div>
       <div class="users-table-wrap">
-        <table class="table table-hover align-middle users-table">
+        <div class="table-scroll-wrap">
+<table class="table table-hover align-middle users-table">
           <thead>
             <tr><th>ID</th><th>Username</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr>
           </thead>
           <tbody id="userBody"><tr><td colspan="6" class="text-center muted">Loading...</td></tr></tbody>
         </table>
+</div>
       </div>
     </div>
   </div>
@@ -225,5 +232,3 @@
   initializeUserManagement();
 </script>
 {% endblock %}
-
-

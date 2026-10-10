@@ -9,11 +9,16 @@
         .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
         .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
         .nav-tabs .nav-link { color:var(--txt); }
-        .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
+        .table thead.table-light th { position:sticky; top:0; z-index:120; background:var(--card2); }
         .crud-form { max-width: 520px; }
     </style>
 {% endblock %}
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Inventory</span><span>›</span><span class="current-page">Products</span></div>
+  <h1 class="page-title">Products</h1>
+  <p class="page-subtitle">Manage the product catalogue, classifications, brands, and categories.</p>
+</div>
 <div class="topbar">
     <div>
         <h1>Product Management</h1>
@@ -45,8 +50,8 @@
                 <input type="text" id="prodName" class="form-control">
             </div>
             <div class="col-md-6">
-                <label class="form-label">SKU Code</label>
-                <input type="text" id="prodSku" class="form-control" placeholder="No SKU assigned">
+                <label class="form-label">Product code <span class="tooltip-icon" title="Stock Keeping Unit — a unique code for each product">ⓘ</span></label>
+                <input type="text" id="prodSku" class="form-control" placeholder="No product code assigned">
             </div>
             <div class="col-md-6">
                 <label class="form-label">Unit Price</label>
@@ -76,7 +81,7 @@
         </div>
         <div id="prodMsg" class="mt-3"></div>
     </div>
-        <div class="mb-3 d-flex gap-2">
+        <div class="mb-3 d-flex gap-2 flex-wrap">
             <input type="text" id="prodSearch" class="form-control form-control-sm" style="width:260px;" placeholder="Search product name...">
             <select id="prodCategory" class="form-select form-select-sm" style="width:180px;">
                 <option value="">All Categories</option>
@@ -86,14 +91,16 @@
             <button class="btn btn-primary btn-sm" onclick="openAddForm()">+ Add Product</button>
         </div>
         <div class="card p-4">
-            <table class="table table-hover">
+            <div class="table-scroll-wrap">
+<table class="table table-hover">
                 <thead class="table-light">
-                    <tr><th>Product</th><th>Category</th><th>Brand</th><th>SKU</th><th>Unit Price</th><th>Actions</th></tr>
+                    <tr><th>Product</th><th>Category</th><th>Brand</th><th>Product code <span class="tooltip-icon" title="Stock Keeping Unit — a unique code for each product">ⓘ</span></th><th>Unit Price</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="prodBody">
                     <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+</div>
             <div id="prodPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         </div>
     </div>
@@ -128,7 +135,8 @@
         </div>
 
         <div class="card p-4">
-            <table class="table table-hover">
+            <div class="table-scroll-wrap">
+<table class="table table-hover">
                 <thead class="table-light">
                     <tr><th>ID</th><th>Brand Name</th><th>Actions</th></tr>
                 </thead>
@@ -136,6 +144,7 @@
                     <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+</div>
         </div>
     </div>
 
@@ -156,7 +165,8 @@
         </div>
 
         <div class="card p-4">
-            <table class="table table-hover">
+            <div class="table-scroll-wrap">
+<table class="table table-hover">
                 <thead class="table-light">
                     <tr><th>ID</th><th>Category Name</th><th>Actions</th></tr>
                 </thead>
@@ -164,6 +174,7 @@
                     <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+</div>
         </div>
     </div>
 
@@ -197,7 +208,8 @@
         </div>
 
         <div class="card p-4">
-            <table class="table table-hover">
+            <div class="table-scroll-wrap">
+<table class="table table-hover">
                 <thead class="table-light">
                     <tr><th>ID</th><th>Zone Name</th><th>Traffic</th><th>Description</th><th>Actions</th></tr>
                 </thead>
@@ -205,6 +217,7 @@
                     <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+</div>
         </div>
     </div>
 
@@ -238,7 +251,7 @@
                                         <div id="detailProductId" class="fw-semibold">—</div>
                                     </div>
                                     <div class="col-md-6">
-                                        <div class="small text-muted">SKU</div>
+                                        <div class="small text-muted">Product code</div>
                                         <div id="detailSku" class="fw-semibold">—</div>
                                     </div>
                                     <div class="col-md-6">
@@ -265,7 +278,7 @@
                                     </div>
 
                                     <div class="col-md-6">
-                                        <div class="small text-muted">Avg Cost Price</div>
+                                        <div class="small text-muted">Average cost <span class="tooltip-icon" title="Weighted Average Cost — the average price paid per unit across all purchases">ⓘ</span></div>
                                         <div id="detailAvgCostPrice" class="fw-semibold">—</div>
                                     </div>
                                     <div class="col-md-6">
@@ -441,12 +454,8 @@ async function loadProducts() {
         const res = await request(url);
         const data = await res.json();
         allProducts = extractArray(data);
-<<<<<<< HEAD
-        prodPage = 1; // fresh data (new search/filter/reload) — back to page 1
-=======
         prodTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
         prodPage = Array.isArray(data) ? prodPage : (data.page ?? prodPage);
->>>>>>> dev1
         renderProducts();
         if (editProductId) {
             const productToEdit = allProducts.find(product => String(product.id) === String(editProductId));
@@ -481,7 +490,7 @@ function renderProducts() {
                 <div class="d-flex gap-2 flex-wrap">
                     <button class="btn btn-sm btn-outline-secondary" onclick="openEditFormPayload('${encodePayload(p)}')">Edit</button>
                     <button class="btn btn-sm btn-outline-primary" onclick='viewProductAvailability(${p.id})'>View</button>
-                    <button class="btn btn-sm btn-outline-warning" onclick='recalculateWAC(${p.id})'>WAC</button>
+                    <button class="btn btn-sm btn-outline-warning" onclick='recalculateWAC(${p.id})'>Recalculate average cost</button><span class="tooltip-icon" data-tooltip="Weighted Average Cost — the average price paid per unit across all purchases" tabindex="0">ⓘ</span>
                 </div>
             </td>
         </tr>
@@ -593,12 +602,6 @@ function hideEditForm() {
     document.getElementById('prodForm').style.display = 'none';
 }
 
-function formatCurrency(value) {
-    const num = Number(value ?? 0);
-    if (!Number.isFinite(num)) return '—';
-    return formatMoney(num);
-}
-
 function getAvailabilityBadgeClass(status) {
     const normalized = (status || '').toUpperCase();
     if (normalized === 'AVAILABLE') return 'bg-success';
@@ -618,9 +621,9 @@ function showProductDetailModal(product, stockData = {}) {
     document.getElementById('detailBrand').textContent = product.brand_name || '—';
     document.getElementById('detailStatusText').textContent = statusText;
     document.getElementById('detailCanOrder').textContent = canOrder;
-    document.getElementById('detailUnitPrice').textContent = formatCurrency(product.unit_price);
-    document.getElementById('detailCostPrice').textContent = formatCurrency(product.cost_price);
-    document.getElementById('detailAvgCostPrice').textContent = product.avg_cost_price != null ? formatCurrency(product.avg_cost_price) : '—';
+    document.getElementById('detailUnitPrice').textContent = formatMoney(product.unit_price);
+    document.getElementById('detailCostPrice').textContent = formatMoney(product.cost_price);
+    document.getElementById('detailAvgCostPrice').textContent = product.avg_cost_price != null ? formatMoney(product.avg_cost_price) : '—';
 
     const badge = document.getElementById('detailAvailabilityBadge');
     badge.textContent = statusText;
@@ -713,7 +716,7 @@ async function viewProductAvailability(id) {
 }
 
 async function recalculateWAC(id) {
-    if (!confirm('Recalculate WAC for this product?')) return;
+    if (!confirm('Recalculate average cost for this product?')) return;
     try {
         const res = await request(`/api/products/${id}/recalculate-wac/`, {
             method: 'POST',
@@ -721,13 +724,13 @@ async function recalculateWAC(id) {
         const data = await res.json().catch(() => ({}));
 
         if (res.ok) {
-            showProductMessage(data.message || 'WAC recalculated successfully.', 'success');
+            showProductMessage(data.message || 'Average cost recalculated successfully.', 'success');
             loadProducts();
         } else {
-            showProductMessage(data.detail || data.error || 'WAC recalculation failed.');
+            showProductMessage(data.detail || data.error || 'Average cost recalculation failed.');
         }
     } catch (e) {
-        showProductMessage('Network error while recalculating WAC: ' + e.message);
+        showProductMessage('Network error while recalculating average cost: ' + e.message);
     }
 }
 
@@ -792,9 +795,7 @@ async function deleteProduct() {
     }
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   BRANDS CRUD
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ===== BRANDS CRUD ===== */
 async function loadBrands() {
     try {
         const res = await request('/api/brands/');
@@ -886,9 +887,7 @@ async function confirmDeleteBrand(id) {
     }
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   CATEGORIES CRUD
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ===== CATEGORIES CRUD ===== */
 async function loadCategoriesCrud() {
     try {
         const res = await request('/api/categories/');
@@ -982,9 +981,7 @@ async function confirmDeleteCategory(id) {
     }
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   STORE ZONES CRUD
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ===== STORE ZONES CRUD ===== */
 async function loadStoreZones() {
     try {
         const res = await request('/api/zones/');
@@ -1097,5 +1094,3 @@ async function confirmDeleteZone(id) {
 </script>
 
 {% endblock %}
-
-

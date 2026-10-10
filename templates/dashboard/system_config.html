@@ -19,6 +19,11 @@
 {% block nav_config %}active{% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Operations</span><span>›</span><span class="current-page">System Config</span></div>
+  <h1 class="page-title">System Config</h1>
+  <p class="page-subtitle">Configure system behavior and operational preferences.</p>
+</div>
   <div class="topbar config-page-header">
     <div><h1>System Configuration</h1><div class="sub">Operational values used by decision-support rules</div></div>
     <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;"><i class="bi bi-box-arrow-right"></i> Logout</button>
@@ -43,11 +48,12 @@
   let canEditConfig = false;
 
   const CONFIG_LABELS = {
-    expiry_alert_days: { label: 'Expiry Alert Threshold', unit: 'days', group: 'Alerts & Discounts', section: 'settings' },
-    min_margin_pct: { label: 'Minimum Profit Margin', unit: '%', group: 'Alerts & Discounts', section: 'settings' },
-    max_order_advance_days: { label: 'Maximum Order Advance Booking', unit: 'days', group: 'Online Orders', section: 'settings' },
-    min_order_advance_hours: { label: 'Minimum Order Advance Notice', unit: 'hours', group: 'Online Orders', section: 'settings' },
-    min_order_value: { label: 'Minimum Order Value', unit: 'Rs', group: 'Online Orders', section: 'settings' }
+    min_margin_pct: { label: 'Lowest profit allowed on discounts (%)', unit: '', group: 'Alerts & Discounts', section: 'settings' },
+    expiry_alert_days: { label: 'Warn this many days before expiry', unit: 'days', group: 'Alerts & Discounts', section: 'settings' },
+    min_order_value: { label: 'Smallest online order (Rs.)', unit: '', group: 'Online Orders', section: 'settings' },
+    min_order_advance_hours: { label: 'Earliest pickup (hours from now)', unit: '', group: 'Online Orders', section: 'settings' },
+    max_order_advance_days: { label: 'Latest pickup (days from now)', unit: '', group: 'Online Orders', section: 'settings' },
+    last_sync_date: { label: 'Data last updated', unit: '', group: 'Other', section: 'status' }
   };
   const UPLOAD_LABELS = { DAILY_BILLS: 'Daily Bills PDF', SUPPLIER_INVOICE: 'Supplier Invoice PDF', ITEM_SALES: 'Item Ledger PDF' };
 
@@ -122,5 +128,3 @@
   initializeConfig();
 </script>
 {% endblock %}
-
-

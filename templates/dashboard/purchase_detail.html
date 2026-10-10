@@ -21,13 +21,18 @@
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+    <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><a href="/dashboard/purchases/">Purchases</a><span>›</span><span class="current-page">Purchase Detail</span></div>
+    <h1 class="page-title">Purchase Detail</h1>
+    <p class="page-subtitle">Goods received breakdown and batch status.</p>
+</div>
 <div class="topbar">
     <div>
         <h1>Purchase Detail</h1>
-        <div class="sub">Samanala Super Mart — GRN breakdown and batch status</div>
+        <div class="sub">Samanala Super Mart — goods received breakdown and batch status</div>
     </div>
     <div>
-        <a href="/dashboard/purchases/" class="btn btn-outline-secondary btn-sm me-2">â† Back to Purchases</a>
+        <a href="/dashboard/purchases/" class="btn btn-outline-secondary btn-sm me-2">← Back to Purchases</a>
         <button onclick="doLogout()" class="btn btn-sm" style="background:#EF4444;color:white;">Logout</button>
     </div>
 </div>
@@ -95,7 +100,8 @@
     </div>
 
     <div class="table-responsive">
-        <table class="table table-hover">
+        <div class="table-scroll-wrap">
+<table class="table table-hover">
             <thead class="table-light">
                 <tr>
                     <th>Product</th>
@@ -111,6 +117,7 @@
                 <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
     </div>
 </div>
 {% endblock %}
@@ -144,7 +151,8 @@ function daysLeftCell(expiryDateStr) {
 
 function batchStatusBadge(s) {
     const map = { 'ACTIVE': 'badge-active', 'EXPIRED': 'badge-expired', 'DISPOSED': 'badge-disposed', 'PENDING_EXPIRY': 'badge-pending' };
-    return `<span class="${map[s] || 'badge-active'}">${escapeHtml(s) || '—'}</span>`;
+    const BATCH_LABELS = { ACTIVE: 'Active', EXPIRED: 'Expired', DISPOSED: 'Disposed', PENDING_EXPIRY: 'Expiry Pending' };
+    return `<span class="${map[s] || 'badge-active'}">${escapeHtml(BATCH_LABELS[s] || s) || '—'}</span>`;
 }
 
 async function loadDetail() {
@@ -209,5 +217,3 @@ fetchCurrentUser().then(role => {
 });
 </script>
 {% endblock %}
-
-

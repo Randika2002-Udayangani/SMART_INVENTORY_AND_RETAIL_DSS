@@ -11,16 +11,41 @@
         .badge-applied { background:#F0FDF4; color:#16A34A; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
         .badge-ignored { background:#F1F5F9; color:#64748B; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
         .rule-form { background:#F1F5F9; border:1px solid #CBD5E1; border-radius:8px; }
+        .discount-actions { display:flex; flex-wrap:wrap; gap:8px; }
+        .discount-actions .btn { margin-right:0 !important; }
+        .discount-table { min-width:760px; }
+        .rules-table { min-width:720px; }
+        @media (max-width: 560px) {
+            .page-header {
+                padding:16px 12px;
+                align-items:flex-start !important;
+                gap:12px;
+                flex-direction:column;
+            }
+            .page-header > div:last-child { width:100%; }
+            .discount-actions .btn { flex:1 1 auto; }
+            .container-fluid { padding-left:0.5rem !important; padding-right:0.5rem !important; }
+            #tab-recommendations.card,
+            #tab-rules .card,
+            .rule-form { padding:1rem !important; }
+            #discountPagination,
+            #rulesPagination { gap:8px; flex-wrap:wrap; }
+        }
     </style>
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Decision Support</span><span>›</span><span class="current-page">Discount Engine</span></div>
+  <h1 class="page-title">Discount Engine</h1>
+  <p class="page-subtitle">Manage near-expiry discount recommendations and pricing rules.</p>
+</div>
 <div class="page-header d-flex justify-content-between align-items-center">
     <div>
         <h4 class="mb-0 fw-bold">Discount Engine</h4>
         <small class="text-muted">Near-expiry discount recommendations · Samanala Super Mart</small>
     </div>
-    <div>
+    <div class="discount-actions">
         <button class="btn btn-primary btn-sm me-2" id="calcBtn" onclick="runCalculate()">▶ Calculate Discounts</button>
         <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
         <button onclick="doLogout()" class="btn btn-sm" style="background:#EF4444;color:white;">Logout</button>
@@ -35,7 +60,8 @@
 
     <div id="tab-recommendations" class="card p-4">
         <h6 class="fw-bold mb-3">Discount Recommendations</h6>
-        <table class="table table-hover">
+        <div class="table-scroll-wrap">
+<table class="table table-hover discount-table">
             <thead class="table-light">
                 <tr><th>Product</th><th>Batch</th><th>Days to Expiry</th><th>Suggested Discount</th><th>Status</th><th>Details</th><th id="recommendationActionHeader" style="display:none;">Action</th></tr>
             </thead>
@@ -43,6 +69,7 @@
                 <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         <div id="discountPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         <div id="discountMsg" class="mt-2" aria-live="polite"></div>
     </div>
@@ -84,12 +111,14 @@
                 <button class="btn btn-sm btn-outline-secondary" onclick="refreshRules()">Refresh</button>
             </div>
             <div class="table-responsive">
-                <table class="table table-hover">
+                <div class="table-scroll-wrap">
+<table class="table table-hover rules-table">
                     <thead class="table-light">
                         <tr><th>ID</th><th>Days to Expiry</th><th>Discount</th><th>Minimum Margin</th><th>Status</th><th>Created</th><th id="rulesActionsHeader" style="display:none;">Actions</th></tr>
                     </thead>
                     <tbody id="rulesBody"><tr><td colspan="7" class="text-center text-muted">Loading...</td></tr></tbody>
                 </table>
+</div>
             </div>
             <div id="rulesPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         </div>
@@ -470,5 +499,3 @@ fetchCurrentUser();
 loadDiscounts();
 </script>
 {% endblock %}
-
-

@@ -1,6 +1,6 @@
 {% extends "dashboard/base.html" %}
 
-{% block title %}Product Lifecycle — Smart Inventory DSS{% endblock %}
+{% block title %}Product stage — Smart Inventory DSS{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -13,7 +13,7 @@
   .lifecycle-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
   .lifecycle-table thead th {
     position: sticky;
-    top: calc(var(--topbar-height, 58px) + 1px);
+    top: 0;
     z-index: 10;
     background: var(--card2) !important;
     box-shadow: 0 1px 0 var(--border);
@@ -44,9 +44,14 @@
 {% block nav_lifecycle %}active{% endblock %}
 
 {% block content %}
+  <div class="page-header-breadcrumb">
+    <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Decision Support</span><span>›</span><span class="current-page">Product stage</span></div>
+    <h1 class="page-title">Product stage</h1>
+    <p class="page-subtitle">Track product lifecycle stages and recommended actions.</p>
+  </div>
   <div class="topbar lifecycle-page-header">
     <div>
-      <h1>Product Lifecycle</h1>
+      <h1>Product stage</h1>
       <div class="sub">Samanala Super Mart — Decision Support System</div>
     </div>
     <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
@@ -63,7 +68,7 @@
   </div>
 
   <div class="mb-3">
-    <button class="btn btn-primary" id="calcBtn" onclick="runCalculate()">&#9654; Calculate Lifecycle</button>
+    <button class="btn btn-primary" id="calcBtn" onclick="runCalculate()">&#9654; Calculate product stage</button>
   </div>
 
   <div id="errorState" style="display:none;" class="alert alert-danger lifecycle-error" role="alert"></div>
@@ -75,7 +80,7 @@
 
   <div class="card p-4" id="tableSection" style="display:none;">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-      <h6 class="fw-bold mb-0">Product Lifecycle Status</h6>
+      <h6 class="fw-bold mb-0">Product stage status</h6>
       <div class="d-flex flex-wrap gap-2">
         <label class="visually-hidden" for="lifecycleSearch">Search by product name</label>
         <input type="search" class="form-control form-control-sm" id="lifecycleSearch"
@@ -93,12 +98,14 @@
       </div>
     </div>
     <div class="lifecycle-table-wrap">
-      <table class="table table-hover lifecycle-table">
+      <div class="table-scroll-wrap">
+<table class="table table-hover lifecycle-table">
         <thead class="table-light">
-          <tr><th>Product</th><th>Status</th><th>Recommendation</th><th>Sales Velocity</th><th>Date</th><th id="thresholdHeader" style="display:none;">Reorder Threshold</th></tr>
+          <tr><th>Product</th><th>Status</th><th>Recommendation</th><th>Sales speed <span class="tooltip-icon" title="How fast a product sells — units sold per day">ⓘ</span></th><th>Date</th><th id="thresholdHeader" style="display:none;">Reorder point <span class="tooltip-icon" title="The stock level at which you should reorder">ⓘ</span></th></tr>
         </thead>
         <tbody id="lifecycleBody"></tbody>
       </table>
+</div>
     </div>
     <div id="lifecyclePagination" class="d-flex justify-content-between align-items-center mt-3"></div>
   </div>
@@ -108,7 +115,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <div>
-            <h5 class="modal-title fw-bold">Product Lifecycle History</h5>
+            <h5 class="modal-title fw-bold">Product stage history</h5>
             <div class="text-muted small" id="historyProductName"></div>
           </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -117,15 +124,17 @@
           <div id="historySummary" class="history-summary p-3 mb-3"></div>
           <div id="historyEmpty" class="history-empty" style="display:none;"></div>
           <div class="history-chart" id="historyChartWrap">
-            <canvas id="historyVelocityChart" aria-label="Lifecycle status date ranges"></canvas>
+            <canvas id="historyVelocityChart" aria-label="Product stage status date ranges"></canvas>
           </div>
           <div class="table-responsive" id="historyTableWrap">
-            <table class="table table-sm mb-0">
+            <div class="table-scroll-wrap">
+<table class="table table-sm mb-0">
               <thead class="table-light">
-                <tr><th>Calculation Date</th><th>Comparison Period</th><th>Sales Velocity</th><th>Status</th><th>Recommendation</th></tr>
+                <tr><th>Calculation Date</th><th>Comparison Period</th><th>Sales speed <span class="tooltip-icon" title="How fast a product sells — units sold per day">ⓘ</span></th><th>Status</th><th>Recommendation</th></tr>
               </thead>
               <tbody id="historyBody"></tbody>
             </table>
+</div>
           </div>
         </div>
         <div class="modal-footer"><button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button></div>
@@ -247,7 +256,7 @@
       document.getElementById('emptyState').style.display = 'none';
       document.getElementById('tableSection').style.display = 'none';
       document.getElementById('lifecyclePagination').innerHTML = '';
-      showError('Lifecycle data could not be loaded. Please try again.');
+      showError('Product stage data could not be loaded. Please try again.');
     }
   }
 
@@ -264,12 +273,12 @@
       const thresholdCell = canEditThreshold ? `
         <td>
           <div class="threshold-control" onclick="event.stopPropagation()">
-            <input id="threshold-${Number(result.product_id)}" type="number" min="0" step="1" class="form-control form-control-sm" value="${Number(result.reorder_threshold) || 0}" aria-label="Reorder threshold for ${escapeHtml(result.product_name)}">
+            <input id="threshold-${Number(result.product_id)}" type="number" min="0" step="1" class="form-control form-control-sm" value="${Number(result.reorder_threshold) || 0}" aria-label="Reorder point for ${escapeHtml(result.product_name)}">
             <button class="btn btn-sm btn-outline-primary" onclick="applyReorderThreshold(event, ${Number(result.product_id)})">Apply</button>
           </div>
         </td>` : '';
       return `
-      <tr class="lifecycle-row" onclick="loadLifecycleHistory(${Number(result.product_id)}, this)" title="View lifecycle history">
+      <tr class="lifecycle-row" onclick="loadLifecycleHistory(${Number(result.product_id)}, this)" title="View product stage history">
         <td>${escapeHtml(result.product_name)}</td>
         <td>${statusBadge(result.lifecycle_status ?? result.status)}</td>
         <td>${recPill(result.recommendation)}</td>
@@ -348,7 +357,7 @@
           labels: dates,
           datasets: [
             {
-              label: 'Sales velocity (units/day)',
+              label: 'Sales speed (units/day)',
               data: velocities,
               borderColor: '#16A34A',
               backgroundColor: 'rgba(34, 197, 94, 0.22)',
@@ -376,15 +385,15 @@
         options: {
           responsive: true, maintainAspectRatio: false,
           scales: {
-            x: { title: { display: true, text: 'Lifecycle calculation date' }, grid: { color: '#CBD5E1' }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, callback: value => formatLifecycleDate(dates[value]) } },
+            x: { title: { display: true, text: 'Product stage calculation date' }, grid: { color: '#CBD5E1' }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, callback: value => formatLifecycleDate(dates[value]) } },
             y: { beginAtZero: true, title: { display: true, text: 'Units sold per day' }, grid: { color: '#CBD5E1' }, ticks: { precision: 2 } }
           },
-          plugins: { legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 18 } }, tooltip: { callbacks: { label: context => context.datasetIndex === 0 ? `Sales velocity: ${context.parsed.y ?? '0'} units/day` : 'Below this line, the product is in the slow-moving range.' } } }
+          plugins: { legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 18 } }, tooltip: { callbacks: { label: context => context.datasetIndex === 0 ? `Sales speed: ${context.parsed.y ?? '0'} units/day` : 'Below this line, the product is in the slow-moving range.' } } }
         }
       });
 
       if (velocities.every(value => value === 0)) {
-        document.getElementById('historyEmpty').innerText = 'Sales velocity is 0 for every recorded period. This means no item-sales quantity was recorded for this product in the corresponding 30-day windows.';
+        document.getElementById('historyEmpty').innerText = 'Sales speed is 0 for every recorded period. This means no item-sales quantity was recorded for this product in the corresponding 30-day windows.';
         document.getElementById('historyEmpty').style.display = 'block';
       }
     } catch (error) {
@@ -431,9 +440,9 @@
       await loadLifecycle(true, true);
     } catch (error) {
       console.error('runCalculate failed:', error);
-      showError('Lifecycle calculation failed. Please try again.');
+      showError('Product stage calculation failed. Please try again.');
     } finally {
-      button.innerHTML = '&#9654; Calculate Lifecycle';
+      button.innerHTML = '&#9654; Calculate product stage';
       button.disabled = false;
     }
   }
@@ -454,5 +463,3 @@
   initializeLifecyclePage();
 </script>
 {% endblock %}
-
-

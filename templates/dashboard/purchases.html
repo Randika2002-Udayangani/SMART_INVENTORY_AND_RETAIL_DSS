@@ -16,21 +16,28 @@
     .badge-pending { background:#FEFCE8; color:#CA8A04; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
     .table thead.table-light th {
         position: sticky;
-        top: var(--topbar-height, 56px); /* set dynamically in base.html to match the actual topbar height on this page */
+        top: 0;
         z-index: 120;
         background-color: var(--card2);
     }
     .btn-primary { background: var(--sidebar); border: none; }
     .btn-primary:hover { background: #14532d; }
     .restricted-cell { color: var(--muted); font-style: italic; font-size: 11.5px; }
+    #tab-new .card { max-width: none !important; width: 100%; }
+    #tab-new .card + .card { margin-top: 16px; }
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span class="current-page">Purchases</span></div>
+  <h1 class="page-title">Purchases</h1>
+  <p class="page-subtitle">Track supplier deliveries, batches, and expiry windows.</p>
+</div>
 <div class="topbar">
     <div>
         <h1>Purchases & Batches</h1>
-        <div class="sub">Samanala Super Mart — supplier GRNs, batch tracking, expiry monitoring</div>
+        <div class="sub">Samanala Super Mart — supplier deliveries, batch tracking, expiry monitoring</div>
     </div>
     <div>
         <button onclick="doLogout()" class="btn btn-sm" style="background:#EF4444;color:white;">Logout</button>
@@ -51,7 +58,8 @@
                placeholder="Search by invoice number..." oninput="handlePurchaseSearch()">
     </div>
     <div class="card p-4">
-        <table class="table table-hover">
+        <div class="table-scroll-wrap">
+<table class="table table-hover">
             <thead class="table-light">
                 <tr><th>Invoice #</th><th>Supplier</th><th>Purchase Date</th><th id="totalAmountHeader">Total Amount</th><th>Batches</th></tr>
             </thead>
@@ -59,6 +67,7 @@
                 <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         <div id="purchasesPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
 </div>
@@ -78,7 +87,8 @@
         <button class="btn btn-sm btn-primary" onclick="bulkConfirmExpiry()">Confirm Selected Expiry</button>
     </div>
     <div class="card p-4">
-        <table class="table table-hover">
+        <div class="table-scroll-wrap">
+<table class="table table-hover">
             <thead class="table-light">
                 <tr>
                     <th style="width:36px;"><input type="checkbox" id="selectAllBatches" onchange="toggleSelectAllBatches(this)" aria-label="Select all pending batches on this page"></th>
@@ -89,6 +99,7 @@
                 <tr><td colspan="9" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         <div id="batchesPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
 </div>
@@ -101,7 +112,8 @@
         <button class="btn btn-sm btn-outline-secondary" onclick="loadExpiring(30)">30 Days</button>
     </div>
     <div class="card p-4">
-        <table class="table table-hover">
+        <div class="table-scroll-wrap">
+<table class="table table-hover">
             <thead class="table-light">
                 <tr><th>Product</th><th>Batch</th><th>Remaining Qty</th><th>Expiry Date</th><th>Days Left</th></tr>
             </thead>
@@ -109,6 +121,7 @@
                 <tr><td colspan="5" class="text-center text-muted">Select a window above.</td></tr>
             </tbody>
         </table>
+</div>
         <div id="expiringPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
 </div>
@@ -123,7 +136,7 @@
         <div id="invoiceUploadMsg" class="mt-2" aria-live="polite"></div>
     </div>
     <div class="card p-4" style="max-width:700px;">
-        <h6 class="fw-bold mb-3">Record New Purchase (GRN)</h6>
+        <h6 class="fw-bold mb-3">Record New Purchase (Goods received <span class="tooltip-icon" title="Goods Received Note — a record of stock received from a supplier">ⓘ</span>)</h6>
         <div class="row g-3 mb-3">
             <div class="col-md-6">
                 <label class="form-label">Supplier</label>
@@ -346,11 +359,6 @@ async function loadPurchases() {
 }
 
 function handlePurchaseSearch() {
-<<<<<<< HEAD
-    purchaseSearchTerm = document.getElementById('purchaseSearch').value.trim().toLowerCase();
-    purchasesPage = 1; // new search — back to page 1
-    renderPurchasesTable();
-=======
     // Debounced — avoids firing a request on every keystroke.
     window.clearTimeout(purchaseSearchTimer);
     purchaseSearchTimer = window.setTimeout(() => {
@@ -358,7 +366,6 @@ function handlePurchaseSearch() {
         purchasesPage = 1; // new search — back to page 1
         loadPurchases();
     }, 300);
->>>>>>> dev1
 }
 
 function renderPurchasesTable() {
@@ -373,16 +380,7 @@ function renderPurchasesTable() {
         return;
     }
 
-<<<<<<< HEAD
-    // Pagination: same pattern as Stock Levels (inventory.html) — 25 rows/page.
-    const totalPages = Math.max(1, Math.ceil(rows.length / purchasesPageSize));
-    purchasesPage = Math.min(purchasesPage, totalPages);
-    const pageRows = rows.slice((purchasesPage - 1) * purchasesPageSize, purchasesPage * purchasesPageSize);
-
-    tbody.innerHTML = pageRows.map(p => `
-=======
     tbody.innerHTML = rows.map(p => `
->>>>>>> dev1
         <tr>
             <td><a href="/dashboard/purchases/detail/${p.id}/">${p.invoice_number ?? '—'}</a></td>
             <td>${p.supplier_name ?? (typeof p.supplier === 'object' ? p.supplier?.name : p.supplier) ?? '—'}</td>
@@ -434,12 +432,8 @@ async function fetchBatchesPage() {
     try {
         const data = await apiFetch(`/api/batches/?${params.toString()}`);
         allBatches = extractArray(data);
-<<<<<<< HEAD
-        batchesPage = 1; // fresh data (filter changed / reload) — back to page 1
-=======
         batchesTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
         batchesPage = Array.isArray(data) ? batchesPage : (data.page ?? batchesPage);
->>>>>>> dev1
         renderBatches();
     } catch(e) {
         document.getElementById('batchesBody').innerHTML = '<tr><td colspan="9" class="text-center text-muted">Could not load batches.</td></tr>';
@@ -461,16 +455,7 @@ function renderBatches() {
         return;
     }
 
-<<<<<<< HEAD
-    // Pagination: same pattern as Stock Levels (inventory.html) — 25 rows/page.
-    const totalPages = Math.max(1, Math.ceil(rows.length / batchesPageSize));
-    batchesPage = Math.min(batchesPage, totalPages);
-    const pageRows = rows.slice((batchesPage - 1) * batchesPageSize, batchesPage * batchesPageSize);
-
-    tbody.innerHTML = pageRows.map(b => {
-=======
     tbody.innerHTML = rows.map(b => {
->>>>>>> dev1
         const isPending = b.status === 'PENDING_EXPIRY';
         const expiryCell = isPending
             ? `<input type="date" id="expiryInput_${b.id}" class="form-control form-control-sm" style="min-width:150px;">`
@@ -775,5 +760,3 @@ fetchCurrentUser().then(role => {
 });
 </script>
 {% endblock %}
-
-

@@ -54,6 +54,11 @@
 {% block nav_analytics %}active{% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Overview</span><span>›</span><span class="current-page">Analytics</span></div>
+  <h1 class="page-title">Analytics</h1>
+  <p class="page-subtitle">Explore sales, margin, inventory, and product performance trends.</p>
+</div>
 <div class="topbar">
   <div>
     <h1>Manager Analytics</h1>
@@ -173,20 +178,22 @@
     </div>
   </div>
   <div class="table-responsive an-table-wrap">
-    <table class="table table-hover an-table">
+    <div class="table-scroll-wrap">
+<table class="table table-hover an-table">
       <thead>
         <tr>
           <th>Rank</th><th>Product</th><th>Brand</th><th>Category</th>
           <th class="sortable" data-sort="qty">Units <span class="sort-arrow">↕</span></th>
           <th class="sortable" data-sort="revenue">Revenue <span class="sort-arrow">↕</span></th>
-          <th>WAC <span class="tooltip-icon" title="Weighted Average Cost — the average price paid per unit based on all purchases">ⓘ</span></th><th>Cost</th>
+          <th>WAC <span class="tooltip-icon" data-tooltip="Weighted Average Cost — the average price paid per unit across all purchases" tabindex="0">ⓘ</span></th><th>Cost</th>
           <th class="sortable" data-sort="profit">Profit <span class="sort-arrow">↕</span></th>
-          <th class="sortable" data-sort="margin">Margin % <span class="tooltip-icon" title="Margin percentage — the share of each sale left after the product cost">ⓘ</span> <span class="sort-arrow">↕</span></th>
+          <th class="sortable" data-sort="margin">Margin % <span class="tooltip-icon" data-tooltip="Margin percentage — the share of each sale left after the product cost" tabindex="0">ⓘ</span> <span class="sort-arrow">↕</span></th>
           <th>Flag</th><th>Action</th>
         </tr>
       </thead>
       <tbody id="anProductsBody"><tr><td colspan="12" class="text-center text-muted py-4">Loading…</td></tr></tbody>
     </table>
+</div>
   </div>
   <div class="d-flex justify-content-between align-items-center">
     <small id="anCount" class="text-muted"></small>
@@ -216,7 +223,7 @@
           <div class="row g-3 mb-3">
             <div class="col-lg-6">
               <div class="an-card h-100">
-                <h6 class="fw-bold mb-2">Lifecycle &amp; Health</h6>
+                <h6 class="fw-bold mb-2">Product stage &amp; Health</h6>
                 <div id="paLifecycleHealth"></div>
               </div>
             </div>
@@ -349,7 +356,7 @@
 
     if (o.data_quality.products_missing_wac > 0) {
       $('anQualityBanner').style.display = 'block';
-      $('anQualityBanner').innerHTML = `⚠ ${o.data_quality.products_missing_wac} products sold in this period have insufficient cost (WAC) data — their profit figures may be incomplete.`;
+      $('anQualityBanner').innerHTML = `⚠ ${o.data_quality.products_missing_wac} products sold in this period have insufficient cost (average cost) data — their profit figures may be incomplete.`;
     } else {
       $('anQualityBanner').style.display = 'none';
     }
@@ -358,8 +365,8 @@
     const s = o.summary, c = o.changes;
     const cards = [
       ['Total Revenue', money(s.revenue), c.revenue_pct, 'vs previous period'],
-      ['Cost (WAC-based)', money(s.cost), null, 'Weighted Average Cost'],
-      ['Gross Profit', money(s.profit), c.profit_pct, 'Revenue − WAC cost'],
+      ['Cost (average-cost based)', money(s.cost), null, 'Weighted Average Cost'],
+      ['Gross Profit', money(s.profit), c.profit_pct, 'Revenue − average cost'],
       ['Margin', pct(s.margin_pct), c.margin_pct, 'Profit / Revenue'],
       ['Units Sold', Number(s.units_sold).toLocaleString(), c.units_pct, 'across all products'],
       ['Total Discount', money(s.discount), null, 'selected period'],
@@ -517,7 +524,11 @@
 
   function badge(value, label) {
     if (value === null || value === undefined) return '<span class="status-badge muted">—</span>';
-    return `<span class="status-badge ${statusTone(value)}">${label || value}</span>`;
+    const display = label || displayLabel(
+      Object.assign({}, HEALTH_LABELS, REORDER_LABELS, LIFECYCLE_LABELS, STATUS_LABELS),
+      value
+    );
+    return `<span class="status-badge ${statusTone(value)}">${display}</span>`;
   }
 
   async function openProductAnalysis(productId, productName) {
@@ -544,7 +555,7 @@
   function renderProductAnalysis(a) {
     const p = a.product, s = a.summary;
     $('paProductName').innerText = p.name;
-    $('paProductMeta').innerText = `SKU ${p.sku_code || '—'} · ${p.brand || 'Unbranded'} · ${p.category || 'Uncategorised'} · ${a.period.date_from} – ${a.period.date_to}`;
+    $('paProductMeta').innerText = `Product code ${p.sku_code || '—'} · ${p.brand || 'Unbranded'} · ${p.category || 'Uncategorised'} · ${a.period.date_from} – ${a.period.date_to}`;
 
     const kpis = [
       ['Revenue', money(s.revenue)], ['Profit', money(s.profit)], ['Margin', pct(s.margin_pct)],
@@ -565,9 +576,9 @@
 
     const lc = a.lifecycle, hs = a.health;
     $('paLifecycleHealth').innerHTML = `
-      <div class="pa-row"><span class="small text-muted">Lifecycle</span>${lc ? badge(lc.status) : '<span class="text-muted small">Not calculated yet</span>'}</div>
-      ${lc ? `<div class="small text-muted mb-2">Recommendation: ${lc.recommendation} · velocity ${lc.sales_velocity}</div>` : ''}
-      <div class="pa-row"><span class="small text-muted">Health Score</span>${hs ? badge(hs.status, `${hs.overall_score}/100 · ${hs.status}`) : '<span class="text-muted small">Not calculated yet</span>'}</div>
+      <div class="pa-row"><span class="small text-muted">Product stage</span>${lc ? badge(lc.status) : '<span class="text-muted small">Not calculated yet</span>'}</div>
+      ${lc ? `<div class="small text-muted mb-2">Recommendation: ${displayLabel(LIFECYCLE_LABELS, lc.recommendation)} · Sales Velocity ${lc.sales_velocity}</div>` : ''}
+      <div class="pa-row"><span class="small text-muted">Health Score</span>${hs ? badge(hs.status, `${hs.overall_score}/100 · ${displayLabel(HEALTH_LABELS, hs.status)}`) : '<span class="text-muted small">Not calculated yet</span>'}</div>
       ${hs && hs.recommended_action ? `<div class="small text-muted">${hs.recommended_action}</div>` : ''}
     `;
 
@@ -577,7 +588,7 @@
       <div class="pa-row"><strong class="small">Avg daily sales</strong><span class="small">${ro.avg_daily_sales} units/day</span></div>
       <div class="pa-row"><strong class="small">Days of stock</strong><span class="small">${ro.days_of_stock} days (lead time ${ro.lead_time_days}d)</span></div>
       <div class="pa-row"><strong class="small">Suggested reorder</strong><span class="small">${ro.suggested_quantity} units (safety ${ro.safety_stock})</span></div>
-    ` : '<span class="text-muted small">No recent sales velocity to base a reorder estimate on.</span>';
+    ` : '<span class="text-muted small">No recent sales speed to base a reorder estimate on.</span>';
 
     const trend = a.monthly_sales || [];
     showState('paMonthlyChart', 'paMonthlyState', trend.length ? null : 'empty', trend.length ? null : 'No monthly sales history for this product yet.');
@@ -634,5 +645,3 @@
 })();
 </script>
 {% endblock %}
-
-

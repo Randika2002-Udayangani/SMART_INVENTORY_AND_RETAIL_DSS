@@ -174,6 +174,11 @@
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span class="current-page">Dashboard</span></div>
+  <h1 class="page-title">Dashboard</h1>
+  <p class="page-subtitle">Overview of inventory health, sales, alerts, and operational priorities.</p>
+</div>
   <!-- TOP BAR -->
   <div class="topbar">
     <div>
@@ -182,7 +187,7 @@
     </div>
     <div class="sync-badge">
       <i class="bi bi-check-circle-fill"></i>
-      Last Sync: <strong id="syncDate">Loading...</strong>&nbsp;·&nbsp;Stock data is snapshot-based
+      Last Sync: <strong id="syncDate">Loading...</strong>&nbsp;·&nbsp;Stock data is last recorded stock
     </div>
     <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;margin-left:10px;">
       <i class="bi bi-box-arrow-right"></i> Logout
@@ -193,10 +198,11 @@
   <div class="alert-banner">
     <div class="al-left">
       <span style="font-size:12.5px;font-weight:600;color:var(--txt);">Active Alerts:</span>
-      <span class="alert-pill ap-critical" id="alertCritical"><i class="bi bi-exclamation-octagon-fill" style="font-size:11px"></i> 2 Act Now — Stock-out risk</span>
-      <span class="alert-pill ap-high" id="alertHigh"><i class="bi bi-exclamation-triangle-fill" style="font-size:11px"></i> 2 High Priority — Near expiry</span>
-      <span class="alert-pill ap-medium" id="alertMedium"><i class="bi bi-info-circle-fill" style="font-size:11px"></i> 1 Medium Priority — Health decline</span>
+      <span class="alert-pill ap-critical" id="alertCritical"><i class="bi bi-exclamation-octagon-fill" style="font-size:11px"></i> Loading…</span>
+      <span class="alert-pill ap-high" id="alertHigh"><i class="bi bi-exclamation-triangle-fill" style="font-size:11px"></i> Loading…</span>
+      <span class="alert-pill ap-medium" id="alertMedium"><i class="bi bi-info-circle-fill" style="font-size:11px"></i> Loading…</span>
     </div>
+    <div id="dashboardSummary" class="small text-muted mb-3" aria-live="polite">Loading business summary…</div>
     <a href="/dashboard/notifications/" class="view-all-btn">View all &rarr;</a>
   </div>
 
@@ -395,18 +401,19 @@
         <div class="hf-wrap">
           <button class="hf-btn hf-all" onclick="fhs('all',this)">All</button>
           <button class="hf-btn hf-h" onclick="fhs('HEALTHY',this)">Healthy</button>
-          <button class="hf-btn hf-w" onclick="fhs('WATCH',this)">Watch</button>
+          <button class="hf-btn hf-w" onclick="fhs('WATCH',this)">Needs Attention</button>
           <button class="hf-btn hf-a" onclick="fhs('AT RISK',this)">At Risk</button>
-          <button class="hf-btn hf-c on" onclick="fhs('CRITICAL',this)">Critical</button>
+          <button class="hf-btn hf-c on" onclick="fhs('CRITICAL',this)">Act Now</button>
         </div>
       </div>
       <div style="overflow-x:auto;">
-        <table class="hs-tbl">
+        <div class="table-scroll-wrap">
+<table class="hs-tbl">
           <thead>
             <tr>
               <th>Product</th>
               <th>Category</th>
-              <th>Velocity</th>
+              <th>Sales Velocity <span class="tooltip-icon" title="How fast a product sells — units sold per day">ⓘ</span></th>
               <th>Margin % <span class="tooltip-icon" title="Margin percentage — the share of each sale left after the product cost">ⓘ</span></th>
               <th>Expiry Risk</th>
               <th>Overall Score</th>
@@ -416,6 +423,7 @@
           </thead>
           <tbody id="hsTbody"></tbody>
         </table>
+</div>
       </div>
     </div>
   </div>
@@ -649,7 +657,8 @@
       document.getElementById('alertCritical').innerHTML = `<i class="bi bi-exclamation-octagon-fill" style="font-size:11px"></i> ${counts.CRITICAL} Act Now`;
       document.getElementById('alertHigh').innerHTML = `<i class="bi bi-exclamation-triangle-fill" style="font-size:11px"></i> ${counts.HIGH} High Priority`;
       document.getElementById('alertMedium').innerHTML = `<i class="bi bi-info-circle-fill" style="font-size:11px"></i> ${counts.MEDIUM} Medium Priority`;
-      document.getElementById('activeAlertsBreakdown').innerText = `${counts.CRITICAL} critical · ${counts.HIGH} high · ${counts.MEDIUM} medium`;
+      document.getElementById('activeAlertsBreakdown').innerText =
+        `${counts.CRITICAL} ${PRIORITY_LABELS.CRITICAL} · ${counts.HIGH} ${PRIORITY_LABELS.HIGH} · ${counts.MEDIUM} ${PRIORITY_LABELS.MEDIUM}`;
       document.getElementById('activeAlertsUnread').innerText = data.length + ' unread';
       updateDashboardBars();
     } catch(e) {
@@ -664,6 +673,7 @@
       const data = await apiFetch('/api/analytics/profit-summary/');
       dashboardMetrics.profit = Number(data.total_profit || 0);
       document.getElementById('totalProfit').innerText = formatMoney(data.total_profit);
+      updateDashboardSummary();
       document.getElementById('profitPeriod').innerText = data.period ? `${data.period.date_from} to ${data.period.date_to}` : 'Current period';
       updateDashboardBars();
     } catch(e) {
@@ -677,12 +687,21 @@
       const data = await apiFetch('/api/reports/sales-summary/');
       dashboardMetrics.sales = Number(data.total_sales_revenue || 0);
       document.getElementById('totalSales').innerText = formatMoney(data.total_sales_revenue);
+      updateDashboardSummary();
       document.getElementById('salesPeriod').innerText = data.period ? `${data.period.date_from} to ${data.period.date_to}` : 'Current period';
       updateDashboardBars();
     } catch(e) {
       console.error('fetchTotalSales failed:', e);
       showInlineError('totalSales', 'Unavailable');
     }
+
+  }
+
+  function updateDashboardSummary() {
+    const summary = document.getElementById('dashboardSummary');
+    if (!summary) return;
+    summary.textContent = `You made ${formatMoney(dashboardMetrics.sales)} in sales and ${formatMoney(dashboardMetrics.profit)} profit. ` +
+      `${dashboardMetrics.alerts.CRITICAL || 0} items need immediate attention.`;
   }
 
   async function fetchPendingOrders() {
@@ -895,5 +914,3 @@
   });
 </script>
 {% endblock %}
-
-

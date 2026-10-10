@@ -10,7 +10,7 @@
   .order-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
   .order-table thead th {
     position: sticky;
-    top: calc(var(--topbar-height, 58px) + 1px);
+    top: 0;
     z-index: 10;
     background: var(--card2) !important;
     box-shadow: 0 1px 0 var(--border);
@@ -35,6 +35,11 @@
 {% block nav_order_management %}active{% endblock %}
 
 {% block content %}
+  <div class="page-header-breadcrumb">
+    <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Operations</span><span>›</span><span class="current-page">Order Management</span></div>
+    <h1 class="page-title">Order Management</h1>
+    <p class="page-subtitle">Review, confirm, and manage customer pickup orders.</p>
+  </div>
   <div class="topbar order-page-header">
     <div>
       <h1>Order Management</h1>
@@ -53,9 +58,9 @@
   <div class="mb-3 d-flex gap-2 flex-wrap" id="filterRow">
     <select id="statusFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadOrders()">
       <option value="">All Status</option>
-      <option value="PENDING">PENDING</option>
-      <option value="CONFIRMED">CONFIRMED</option>
-      <option value="READY">READY</option>
+      <option value="PENDING">Pending</option>
+      <option value="CONFIRMED">Confirmed</option>
+      <option value="READY">Ready</option>
       <option value="COMPLETED">COMPLETED</option>
       <option value="CANCELLED">CANCELLED</option>
       <option value="EXPIRED">EXPIRED</option>
@@ -67,12 +72,14 @@
 
   <div class="card p-4">
     <div class="order-table-wrap">
-      <table class="table table-hover order-table">
+      <div class="table-scroll-wrap">
+<table class="table table-hover order-table">
         <thead class="table-light">
           <tr><th>Reference</th><th>Customer</th><th>Pickup</th><th>Items</th><th>Total</th><th>Status</th><th>Rating</th><th>Deadline</th><th id="actionHeader">Action</th></tr>
         </thead>
         <tbody id="orderBody"><tr><td colspan="8" class="text-center text-muted">Loading...</td></tr></tbody>
       </table>
+</div>
     </div>
     <div id="orderPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
   </div>
@@ -116,7 +123,9 @@
   function clearError() { document.getElementById('errorState').hidden = true; }
   function displayDate(value) { return value ? escapeHtml(String(value).slice(0, 10)) : '—'; }
   function money(value) { return value == null ? '—' : formatMoney(value); }
-  function statusBadge(value) { return `<span class="badge bg-secondary">${escapeHtml(value || '—')}</span>`; }
+  function statusBadge(value) {
+    return `<span class="badge bg-secondary">${escapeHtml(displayLabel(STATUS_LABELS, value))}</span>`;
+  }
   function loadOrdersDebounced() { clearTimeout(searchTimer); searchTimer = setTimeout(loadOrders, 250); }
 
   function renderActions(order) {
@@ -231,7 +240,9 @@
           <div><div class="order-detail-label">Total</div><div class="order-detail-value">${money(order.total_amount)}</div></div>
         </div>
         <p class="small text-muted">${escapeHtml(order.notes || 'No notes')}</p>
-        <table class="table table-sm"><thead><tr><th>Product</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>Rating</th></tr></thead><tbody>${order.items.map(item => `<tr><td>${escapeHtml(item.product_name)}</td><td>${escapeHtml(item.quantity)}</td><td>${money(item.unit_price)}</td><td>${money(item.line_total)}</td><td>${item.rating ? `${item.rating.rating}/5${item.rating.feedback_text ? `<br><small>${escapeHtml(item.rating.feedback_text)}</small>` : ''}` : '—'}</td></tr>`).join('')}</tbody></table>`;
+        <div class="table-scroll-wrap">
+<table class="table table-sm"><thead><tr><th>Product</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>Rating</th></tr></thead><tbody>${order.items.map(item => `<tr><td>${escapeHtml(item.product_name)}</td><td>${escapeHtml(item.quantity)}</td><td>${money(item.unit_price)}</td><td>${money(item.line_total)}</td><td>${item.rating ? `${item.rating.rating}/5${item.rating.feedback_text ? `<br><small>${escapeHtml(item.rating.feedback_text)}</small>` : ''}` : '—'}</td></tr>`).join('')}</tbody></table>
+</div>`;
       document.getElementById('detailModal').hidden = false;
     } catch (error) { showError('Order details could not be loaded.'); }
   }
@@ -246,5 +257,3 @@
   initializeOrderPage();
 </script>
 {% endblock %}
-
-

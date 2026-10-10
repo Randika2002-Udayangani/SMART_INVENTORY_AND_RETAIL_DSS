@@ -10,7 +10,7 @@
   .reorder-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
   .reorder-table thead th {
     position: sticky;
-    top: calc(var(--topbar-height, 58px) + 1px);
+    top: 0;
     z-index: 10;
     background: var(--card2) !important;
     box-shadow: 0 1px 0 var(--border);
@@ -32,6 +32,11 @@
 {% block nav_reorder %}active{% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Decision Support</span><span>›</span><span class="current-page">Reorder Recommendations</span></div>
+  <h1 class="page-title">Reorder Recommendations</h1>
+  <p class="page-subtitle">Prioritize products that need replenishment based on current stock and demand.</p>
+</div>
   <div class="topbar reorder-page-header">
     <div>
       <h1>Reorder Recommendations</h1>
@@ -57,7 +62,7 @@
     </select>
     <select id="statusFilter" class="form-select form-select-sm" style="width:160px;" onchange="handleReorderFilterChange()">
       <option value="">All Status</option>
-      <option value="PENDING">PENDING</option>
+      <option value="PENDING">Pending</option>
       <option value="ORDERED">ORDERED</option>
       <option value="IGNORED">IGNORED</option>
       <option value="AUTO_RESOLVED">AUTO_RESOLVED</option>
@@ -66,7 +71,8 @@
 
   <div class="card p-4">
     <div class="reorder-table-wrap">
-      <table class="table table-hover reorder-table">
+      <div class="table-scroll-wrap">
+<table class="table table-hover reorder-table">
         <thead class="table-light">
           <tr><th>Product</th><th>Current Stock</th><th>Reorder Point</th><th>Suggested Qty</th><th>Urgency</th><th>Status</th><th id="actionHeader">Action</th></tr>
         </thead>
@@ -74,6 +80,7 @@
           <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
         </tbody>
       </table>
+</div>
     </div>
     <div id="reorderPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
   </div>
@@ -149,12 +156,8 @@
     try {
       const data = await apiFetch(`/api/reorder/recommendations/?${params.toString()}`);
       allRecommendations = Array.isArray(data) ? data : (data.results ?? []);
-<<<<<<< HEAD
-      reorderPage = 1; // fresh data (filter changed / reload) — back to page 1
-=======
       reorderTotalPages = Array.isArray(data) ? 1 : (data.total_pages ?? 1);
       reorderPage = Array.isArray(data) ? reorderPage : (data.page ?? reorderPage);
->>>>>>> dev1
       renderRecommendations();
     } catch (error) {
       console.error('loadRecommendations failed:', error);
@@ -164,12 +167,6 @@
     }
   }
 
-<<<<<<< HEAD
-  // Renders the current page of allRecommendations. Pagination follows the
-  // same pattern used elsewhere (Stock Levels in inventory.html, Purchases,
-  // Batches, Notifications) — 25 rows/page, client-side slice, Previous /
-  // "Page X of Y" / Next.
-=======
   function handleReorderFilterChange() {
     reorderPage = 1; // filter changed — back to page 1
     loadRecommendations();
@@ -178,7 +175,6 @@
   // Renders the current page of allRecommendations. Pagination is now
   // server-side (see ReorderRecommendationListView / core.pagination) —
   // this used to fetch every recommendation and slice 25 at a time here.
->>>>>>> dev1
   function renderRecommendations() {
     const tbody = document.getElementById('reorderBody');
     const rows = allRecommendations;
@@ -264,5 +260,3 @@
   initializeReorderPage();
 </script>
 {% endblock %}
-
-

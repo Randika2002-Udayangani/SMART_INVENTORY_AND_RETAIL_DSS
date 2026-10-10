@@ -137,6 +137,11 @@
 {% block nav_notifications %}active{% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Overview</span><span>›</span><span class="current-page">Notifications</span></div>
+  <h1 class="page-title">Notifications</h1>
+  <p class="page-subtitle">Review and manage important inventory and operational alerts.</p>
+</div>
 
   <div class="topbar">
     <div>
@@ -441,5 +446,3 @@
   loadNotifications();
 </script>
 {% endblock %}
-
-

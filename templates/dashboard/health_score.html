@@ -26,7 +26,7 @@
        since there's no room for it to "travel" within such a short table. */
     #hsMainTable thead.table-light th {
         position: sticky;
-        top: var(--topbar-height, 56px); /* set dynamically in base.html to match the actual topbar height on this page */
+        top: 0;
         z-index: 120;
         background-color: var(--card2);
     }
@@ -61,6 +61,11 @@
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Decision Support</span><span>›</span><span class="current-page">Health Score</span></div>
+  <h1 class="page-title">Health Score</h1>
+  <p class="page-subtitle">Evaluate stock health across products using the latest inventory signals.</p>
+</div>
 <div class="topbar">
     <div>
         <h1>Inventory Health Score</h1>
@@ -118,7 +123,8 @@
                 <button class="btn btn-outline-secondary btn-sm" onclick="refreshCritical()">Refresh</button>
             </div>
             <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0">
+                <div class="table-scroll-wrap">
+<table class="table table-sm table-hover mb-0">
                     <thead class="table-light">
                         <tr><th>Product</th><th>Score</th><th>Recommended Action</th></tr>
                     </thead>
@@ -126,6 +132,7 @@
                         <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
                     </tbody>
                 </table>
+</div>
             </div>
             <div id="criticalPagination" class="d-flex justify-content-between align-items-center mt-2"></div>
         </div>
@@ -137,7 +144,8 @@
                 <button class="btn btn-outline-secondary btn-sm" onclick="refreshCategories()">Refresh</button>
             </div>
             <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0">
+                <div class="table-scroll-wrap">
+<table class="table table-sm table-hover mb-0">
                     <thead class="table-light">
                         <tr><th>Category</th><th>Avg Score</th><th>Status</th></tr>
                     </thead>
@@ -145,6 +153,7 @@
                         <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
                     </tbody>
                 </table>
+</div>
             </div>
         </div>
     </div>
@@ -154,21 +163,22 @@
 <div class="mb-3 d-flex gap-2 align-items-center flex-wrap" id="filterButtons">
     <button class="btn btn-sm btn-outline-secondary active" onclick="filterTable('ALL', this)">All</button>
     <button class="btn btn-sm btn-outline-success" onclick="filterTable('HEALTHY', this)">Healthy</button>
-    <button class="btn btn-sm btn-outline-warning" onclick="filterTable('WATCH', this)">Watch</button>
+    <button class="btn btn-sm btn-outline-warning" onclick="filterTable('WATCH', this)">Needs Attention</button>
     <button class="btn btn-sm" style="border:1px solid #EA580C;color:#EA580C;" onclick="filterTable('AT RISK', this)">At Risk</button>
-    <button class="btn btn-sm btn-outline-danger" onclick="filterTable('CRITICAL', this)">Critical</button>
+    <button class="btn btn-sm btn-outline-danger" onclick="filterTable('CRITICAL', this)">Act Now</button>
     <input type="text" id="productSearch" class="form-control form-control-sm ms-auto" style="max-width:260px;"
-           placeholder="Search product name or SKU..." oninput="handleSearchInput()">
+           placeholder="Search product name or Product code..." oninput="handleSearchInput()">
 </div>
 
 <!-- Table -->
 <div class="card p-4">
-    <table class="table table-hover" id="hsMainTable">
+    <div class="table-scroll-wrap">
+<table class="table table-hover" id="hsMainTable">
             <thead class="table-light">
                 <tr>
                     <th>Product</th>
                     <th>Category</th>
-                    <th>Velocity</th>
+                    <th>Sales speed <span class="tooltip-icon" title="How fast a product sells — units sold per day">ⓘ</span></th>
                     <th>Margin % <span class="tooltip-icon" title="Margin percentage — the share of each sale left after the product cost">ⓘ</span></th>
                     <th>Expiry Risk</th>
                     <th>Stock Duration</th>
@@ -182,6 +192,7 @@
                 <tr><td colspan="10" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         <div id="hsPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
 </div>
 
@@ -270,23 +281,6 @@ function filterTable(filter, btn) {
     currentFilter = filter;
     document.querySelectorAll('#filterButtons button').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
-<<<<<<< HEAD
-    hsPage = 1; // filter changed — back to page 1
-    renderTable();
-}
-
-function handleSearchInput() {
-    currentSearch = document.getElementById('productSearch').value.trim().toLowerCase();
-    hsPage = 1; // search changed — back to page 1
-    renderTable();
-}
-
-function matchesSearch(row, term) {
-    if (!term) return true;
-    const name = String(row.product__product_name ?? row.product_name ?? '').toLowerCase();
-    const sku = String(row.product__sku_code ?? row.sku_code ?? '').toLowerCase();
-    return name.includes(term) || sku.includes(term);
-=======
     hsPage = 1; // filter changed — back to page 1
     fetchHealthScorePage();
 }
@@ -301,7 +295,6 @@ function handleSearchInput() {
         hsPage = 1; // search changed — back to page 1
         fetchHealthScorePage();
     }, 300);
->>>>>>> dev1
 }
 
 function renderTable() {
@@ -316,32 +309,20 @@ function renderTable() {
         return;
     }
 
-<<<<<<< HEAD
-    // Pagination — same pattern used elsewhere (Stock Levels in
-    // inventory.html, Purchases, Batches, Reorder, Lifecycle, Loss
-    // Analysis, Discount Engine, Notifications): 25 rows/page, client-side
-    // slice, Previous / "Page X of Y" / Next.
-    const totalPages = Math.max(1, Math.ceil(rows.length / hsPageSize));
-    hsPage = Math.min(hsPage, totalPages);
-    const pageRows = rows.slice((hsPage - 1) * hsPageSize, hsPage * hsPageSize);
-
-    tbody.innerHTML = pageRows.map(r => `
-=======
     // Pagination + filtering + search are now all server-side (see
     // HealthScoreListView's ?status=/?search=/?page= params). This used
     // to fetch every row once and filter/search/slice 25 at a time here.
     tbody.innerHTML = rows.map(r => `
->>>>>>> dev1
         <tr>
-            <td style="font-weight:600">${r.product__product_name ?? r.product_name ?? '—'}</td>
-            <td>${r.product__category__category_name ?? r.category ?? '—'}</td>
+            <td style="font-weight:600">${escapeHtmlHs(r.product__product_name ?? r.product_name ?? '—')}</td>
+            <td>${escapeHtmlHs(r.product__category__category_name ?? r.category ?? '—')}</td>
             <td>${numberCell(r.velocity_score)}</td>
             <td>${numberCell(r.margin_score)}</td>
             <td>${numberCell(r.expiry_risk_score)}</td>
             <td>${numberCell(r.stock_duration_score)}</td>
             <td><strong>${numberCell(r.overall_score)}</strong></td>
             <td>${statusBadge(r.status)}</td>
-            <td><em style="color:#64748b;font-size:12px;">${r.recommended_action ?? '—'}</em></td>
+            <td><em style="color:#64748b;font-size:12px;">${escapeHtmlHs(r.recommended_action ?? '—')}</em></td>
             <td><button class="btn btn-outline-secondary btn-sm" onclick="showProductDetails(${r.product ?? r.product__id ?? 'null'})">Details</button></td>
         </tr>
     `).join('');
@@ -391,17 +372,19 @@ async function showProductDetails(productId) {
                 ? `<p class="text-muted small mt-2 mb-0">…and ${history.length - 10} earlier run(s).</p>`
                 : '';
             historyHtml = `
-                <table class="table table-sm mb-0">
+                <div class="table-scroll-wrap">
+<table class="table table-sm mb-0">
                     <thead><tr><th>Calculated At</th><th>Score</th><th>Status</th></tr></thead>
                     <tbody>${rows}</tbody>
-                </table>${more}`;
+                </table>
+</div>${more}`;
         }
 
         document.getElementById('hsDetailsBody').innerHTML = `
             <div class="hs-detail-grid">
-                ${field('SKU', detail.sku_code)}
-                ${field('Overall Score', `${numberCell(detail.overall_score)} (${detail.status ?? '—'})`)}
-                ${field('Velocity', numberCell(detail.velocity_score))}
+                ${field('Product code', detail.sku_code)}
+                ${field('Overall Score', `${numberCell(detail.overall_score)} (${displayLabel(HEALTH_LABELS, detail.status)})`)}
+                ${field('Sales speed', numberCell(detail.velocity_score))}
                 ${field('Margin %', numberCell(detail.margin_score))}
                 ${field('Expiry Risk', numberCell(detail.expiry_risk_score))}
                 ${field('Stock Duration', numberCell(detail.stock_duration_score))}
@@ -461,9 +444,9 @@ function renderCriticalPage() {
 
     tbody.innerHTML = rows.length ? rows.map(r => `
             <tr>
-                <td>${r.product__product_name ?? '—'}</td>
+                <td>${escapeHtmlHs(r.product__product_name ?? '—')}</td>
                 <td><strong style="color:#DC2626;">${numberCell(r.overall_score)}</strong></td>
-                <td><em style="color:#64748b;font-size:12px;">${r.recommended_action ?? '—'}</em></td>
+                <td><em style="color:#64748b;font-size:12px;">${escapeHtmlHs(r.recommended_action ?? '—')}</em></td>
             </tr>
         `).join('') : '<tr><td colspan="3" class="text-center text-muted">No critical products right now.</td></tr>';
 
@@ -496,7 +479,7 @@ async function loadCategories() {
         const rows = await apiFetch('/api/health-scores/categories/');
         tbody.innerHTML = rows.length ? rows.map(r => `
             <tr>
-                <td>${r.category__category_name ?? '—'}</td>
+                <td>${escapeHtmlHs(r.category__category_name ?? '—')}</td>
                 <td>${numberCell(r.avg_health_score)}</td>
                 <td>${statusBadge(r.status)}</td>
             </tr>
@@ -577,12 +560,6 @@ async function loadHealthScores() {
                 setLastCalculatedLabel(latestStamp, false);
             }
         }
-<<<<<<< HEAD
-
-        hsPage = 1; // fresh data — back to page 1
-        renderTable();
-=======
->>>>>>> dev1
     } catch(e) {
         document.getElementById('hsBody').innerHTML = '<tr><td colspan="10" class="text-center text-muted">Could not load data.</td></tr>';
     }
@@ -590,7 +567,7 @@ async function loadHealthScores() {
 
 async function runCalculation() {
     const btn = document.getElementById('calcBtn');
-    btn.innerHTML = 'â³ Calculating...';
+    btn.innerHTML = '⏳ Calculating...';
     btn.disabled = true;
 
     // Loading state on the table itself, not just the button — a full
@@ -626,5 +603,3 @@ fetchCurrentUser();
 loadHealthScores().then(() => Promise.all([loadCritical(), loadCategories()]));
 </script>
 {% endblock %}
-
-

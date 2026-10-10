@@ -22,6 +22,11 @@
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Overview</span><span>›</span><span class="current-page">Reports</span></div>
+  <h1 class="page-title">Reports</h1>
+  <p class="page-subtitle">Download manager reports from current system data.</p>
+</div>
 <div class="topbar">
     <div>
         <h1>Reports</h1>
@@ -40,6 +45,7 @@
         <div class="card report-card p-4">
             <div class="d-flex justify-content-between"><h5>Sales Report</h5><span class="report-icon">▤</span></div>
             <p class="description">Detailed sales revenue, units sold, and best-selling products.</p>
+            <p class="small text-muted report-summary">Download the report to review how much the store sold during the selected period.</p>
             <div class="row g-2 mb-3">
                 <div class="col"><label class="date-label" for="salesFrom">From</label><input type="date" id="salesFrom" class="form-control form-control-sm"></div>
                 <div class="col"><label class="date-label" for="salesTo">To</label><input type="date" id="salesTo" class="form-control form-control-sm"></div>
@@ -56,7 +62,8 @@
     <div class="col-12 col-lg-6 fin-restricted">
         <div class="card report-card p-4">
             <div class="d-flex justify-content-between"><h5>Profit Report</h5><span class="report-icon">↗</span></div>
-            <p class="description">Revenue, cost, gross profit, and margin results using <span title="Weighted Average Cost — the average price paid per unit based on all purchases">WAC <span class="tooltip-icon">ⓘ</span></span> and <span title="Margin percentage — the share of each sale left after the product cost">Margin % <span class="tooltip-icon">ⓘ</span></span>.</p>
+            <p class="description">Revenue, cost, gross profit, and margin results using <span data-tooltip="Weighted Average Cost — the average price paid per unit across all purchases" tabindex="0">WAC <span class="tooltip-icon">ⓘ</span></span> and <span data-tooltip="Margin percentage — the share of each sale left after the product cost" tabindex="0">Margin % <span class="tooltip-icon">ⓘ</span></span>.</p>
+            <p class="small text-muted report-summary">This report helps you compare revenue with WAC-based costs and understand profit performance.</p>
             <div class="row g-2 mb-3">
                 <div class="col"><label class="date-label" for="profitFrom">From</label><input type="date" id="profitFrom" class="form-control form-control-sm"></div>
                 <div class="col"><label class="date-label" for="profitTo">To</label><input type="date" id="profitTo" class="form-control form-control-sm"></div>
@@ -113,8 +120,8 @@
     <!-- Lifecycle Report — status/velocity only, no money. Visible to all. -->
     <div class="col-12 col-lg-6 col-xl-4">
         <div class="card report-card p-4">
-            <div class="d-flex justify-content-between"><h5>Lifecycle Report</h5><span class="report-icon"><i class="bi bi-bezier2"></i></span></div>
-            <p class="description">Lifecycle status, sales velocity, and recommendations.</p>
+            <div class="d-flex justify-content-between"><h5>Product stage report</h5><span class="report-icon"><i class="bi bi-bezier2"></i></span></div>
+            <p class="description">Product stage status, sales speed, and recommendations.</p>
             <div class="download-actions">
                 <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/lifecycle/','lifecycle_report','excel',{},this)">Download Excel</button>
                 <button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/lifecycle/','lifecycle_report','pdf',{},this)">Download PDF</button>
@@ -277,5 +284,3 @@ fetchCurrentUser().then(role => {
 setDefaultDates();
 </script>
 {% endblock %}
-
-
