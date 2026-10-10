@@ -18,7 +18,7 @@
 
         /* ── Nav ── */
         .top-bar {
-            background: #1a73e8;
+            background: #0f3d3e;
             padding: 14px 24px;
             display: flex;
             align-items: center;
@@ -40,7 +40,7 @@
 
         /* ── Hero ── */
         .hero {
-            background: linear-gradient(135deg, #1a73e8 0%, #0d47a1 60%, #1565c0 100%);
+            background: linear-gradient(135deg, #0f3d3e 0%, #1b4332 60%, #2d6a4f 100%);
             color: white;
             padding: 60px 24px 70px;
             text-align: center;
@@ -143,7 +143,7 @@
             padding: 24px 20px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.07);
             transition: transform 0.2s, box-shadow 0.2s;
-            border-top: 3px solid #1a73e8;
+            border-top: 3px solid #2d6a4f;
         }
         .feature-card:hover {
             transform: translateY(-4px);
@@ -208,11 +208,11 @@
         }
 
         .portal-card.customer {
-            background: linear-gradient(135deg, #1a73e8, #1565c0);
+            background: linear-gradient(135deg, #2d6a4f, #1b4332);
             color: white;
         }
         .portal-card.staff {
-            background: linear-gradient(135deg, #2e7d32, #1b5e20);
+            background: linear-gradient(135deg, #0f3d3e, #1b4332);
             color: white;
         }
 
@@ -272,13 +272,13 @@
 
 <!-- Top Bar -->
 <div class="top-bar">
-    <span class="brand">🛒 Samanala Super Mart</span>
+    <span class="brand">Samanala Super Mart</span>
     <span class="uni-name">University of Jaffna — Team Software Project</span>
 </div>
 
 <!-- Hero -->
 <div class="hero">
-    <div class="hero-badge">🎓 University of Jaffna — Team Software Project 2026 - Team STACK5</div>
+    <div class="hero-badge">University of Jaffna — Team Software Project 2026 - Team STACK5</div>
     <h1>Samanala <span>Super Mart</span></h1>
     <p class="subtitle">Smart Inventory &amp; Retail Decision Support System</p>
     <p class="tagline">Reducing waste · Maximising value · Empowering decisions</p>
@@ -288,9 +288,9 @@
 <div class="wave">
     <svg viewBox="0 0 1200 60" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M0,30 C300,60 900,0 1200,30 L1200,60 L0,60 Z"
-              fill="#0d47a1" opacity="0.15"/>
+              fill="#0f3d3e" opacity="0.15"/>
         <path d="M0,40 C400,10 800,60 1200,20 L1200,60 L0,60 Z"
-              fill="#1a73e8" opacity="0.1"/>
+              fill="#2d6a4f" opacity="0.1"/>
     </svg>
 </div>
 
@@ -303,22 +303,18 @@
 
     <div class="feature-grid">
         <div class="feature-card">
-            <span class="icon">📦</span>
             <h3>Smart Inventory Management</h3>
             <p>Real-time stock tracking across all product batches with automated reorder alerts and stock audit tools.</p>
         </div>
         <div class="feature-card">
-            <span class="icon">🏷️</span>
             <h3>Expiry &amp; Discount Engine</h3>
             <p>Automatically identifies near-expiry items and recommends optimal discount rates to minimise losses and reduce waste.</p>
         </div>
         <div class="feature-card">
-            <span class="icon">📊</span>
             <h3>Decision Support Dashboard</h3>
             <p>Rich analytics with health scores, sales summaries, profit analysis and lifecycle insights to support manager decisions.</p>
         </div>
         <div class="feature-card">
-            <span class="icon">🤖</span>
             <h3>Online Ordering &amp; Chatbot</h3>
             <p>Customer-facing portal with AI chatbot, product browsing by category, cart management and order tracking.</p>
         </div>
@@ -333,14 +329,12 @@
 
         <div class="portal-cards">
             <a href="/customer/" class="portal-card customer">
-                <span class="p-icon">🛒</span>
                 <h3>Customer Portal</h3>
                 <p>Browse products, view discounts, chat with our AI assistant and place orders online.</p>
                 <span class="p-btn">Shop Now →</span>
             </a>
 
             <a href="/dashboard/login/" class="portal-card staff">
-                <span class="p-icon">📊</span>
                 <h3>Staff / Manager</h3>
                 <p>Access inventory, analytics, discount engine, purchase management and decision tools.</p>
                 <span class="p-btn">Login →</span>
