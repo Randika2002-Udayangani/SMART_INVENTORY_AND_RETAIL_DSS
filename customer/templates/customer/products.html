@@ -6,8 +6,8 @@
     <title>Samanala Super Mart</title>
     <style>
         :root {
-            --primary-blue: #1a73e8;
-            --primary-blue-dark: #1558b0;
+            --primary-green: #2d6a4f;
+            --primary-green-dark: #1b4332;
             --accent-red: #e53935;
             --accent-red-soft: #fce8e6;
             --success-green: #1e7e34;
@@ -17,7 +17,7 @@
             --text-mid: #4b5563;
             --text-light: #757575;
             --border: #e5e7eb;
-            --shadow-soft: 0 8px 22px rgba(26, 115, 232, 0.08);
+            --shadow-soft: 0 8px 22px rgba(45, 106, 79, 0.08);
             --shadow-card: 0 6px 20px rgba(0, 0, 0, 0.08);
         }
 
@@ -36,8 +36,8 @@
             position: sticky;
             top: 0;
             z-index: 50;
-            background: linear-gradient(135deg, #1467d1 0%, #1a73e8 100%);
-            box-shadow: 0 4px 12px rgba(26, 115, 232, 0.18);
+            background: linear-gradient(135deg, #0f3d3e 0%, #2d6a4f 100%);
+            box-shadow: 0 4px 12px rgba(45, 106, 79, 0.18);
             padding: 14px 24px;
             display: flex;
             align-items: center;
@@ -89,7 +89,7 @@
             cursor: pointer;
             transition: transform 0.2s ease, background 0.2s ease;
         }
-        .nav-cta { background: #fff; color: var(--primary-blue); border-color: #fff; }
+        .nav-cta { background: #fff; color: var(--primary-green); border-color: #fff; }
         .nav-cta.secondary { background: rgba(255, 255, 255, 0.12); color: #fff; }
 
         .search-section {
@@ -114,8 +114,8 @@
             transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
         .search-wrapper input:focus {
-            border-color: var(--primary-blue);
-            box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.12);
+            border-color: var(--primary-green);
+            box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.12);
         }
         .clear-search-btn {
             position: absolute;
@@ -136,7 +136,7 @@
             justify-content: center;
         }
         .search-btn {
-            background: var(--primary-blue);
+            background: var(--primary-green);
             color: #fff;
             border: none;
             border-radius: 12px;
@@ -154,7 +154,7 @@
             max-height: 260px;
             overflow-y: auto;
             background: #fff;
-            border: 1px solid var(--primary-blue);
+            border: 1px solid var(--primary-green);
             border-radius: 12px;
             box-shadow: 0 12px 28px rgba(0, 0, 0, 0.1);
             display: none;
@@ -170,18 +170,18 @@
             border-bottom: 1px solid #f0f2f5;
             color: var(--text-dark);
         }
-        .suggestion-item:hover { background: #eef5ff; }
+        .suggestion-item:hover { background: #e8f5eb; }
         .suggestion-item-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
         .suggestion-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .suggestion-price { color: var(--text-light); font-size: 0.8rem; white-space: nowrap; }
-        .match { color: var(--primary-blue); font-weight: 700; }
+        .match { color: var(--primary-green); font-weight: 700; }
 
         .welcome-bar {
             padding: 16px 24px 8px;
             color: var(--text-mid);
             font-size: 0.98rem;
         }
-        .welcome-bar strong { color: var(--primary-blue); }
+        .welcome-bar strong { color: var(--primary-green); }
 
         .search-results-panel {
             display: none;
@@ -211,10 +211,10 @@
             animation: fadeIn 0.6s ease;
         }
         .hero-slide.active { display: block; }
-        .hero-slide.red { background: linear-gradient(135deg, #d92d2d 0%, #ef4444 52%, #ff7a59 100%); }
-        .hero-slide.blue { background: linear-gradient(135deg, #0f5ed7 0%, #1a73e8 42%, #5ba3ff 100%); }
+        .hero-slide.red { background: linear-gradient(135deg, #14532d 0%, #15803d 52%, #4ade80 100%); }
+        .hero-slide.blue { background: linear-gradient(135deg, #0f3d3e 0%, #2d6a4f 42%, #34d17a 100%); }
         .hero-slide.green { background: linear-gradient(135deg, #1f8d47 0%, #2ea85d 48%, #68d17d 100%); }
-        .hero-slide.brand { background: linear-gradient(135deg, #582a9d 0%, #7650c8 48%, #a78bfa 100%); }
+        .hero-slide.brand { background: linear-gradient(135deg, #0f3d3e 0%, #1b6b50 48%, #52b788 100%); }
         .hero-slide-inner {
             display: flex;
             align-items: center;
@@ -325,7 +325,7 @@
             text-transform: uppercase;
         }
         .section-link {
-            color: var(--primary-blue);
+            color: var(--primary-green);
             font-size: 0.92rem;
             font-weight: 600;
             display: inline-flex;
@@ -340,7 +340,7 @@
             background: var(--card);
             border-radius: 18px;
             padding: 16px 14px 12px;
-            border: 1px solid rgba(26, 115, 232, 0.08);
+            border: 1px solid rgba(45, 106, 79, 0.08);
             box-shadow: var(--shadow-card);
             display: flex;
             flex-direction: column;
@@ -361,17 +361,6 @@
             text-transform: uppercase;
             padding: 5px 8px;
             border-radius: 999px;
-        }
-        .deal-image {
-            margin-top: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 92px;
-            font-size: 2.5rem;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #fff6f5, #f3f8ff);
-            color: var(--primary-blue);
         }
         .deal-name {
             font-size: 0.9rem;
@@ -398,13 +387,13 @@
             border: none;
             border-radius: 10px;
             cursor: pointer;
-            background: var(--primary-blue);
+            background: var(--primary-green);
             color: #fff;
             font-weight: 600;
             transition: background 0.2s ease, transform 0.2s ease;
         }
         .deal-add-btn { width: 100%; margin-top: 6px; padding: 10px 10px; font-size: 0.86rem; }
-        .deal-add-btn:hover, .modal-add-btn:hover, .add-btn:hover { background: var(--primary-blue-dark); }
+        .deal-add-btn:hover, .modal-add-btn:hover, .add-btn:hover { background: var(--primary-green-dark); }
 
         .category-grid {
             display: grid;
@@ -413,7 +402,7 @@
         }
         .category-box {
             background: #fff;
-            border: 1px solid rgba(26, 115, 232, 0.08);
+            border: 1px solid rgba(45, 106, 79, 0.08);
             border-radius: 18px;
             padding: 20px 12px 16px;
             min-height: 142px;
@@ -426,7 +415,7 @@
             box-shadow: 0 3px 12px rgba(17, 24, 39, 0.04);
             transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
         }
-        .category-box:hover { border-color: var(--primary-blue); box-shadow: 0 12px 24px rgba(26, 115, 232, 0.12); }
+        .category-box:hover { border-color: var(--primary-green); box-shadow: 0 12px 24px rgba(45, 106, 79, 0.12); }
         .cat-icon { font-size: 2.3rem; margin-bottom: 10px; }
         .cat-name {
             font-size: 0.9rem;
@@ -440,8 +429,8 @@
             align-items: center;
             justify-content: center;
             min-height: 24px;
-            background: #eef4ff;
-            color: var(--primary-blue);
+            background: #e8f5eb;
+            color: var(--primary-green);
             border-radius: 999px;
             font-size: 0.68rem;
             font-weight: 600;
@@ -450,9 +439,9 @@
         .view-all-btn {
             margin-top: 16px;
             background: #fff;
-            border: 1.5px solid var(--primary-blue);
+            border: 1.5px solid var(--primary-green);
             border-radius: 12px;
-            color: var(--primary-blue);
+            color: var(--primary-green);
             padding: 10px 18px;
             cursor: pointer;
             font-weight: 600;
@@ -467,7 +456,7 @@
             font-size: 0.85rem;
             margin: 8px 0 12px;
         }
-        .breadcrumb a { color: var(--primary-blue); cursor: pointer; font-weight: 600; }
+        .breadcrumb a { color: var(--primary-green); cursor: pointer; font-weight: 600; }
 
         .page-title {
             display: flex;
@@ -486,8 +475,8 @@
             min-height: 28px;
             padding: 4px 10px;
             border-radius: 999px;
-            background: #eef5ff;
-            color: var(--primary-blue);
+            background: #e8f5eb;
+            color: var(--primary-green);
             font-size: 0.75rem;
             font-weight: 600;
         }
@@ -500,14 +489,14 @@
         .product-card {
             background: var(--card);
             border-radius: 16px;
-            border: 1px solid rgba(26, 115, 232, 0.07);
+            border: 1px solid rgba(45, 106, 79, 0.07);
             box-shadow: 0 6px 18px rgba(17, 24, 39, 0.05);
             padding: 14px 14px 12px;
             cursor: pointer;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
             display: flex;
             flex-direction: column;
-            min-height: 240px;
+            min-height: 150px;
         }
         .product-card .discount-chip {
             display: inline-flex;
@@ -521,17 +510,6 @@
             font-weight: 700;
             text-transform: uppercase;
             margin-bottom: 8px;
-        }
-        .product-visual {
-            height: 94px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #f6f9ff, #edf5ff);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 2.2rem;
-            color: var(--primary-blue);
-            margin-bottom: 12px;
         }
         .pname {
             font-size: 0.9rem;
@@ -553,7 +531,7 @@
             gap: 6px;
             font-size: 0.92rem;
             font-weight: 700;
-            color: var(--primary-blue);
+            color: var(--primary-green);
             margin-top: auto;
             margin-bottom: 12px;
         }
@@ -578,12 +556,12 @@
         .page-btn {
             padding: 10px 18px;
             border-radius: 10px;
-            border: 1.5px solid var(--primary-blue);
+            border: 1.5px solid var(--primary-green);
             font-weight: 700;
             cursor: pointer;
         }
-        .page-btn.inactive { background: #fff; color: var(--primary-blue); }
-        .page-btn.active { background: var(--primary-blue); color: #fff; }
+        .page-btn.inactive { background: #fff; color: var(--primary-green); }
+        .page-btn.active { background: var(--primary-green); color: #fff; }
         .page-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
         .page-info { color: var(--text-mid); font-size: 0.85rem; font-weight: 600; }
 
@@ -597,7 +575,7 @@
         }
         .state-box .icon { font-size: 2.2rem; margin-bottom: 10px; }
         .state-box p { color: var(--text-mid); }
-        .state-box a { color: var(--primary-blue); cursor: pointer; font-weight: 600; }
+        .state-box a { color: var(--primary-green); cursor: pointer; font-weight: 600; }
 
         .product-modal-overlay {
             position: fixed;
@@ -638,7 +616,7 @@
         .modal-price {
             font-size: 1.6rem;
             font-weight: 700;
-            color: var(--primary-blue);
+            color: var(--primary-green);
             margin-bottom: 14px;
             display: flex;
             align-items: center;
@@ -714,8 +692,8 @@
             cursor: pointer;
             transition: transform 0.2s ease;
         }
-        .primary-action { background: var(--primary-blue); color: #fff; }
-        .secondary-action { background: #eef2ff; color: var(--primary-blue); }
+        .primary-action { background: var(--primary-green); color: #fff; }
+        .secondary-action { background: #e8f5eb; color: var(--primary-green); }
 
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -938,7 +916,7 @@
                     <a href="/customer/chatbot/">Chat with Us</a>
                     <a href="/customer/cart/" class="cart-link">🛒 Cart <span id="cartBadge" class="cart-badge">0</span></a>
                     <button class="nav-cta secondary" type="button" onclick="window.location.href='/customer/register/'">Register</button>
-                    <button class="nav-cta" type="button" onclick="window.location.href='/customer/login/'">Login</button>
+                    <button class="nav-cta secondary" type="button" onclick="window.location.href='/customer/login/'">Login</button>
                 `;
             }
             updateCartBadge();
@@ -1099,11 +1077,9 @@
                         const original = parseFloat(p.unit_price || 0);
                         const discounted = parseFloat(p.discount.price || 0);
                         const percent = p.discount.pct || Math.round((1 - discounted / original) * 100);
-                        const icon = getCatIcon(p.category_name || 'General');
                         return `
                             <div class="deal-card" onclick="openProductModal(${p.id})" title="${p.product_name}">
                                 <span class="deal-badge">${percent}% OFF</span>
-                                <div class="deal-image">${icon}</div>
                                 <div class="deal-name">${p.product_name}</div>
                                 <div class="deal-price-row">
                                     <span class="deal-old-price">${formatMoney(original)}</span>
@@ -1212,7 +1188,7 @@
                 <span>${catName}</span>
             `;
             document.getElementById('pageTitle').innerHTML = `
-                ${getCatIcon(catName)} ${catName}
+                ${catName}
                 <span class="item-count">${products.length} items</span>
             `;
             document.getElementById('mainContent').innerHTML = `
@@ -1220,7 +1196,6 @@
                     ${pageProds.map((p) => `
                         <div class="product-card" onclick="openProductModal(${p.id})">
                             ${p.discount ? `<div class="discount-chip">🏷️ ${p.discount.pct}% OFF</div>` : ''}
-                            <div class="product-visual">${getCatIcon(catName)}</div>
                             <div class="pname">${p.product_name}</div>
                             <div class="pprice ${p.discount ? 'discounted' : ''}">${renderProductPrice(p)}</div>
                             <button type="button" class="add-btn" data-product-id="${p.id}" disabled onclick="event.stopPropagation(); addToCart(${p.id}, '${(p.product_name || '').replace(/'/g, "\\'")}', ${getProductPrice(p)})">Checking stock...</button>
@@ -1290,7 +1265,7 @@
                     if (status === 'AVAILABLE') {
                         stockEl.innerHTML = `<span style="color:#1e7e34;">✅ ${stock} items available</span>`;
                         addBtn.disabled = false;
-                        addBtn.style.background = '#1a73e8';
+                        addBtn.style.background = '#2d6a4f';
                         addBtn.textContent = 'Add to Cart 🛒';
                         addBtn.onclick = () => {
                             addToCartWithLimit(p.id, p.product_name, getProductPrice(p), stock);
@@ -1299,7 +1274,7 @@
                     } else if (status === 'LIMITED_STOCK') {
                         stockEl.innerHTML = `<span style="color:#e65100;">⚠️ Only ${stock} left — order soon!</span>`;
                         addBtn.disabled = false;
-                        addBtn.style.background = '#1a73e8';
+                        addBtn.style.background = '#2d6a4f';
                         addBtn.textContent = 'Add to Cart 🛒';
                         addBtn.onclick = () => {
                             addToCartWithLimit(p.id, p.product_name, getProductPrice(p), stock);
@@ -1318,7 +1293,7 @@
                 const stockEl = document.getElementById('stockDisplay');
                 if (stockEl) stockEl.innerHTML = '✅ In Stock';
                 addBtn.disabled = false;
-                addBtn.style.background = '#1a73e8';
+                addBtn.style.background = '#2d6a4f';
                 addBtn.textContent = 'Add to Cart 🛒';
                 addBtn.onclick = () => {
                     addToCart(p.id, p.product_name, getProductPrice(p));
@@ -1446,7 +1421,6 @@
                         ${results.slice(0, 24).map((p) => `
                             <div class="product-card" onclick="openProductModal(${p.id})">
                                 ${p.discount ? `<div class="discount-chip">🏷️ ${p.discount.pct}% OFF</div>` : ''}
-                                <div class="product-visual">${getCatIcon(p.category_name || 'General')}</div>
                                 <div class="pname">${p.product_name}</div>
                                 <div class="pprice ${p.discount ? 'discounted' : ''}">${renderProductPrice(p)}</div>
                                 <button class="add-btn" type="button" data-product-id="${p.id}" disabled onclick="event.stopPropagation(); addToCart(${p.id}, '${(p.product_name || '').replace(/'/g, "\\'")}', ${getProductPrice(p)})">Checking stock...</button>
