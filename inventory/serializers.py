@@ -110,3 +110,56 @@ class ReorderRecommendationSerializer(serializers.ModelSerializer):
             'safety_stock', 'suggested_quantity', 'estimated_cost',
             'urgency', 'calculation_date',
         ]
+
+
+class ActiveDiscountSerializer(serializers.ModelSerializer):
+    """Customer-safe projection of an approved discount (Today's deals).
+
+    Built ONLY from get_customer_visible_discounts()'s queryset. Deliberately
+    excludes every internal discount-engine field: recovery_sell,
+    recovery_return, recovery_discard, profit_protected, best_action,
+    current_price snapshot, days_until_expiry, status, reviewed_by and
+    reviewed_at all stay out of the customer payload.
+    """
+    product_id = serializers.IntegerField(source='product.id', read_only=True)
+    product_name = serializers.CharField(
+        source='product.product_name', read_only=True
+    )
+    category_name = serializers.CharField(
+        source='product.category.category_name',
+        read_only=True, allow_null=True, default=None,
+    )
+    brand = serializers.CharField(
+        source='product.brand.brand_name',
+        read_only=True, allow_null=True, default=None,
+    )
+    original_price = serializers.DecimalField(
+        source='product.unit_price', max_digits=10, decimal_places=2,
+        read_only=True,
+    )
+    discount_percentage = serializers.DecimalField(
+        source='recommended_discount_pct', max_digits=5, decimal_places=2,
+        read_only=True,
+    )
+    discounted_price = serializers.DecimalField(
+        source='recommended_price', max_digits=10, decimal_places=2,
+        read_only=True,
+    )
+    is_available = serializers.SerializerMethodField()
+    expiry_date = serializers.DateField(
+        source='batch.expiry_date', read_only=True
+    )
+
+    class Meta:
+        model = DiscountRecommendation
+        fields = [
+            'product_id', 'product_name', 'category_name', 'brand',
+            'original_price', 'discount_percentage', 'discounted_price',
+            'is_available', 'expiry_date',
+        ]
+
+    def get_is_available(self, obj):
+        # Same public availability definition as the rest of the customer
+        # API (_public_product): boolean only, never an exact stock figure.
+        from inventory.services.stock import get_available_stock
+        return get_available_stock(obj.product_id) > 0

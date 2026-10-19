@@ -5,6 +5,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from unittest.mock import patch
 import os
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -18,8 +19,9 @@ from orders.services.agent import (
     compare_product_sales, execute_tool, find_cheapest_product,
     get_best_selling_products, get_expiring_products, run_agent,
 )
-from orders.services.gemini import DEFAULT_GEMINI_MODEL, GeminiProvider, GeminiQuotaExceeded
+from orders.services.gemini import DEFAULT_GEMINI_MODEL, GeminiProvider, GeminiQuotaExceeded, GeminiUnavailable
 from orders.views import ChatbotQueryView, ChatbotSessionDetailView
+from inventory.models import DiscountRecommendation
 from products.models import Category, Product
 from purchases.models import Purchase, PurchaseBatch
 from sales.models import ItemSalesRecord
@@ -624,5 +626,460 @@ class ChatbotAgentTests(TestCase):
         self.assertIn('every result on its own line', SYSTEM_INSTRUCTIONS)
         self.assertIn('cannot process online\norders or checkouts through this chat', SYSTEM_INSTRUCTIONS)
         self.assertIn('Never include it in product\nsearch', SYSTEM_INSTRUCTIONS)
+
+
+class ChatbotDiscountToolTests(TestCase):
+    """F09 — get_active_discounts: shared, anonymous-safe, customer-safe."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(
+            name='Deal Seeker', email='deals@example.com',
+            password_hash='unused',
+        )
+        self.factory = APIRequestFactory()
+        self.url = reverse('chatbot')
+        self.category = Category.objects.create(category_name='Hair Care')
+        self.product = Product.objects.create(
+            product_name='AYUSH ANTI DANDRUFF SHAMPOO 100ml',
+            category=self.category,
+            unit_price=Decimal('475.00'), cost_price=Decimal('400.00'),
+            is_active=True,
+        )
+        supplier = Supplier.objects.create(supplier_name='Test Supplier')
+        purchase = Purchase.objects.create(
+            supplier=supplier, purchase_date=local_today() - timedelta(days=20)
+        )
+        self.batch = PurchaseBatch.objects.create(
+            purchase=purchase, product=self.product, quantity_received=10,
+            cost_price=Decimal('400.00'), remaining_quantity=10,
+            expiry_date=local_today() + timedelta(days=15), status='ACTIVE',
+        )
+        self.recommendation = DiscountRecommendation.objects.create(
+            product=self.product, batch=self.batch,
+            days_until_expiry=15,
+            current_price=Decimal('475.00'),
+            recommended_discount_pct=Decimal('7.84'),
+            recommended_price=Decimal('437.77'),
+            recovery_sell=Decimal('470.00'),
+            recovery_return=Decimal('440.00'),
+            best_action='DISCOUNT',
+            status='APPLIED',
+        )
+
+    def test_discount_tool_is_registered_and_public_not_manager_only(self):
+        from orders.services.agent import MANAGER_TOOLS, TOOLS, TOOL_HANDLERS
+        self.assertIn('get_active_discounts', TOOL_HANDLERS)
+        self.assertIn('get_active_discounts', {tool['name'] for tool in TOOLS})
+        self.assertIn('get_active_discounts', PUBLIC_TOOLS)
+        self.assertNotIn('get_active_discounts', MANAGER_TOOLS)
+
+    def test_anonymous_visitor_can_execute_discount_tool(self):
+        result, tool_status = execute_tool('get_active_discounts', {}, None)
+        self.assertEqual(tool_status, 'completed')
+        self.assertEqual(len(result['discounts']), 1)
+        deal = result['discounts'][0]
+        self.assertEqual(deal['product_id'], self.product.id)
+        self.assertEqual(deal['product_name'], 'AYUSH ANTI DANDRUFF SHAMPOO 100ml')
+        self.assertEqual(deal['category'], 'Hair Care')
+        self.assertEqual(deal['selling_price'], 475.0)
+        self.assertEqual(deal['discount_percentage'], 7.84)
+        self.assertEqual(deal['discounted_price'], 437.77)
+        self.assertEqual(deal['expiry_date'], str(local_today() + timedelta(days=15)))
+
+    def test_discount_payload_has_no_internal_fields(self):
+        result, tool_status = execute_tool('get_active_discounts', {}, None)
+        self.assertEqual(tool_status, 'completed')
+        deal = result['discounts'][0]
+        for internal in (
+            'recovery_sell', 'recovery_return', 'recovery_discard',
+            'profit_protected', 'best_action', 'status', 'reviewed_by',
+            'reviewed_at', 'current_price', 'days_until_expiry', 'batch',
+        ):
+            self.assertNotIn(internal, deal)
+
+    def test_registered_customer_can_execute_discount_tool(self):
+        result, tool_status = execute_tool('get_active_discounts', {}, self.customer)
+        self.assertEqual(tool_status, 'completed')
+        self.assertEqual(len(result['discounts']), 1)
+
+    def test_stale_depleted_deal_is_not_surfaced(self):
+        # The recommendation is still APPLIED, but its batch is dead stock.
+        self.batch.status = 'DEPLETED'
+        self.batch.remaining_quantity = 0
+        self.batch.save()
+        result, tool_status = execute_tool('get_active_discounts', {}, self.customer)
+        self.assertEqual(tool_status, 'completed')
+        self.assertEqual(result, {'discounts': []})
+        self.assertNotIn('products', result)   # never a product-search fallback
+
+    def test_discount_tool_is_offered_to_anonymous_visitors(self):
+        with patch('orders.services.agent.get_provider') as get_provider:
+            provider = get_provider.return_value
+            provider.make_contents.return_value = []
+            provider.generate.side_effect = [SimpleNamespace(function_calls=[], text='no deals')]
+            provider.function_calls.side_effect = lambda response: response.function_calls
+            provider.response_text.side_effect = lambda response: response.text
+            run_agent('any discounts today?', None)
+        offered = {tool['name'] for tool in provider.generate.call_args[0][1]}
+        self.assertIn('get_active_discounts', offered)
+        # Manager-only analytics stay hidden from anonymous visitors.
+        self.assertNotIn('get_reorder_recommendations', offered)
+
+    def test_agent_invokes_discount_tool_through_provider_loop(self):
+        call = SimpleNamespace(name='get_active_discounts', args={}, id='call-9')
+        first = SimpleNamespace(
+            function_calls=[call],
+            candidates=[SimpleNamespace(content='tool-request')],
+        )
+        second = SimpleNamespace(function_calls=[], text='No active discounts right now.')
+        with patch('orders.services.agent.get_provider') as get_provider:
+            provider = get_provider.return_value
+            provider.make_contents.return_value = []
+            provider.generate.side_effect = [first, second]
+            provider.function_calls.side_effect = lambda response: response.function_calls
+            provider.response_text.side_effect = lambda response: response.text
+            result = run_agent('are there any discounts?', None)
+        self.assertTrue(result['query_success'])
+        self.assertEqual(
+            result['tool_calls'],
+            [{'name': 'get_active_discounts', 'status': 'completed'}],
+        )
+        provider.append_tool_results.assert_called_once()
+
+    def test_system_instructions_route_discount_words_to_tool(self):
+        from orders.services.agent import SYSTEM_INSTRUCTIONS
+        self.assertIn('get_active_discounts', SYSTEM_INSTRUCTIONS)
+        self.assertIn('Never pass the word "discount"', SYSTEM_INSTRUCTIONS)
+        self.assertIn('LKR original → LKR discounted (X% OFF)', SYSTEM_INSTRUCTIONS)
+        # Existing instruction guarantees must survive the addition.
+        self.assertIn('every result on its own line', SYSTEM_INSTRUCTIONS)
+
+    @patch('orders.views.run_agent')
+    def test_anonymous_endpoint_accepts_discount_question(self, run_agent):
+        run_agent.return_value = {
+            'bot_response': 'No active discounts right now.',
+            'query_success': True, 'tool_calls': [],
+        }
+        request = self.factory.post(self.url, {'message': 'any discounts?'}, format='json')
+        response = ChatbotQueryView.as_view()(request)
+        self.assertEqual(response.status_code, 200)
+        log = ChatbotLog.objects.get()
+        self.assertIsNone(log.customer_id)
+        self.assertEqual(log.user_message, 'any discounts?')
+
+    @patch('orders.views.run_agent')
+    def test_registered_endpoint_accepts_discount_question(self, run_agent):
+        run_agent.return_value = {
+            'bot_response': 'Two deals today.',
+            'query_success': True, 'tool_calls': [],
+        }
+        request = self.factory.post(self.url, {'message': 'any deals today?'}, format='json')
+        force_authenticate(request, user=self.customer)
+        response = ChatbotQueryView.as_view()(request)
+        self.assertEqual(response.status_code, 200)
+        log = ChatbotLog.objects.get()
+        self.assertEqual(log.customer_id, self.customer.id)
+
+class ChatbotProductMatchingTests(TestCase):
+    """Regression coverage for the shared product-matching strategy.
+
+    Uses a realistic mini-catalogue mirroring the reported failures: milk
+    powders, a chocolate malt drink and liquid UHT milk in separate
+    categories, so cross-type false positives are observable.  No Gemini call
+    is made anywhere — tool handlers run against the database directly and
+    the agent loop uses deterministic mocks.
+    """
+
+    def setUp(self):
+        self.customer = Customer.objects.create(
+            name='Matching Customer', email='matching@example.com', password_hash='unused')
+        self.powder_category = Category.objects.create(category_name='Milk Powder')
+        self.malt_category = Category.objects.create(category_name='Malt Drinks')
+        self.dairy_category = Category.objects.create(category_name='Dairy')
+        self.nido = Product.objects.create(
+            product_name='Nido Milk Powder 400g', category=self.powder_category,
+            unit_price=1200, cost_price=1000, is_active=True)
+        self.anchor = Product.objects.create(
+            product_name='Anchor Full Cream Milk Powder 1kg', category=self.powder_category,
+            unit_price=1500, cost_price=1250, is_active=True)
+        self.milo = Product.objects.create(
+            product_name='Nestle Milo Malt Drink 400g', category=self.malt_category,
+            unit_price=900, cost_price=750, is_active=True)
+        self.uht = Product.objects.create(
+            product_name='Ambewela UHT Milk 1L', category=self.dairy_category,
+            unit_price=520, cost_price=430, is_active=True)
+
+    @staticmethod
+    def _names(result):
+        return sorted(product['product_name'] for product in result['products'])
+
+    # 1 & 2 — exact/partial searches, case, spacing, punctuation, plurals.
+
+    def test_search_exact_and_partial_product_names(self):
+        result, status = execute_tool('search_products', {'query': 'nido'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(self._names(result), ['Nido Milk Powder 400g'])
+        result, _ = execute_tool('search_products', {'query': 'full cream'}, self.customer)
+        self.assertEqual(self._names(result), ['Anchor Full Cream Milk Powder 1kg'])
+
+    def test_search_normalises_case_and_extra_whitespace(self):
+        for query in ('  NIDO  ', 'NiDo', 'nido\tmilk\npowder', 'milk  powder'):
+            with self.subTest(query=query):
+                result, status = execute_tool('search_products', {'query': query}, self.customer)
+                self.assertEqual(status, 'completed')
+                self.assertIn('Nido Milk Powder 400g', self._names(result))
+
+    def test_search_handles_catalogue_punctuation_and_accents(self):
+        Product.objects.create(
+            product_name="Nestlé's Cocoa Powder 200g", category=self.powder_category,
+            unit_price=700, cost_price=550, is_active=True)
+        # Accented/possessive catalogue name + a misspelt query word.
+        result, _ = execute_tool('search_products', {'query': 'nestles cocoa poweder'}, self.customer)
+        self.assertEqual(self._names(result), ["Nestlé's Cocoa Powder 200g"])
+        # Possessive query against the plain catalogue name.
+        result, _ = execute_tool('search_products', {'query': "nestle's milo"}, self.customer)
+        self.assertEqual(self._names(result), ['Nestle Milo Malt Drink 400g'])
+
+    # 3 & 4 — category/type queries and distinguishing similar product types.
+
+    def test_category_type_query_handles_plural_word_order_and_spacing(self):
+        expected = ['Anchor Full Cream Milk Powder 1kg', 'Nido Milk Powder 400g']
+        for query in ('milk powder', 'milk powders', 'powder milk', 'milk  powders'):
+            with self.subTest(query=query):
+                result, status = execute_tool('search_products', {'query': query}, self.customer)
+                self.assertEqual(status, 'completed')
+                self.assertEqual(self._names(result), expected)
+
+    def test_milk_powder_search_excludes_other_product_types(self):
+        result, _ = execute_tool('search_products', {'query': 'milk powder'}, self.customer)
+        names = self._names(result)
+        self.assertNotIn('Nestle Milo Malt Drink 400g', names)  # chocolate malt drink
+        self.assertNotIn('Ambewela UHT Milk 1L', names)         # liquid UHT milk
+
+    def test_single_word_search_matches_only_products_containing_the_word(self):
+        result, _ = execute_tool('search_products', {'query': 'milk'}, self.customer)
+        names = self._names(result)
+        self.assertIn('Nido Milk Powder 400g', names)
+        self.assertIn('Ambewela UHT Milk 1L', names)
+        self.assertNotIn('Nestle Milo Malt Drink 400g', names)
+
+    def test_missing_category_data_falls_back_to_query_matching(self):
+        # The model guessed a category row that does not exist in the
+        # catalogue; the user's query words must still find the products.
+        result, status = execute_tool(
+            'search_products', {'query': 'milk powder', 'category': 'Powdered Milk'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(self._names(result),
+                         ['Anchor Full Cream Milk Powder 1kg', 'Nido Milk Powder 400g'])
+        # Category phrase passed as the category with no query at all.
+        result, _ = execute_tool('search_products', {'category': 'milk powder'}, self.customer)
+        self.assertEqual(self._names(result),
+                         ['Anchor Full Cream Milk Powder 1kg', 'Nido Milk Powder 400g'])
+
+    def test_fuzzy_typo_resolution_stays_on_the_right_product(self):
+        self.assertEqual(_resolve_product('nidoo'), self.nido)
+        self.assertEqual(_resolve_product('miloo'), self.milo)
+        self.assertEqual(_resolve_product('ambewella'), self.uht)
+
+    def test_ambiguous_product_returns_candidates_instead_of_guessing(self):
+        Product.objects.create(
+            product_name='Nido Milk Powder 500g', category=self.powder_category,
+            unit_price=1350, cost_price=1100, is_active=True)
+        result, status = execute_tool('get_current_stock', {'product_name': 'milk powder'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertIsNone(result['product'])
+        self.assertIn('candidates', result)
+        self.assertEqual(result['candidates'], ['Nido Milk Powder 400g', 'Nido Milk Powder 500g'])
+        self.assertIn('which one', result['message'])
+
+    def test_details_and_stock_tools_resolve_typos_and_plurals(self):
+        result, status = execute_tool('get_product_details', {'product_name': 'miloo'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(result['product']['product_name'], 'Nestle Milo Malt Drink 400g')
+        result, _ = execute_tool('get_current_stock', {'product_name': 'nido milk powders'}, self.customer)
+        self.assertEqual(result['product']['product_name'], 'Nido Milk Powder 400g')
+
+    # 5 — price and cheapest-product queries.
+
+    def test_cheapest_product_respects_product_type(self):
+        # "milk poweder" must find powders despite the typo; the cheaper
+        # chocolate malt drink must not win just for containing a word.
+        result, status = execute_tool('find_cheapest_product', {'query': 'milk poweder'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(result['product']['product_name'], 'Nido Milk Powder 400g')
+        self.assertEqual(result['product']['selling_price'], 1200.0)
+        self.assertIn('Anchor Full Cream Milk Powder 1kg',
+                      [alt['product_name'] for alt in result['alternatives']])
+
+    def test_price_query_returns_matching_product_with_price(self):
+        result, status = execute_tool('get_product_details', {'product_name': 'milo'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(result['product']['product_name'], 'Nestle Milo Malt Drink 400g')
+        self.assertEqual(result['product']['selling_price'], 900.0)
+
+    # 6 — sales comparison and stock queries through the improved matcher.
+
+    def test_sales_comparison_tolerates_typos_on_both_sides(self):
+        ItemSalesRecord.objects.create(
+            product=self.nido, sale_date=local_today() - timedelta(days=1),
+            quantity_sold=120, unit_price='1200.00', total_amount='144000.00')
+        ItemSalesRecord.objects.create(
+            product=self.milo, sale_date=local_today() - timedelta(days=1),
+            quantity_sold=40, unit_price='900.00', total_amount='36000.00')
+        result, status = execute_tool(
+            'compare_product_sales', {'product_a': 'nidoo', 'product_b': 'miloo'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(result['better_selling'], 'Nido Milk Powder 400g')
+        self.assertEqual(result['difference_units'], 80)
+
+    def test_stock_query_by_product_type_lists_candidates_not_a_guess(self):
+        # Two equally-plausible powders: "milk powder" is a type, not one
+        # product, so the tool must not silently pick whichever row the
+        # database returns first — it must offer the tied candidates.
+        Product.objects.create(
+            product_name='Nido Milk Powder 500g', category=self.powder_category,
+            unit_price=1350, cost_price=1100, is_active=True)
+        result, status = execute_tool('get_current_stock', {'product_name': 'milk powder'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertIsNone(result['product'])
+        self.assertEqual(len(result['candidates']), 2)
+
+    def test_best_selling_category_argument_tolerates_plural_phrasing(self):
+        ItemSalesRecord.objects.create(
+            product=self.nido, sale_date=local_today() - timedelta(days=1),
+            quantity_sold=30, unit_price='1200.00', total_amount='36000.00')
+        ItemSalesRecord.objects.create(
+            product=self.milo, sale_date=local_today() - timedelta(days=1),
+            quantity_sold=999, unit_price='900.00', total_amount='899100.00')
+        result, status = execute_tool(
+            'get_best_selling_products', {'category': 'milk powders'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual([p['product_name'] for p in result['products']],
+                         ['Nido Milk Powder 400g'])
+
+    # 7 — conversational corrections and follow-ups through the agent loop.
+
+    def test_conversational_correction_searches_the_corrected_terms(self):
+        call = SimpleNamespace(name='search_products', args={'query': 'milk powder'}, id='call-fix')
+        first = SimpleNamespace(function_calls=[call], candidates=[SimpleNamespace(content='tool-request')])
+        second = SimpleNamespace(function_calls=[], text='Here are the milk powders.')
+        history = [
+            {'role': 'user', 'content': 'What are the milk powders available?'},
+            {'role': 'assistant', 'content': 'The Nestle Milo chocolate malt drink is a great option.'},
+        ]
+        with patch('orders.services.agent.get_provider') as get_provider:
+            provider = get_provider.return_value
+            provider.make_contents.return_value = []
+            provider.generate.side_effect = [first, second]
+            provider.function_calls.side_effect = lambda response: response.function_calls
+            provider.response_text.side_effect = lambda response: response.text
+            result = run_agent('Not chocolate, milk powder', self.customer, history=history)
+        self.assertTrue(result['query_success'])
+        self.assertEqual(result['tool_calls'], [{'name': 'search_products', 'status': 'completed'}])
+        # The session history is still passed to the provider unchanged.
+        provider.make_contents.assert_called_once_with(history, 'Not chocolate, milk powder')
+        # The structured tool result fed back to the model contains only the
+        # corrected product type — no chocolate malt drink, no UHT milk.
+        _contents, _response, results = provider.append_tool_results.call_args[0]
+        payload = results[0][1]
+        self.assertEqual(sorted(p['product_name'] for p in payload['products']),
+                         ['Anchor Full Cream Milk Powder 1kg', 'Nido Milk Powder 400g'])
+
+    # 8 — no-match and invalid-argument responses.
+
+    def test_search_no_match_returns_clear_empty_payload(self):
+        result, status = execute_tool('search_products', {'query': 'ghost item'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(result['products'], [])
+        self.assertEqual(result['count'], 0)
+        self.assertIn('message', result)
+        result, _ = execute_tool('get_product_details', {'product_name': 'ghost item'}, self.customer)
+        self.assertIsNone(result['product'])
+        self.assertNotIn('candidates', result)
+        self.assertIn('No matching active product', result['message'])
+
+    def test_invalid_tool_arguments_fail_safely_with_a_clear_error(self):
+        result, status = execute_tool(
+            'search_products', {'query': 'milk', 'max_price': 'cheap'}, self.customer)
+        self.assertEqual(status, 'failed')
+        self.assertIn('max_price', result['error'])
+        result, status = execute_tool(
+            'compare_products', {'product_names': 'Nido'}, self.customer)
+        self.assertEqual(status, 'failed')
+        self.assertIn('product_names', result['error'])
+        # Every failure is visible in server logs for diagnosis.
+        with self.assertLogs('orders.services.agent', level='WARNING') as logs:
+            execute_tool('search_products', {'query': 'milk', 'max_price': 'cheap'}, self.customer)
+        self.assertTrue(any('search_products' in line for line in logs.output))
+
+    # 9 — the agent-loop exhaustion that produced the old generic failure
+    #     ("The chatbot could not complete this request...").
+
+    def test_agent_loop_exhaustion_returns_graceful_fallback_not_generic_503(self):
+        call = SimpleNamespace(name='search_products', args={'query': 'milk'}, id='loop')
+        looping = SimpleNamespace(function_calls=[call], candidates=[SimpleNamespace(content='tool-request')])
+        with patch('orders.services.agent.get_provider') as get_provider:
+            provider = get_provider.return_value
+            provider.make_contents.return_value = []
+            provider.generate.side_effect = lambda contents, tools: looping
+            provider.function_calls.side_effect = lambda response: response.function_calls
+            with self.assertLogs('orders.services.agent', level='WARNING') as logs:
+                result = run_agent('milk', self.customer)
+        self.assertFalse(result['query_success'])
+        self.assertIn('rephrase', result['bot_response'].lower())
+        self.assertNotIn('simpler question', result['bot_response'])
+        self.assertEqual(len(result['tool_calls']), 4)
+        self.assertTrue(any('loop ended without a final answer' in line for line in logs.output))
+
+    # 10 — permission boundaries unchanged.
+
+    def test_permission_boundaries_for_public_and_manager_tools(self):
+        # Anonymous: public search allowed, manager analytics still blocked.
+        result, status = execute_tool('search_products', {'query': 'nido'}, None)
+        self.assertEqual(status, 'completed')
+        for manager_tool in ('get_low_stock_products', 'get_sales_summary', 'get_profit_margin'):
+            result, status = execute_tool(manager_tool, {}, None)
+            self.assertEqual(status, 'forbidden', manager_tool)
+            self.assertIn('managers', result['error'])
+        # Logged-in customer: same manager boundary as before.
+        result, status = execute_tool('get_low_stock_products', {}, self.customer)
+        self.assertEqual(status, 'forbidden')
+        # Manager keeps access.
+        manager = get_user_model().objects.create_user(username='mgr-match', password='password')
+        group, _ = Group.objects.get_or_create(name='MANAGER')
+        manager.groups.add(group)
+        with patch('inventory.views.LowStockView') as low_stock_view:
+            low_stock_view.return_value.get.return_value = SimpleNamespace(data={'products': []})
+            result, status = execute_tool('get_low_stock_products', {}, manager)
+        self.assertEqual(status, 'completed')
+
+    # 11 — provider quota and failure handling.
+
+    def test_provider_configuration_failure_keeps_its_mapped_message(self):
+        with patch('orders.services.agent.get_provider') as get_provider:
+            get_provider.return_value.make_contents.return_value = []
+            get_provider.return_value.generate.side_effect = GeminiUnavailable(
+                'Chatbot AI authentication is unavailable. Please contact an administrator.')
+            with self.assertRaises(AgentUnavailable) as error:
+                run_agent('milk', self.customer)
+        self.assertEqual(error.exception.status_code, 503)
+        self.assertIn('authentication', str(error.exception))
+
+
+class ChatbotMatchingUnitTests(TestCase):
+    """Pure matching-strategy checks that need no catalogue fixtures."""
+
+    def test_normalization_handles_case_spacing_accents_and_punctuation(self):
+        from orders.services.matching import normalize_text, tokenize
+        self.assertEqual(normalize_text('  NESTLÉ’S  Cocoa  '), 'nestle s cocoa')
+        self.assertEqual(tokenize('1 kg of Sugar'), ['1kg', 'sugar'])
+        self.assertEqual(tokenize('milk powders'), tokenize('Milk Powder'))
+
+    def test_fuzzy_token_matching_is_conservative(self):
+        from orders.services.matching import tokens_match
+        self.assertTrue(tokens_match('poweder', 'powder'))
+        self.assertTrue(tokens_match('choclate', 'chocolate'))
+        self.assertFalse(tokens_match('milk', 'milo'))     # no cross-type bleed
+        self.assertFalse(tokens_match('sugar', 'salt'))
 
 # Create your tests here.

@@ -147,6 +147,53 @@
         }
         .product-card .add-btn:hover { background: #1558b0; }
 
+        /* ── Today's Deals (F09 active discounts) ── */
+        .deals-section { display: none; margin-bottom: 20px; }
+        .deals-section.visible { display: block; }
+        .deals-header {
+            font-size: 1.05rem; font-weight: 700; color: #222;
+            margin-bottom: 12px;
+        }
+        .deals-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        .deal-card {
+            position: relative; background: white; border-radius: 14px;
+            padding: 16px; border: 1.5px solid #ffe082;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;
+        }
+        .deal-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.14);
+            border-color: #ffb300;
+        }
+        .deal-badge {
+            position: absolute; top: -10px; right: 10px;
+            background: #e53935; color: white; font-size: 0.7rem;
+            font-weight: 700; padding: 3px 9px; border-radius: 999px;
+        }
+        .deal-card .pname {
+            font-weight: 700; color: #222; font-size: 0.92rem;
+            margin: 6px 0 8px; line-height: 1.3;
+        }
+        .deal-card .old-price {
+            color: #999; font-size: 0.85rem; text-decoration: line-through;
+            margin-bottom: 2px;
+        }
+        .deal-card .deal-price {
+            color: #e53935; font-weight: 700; font-size: 1.05rem;
+            margin-bottom: 10px;
+        }
+        .deal-card .add-btn {
+            width: 100%; padding: 8px; background: #1a73e8;
+            color: white; border: none; border-radius: 8px;
+            cursor: pointer; font-size: 0.88rem; font-weight: 600;
+        }
+        .deal-card .add-btn:hover { background: #1558b0; }
+
         /* ── Pagination ── */
         .pagination {
             display: flex; justify-content: center;
@@ -255,6 +302,12 @@
 
 <!-- Main content -->
 <div class="page">
+    <!-- ══ F09 Today's Deals — hidden by default; only shown when
+         GET /api/discounts/active/ returns at least one row ══ -->
+    <div class="deals-section" id="dealsSection">
+        <div class="deals-header">🔥 Today's Deals</div>
+        <div class="deals-grid" id="dealsGrid"></div>
+    </div>
     <div class="breadcrumb" id="breadcrumb"></div>
     <div class="page-title" id="pageTitle">
         🛍️ All Categories
@@ -381,6 +434,40 @@
         welcome.innerHTML = name
             ? `Hi <strong style="color:#1a73e8;">${name}</strong>, welcome to <strong>Samanala Super Mart!</strong>`
             : `Welcome to <strong>Samanala Super Mart!</strong>`;
+    }
+
+    // ── Today's Deals (F09: public active discounts) ─────────────
+    async function loadActiveDeals() {
+        // Single fetch from GET /api/discounts/active/ — the same shared
+        // definition used by the chatbot's get_active_discounts tool.
+        // The section stays hidden unless real deals come back, so an empty
+        // list or an API error renders nothing extra on the page.
+        try {
+            const res = await fetch('/api/discounts/active/');
+            if (!res.ok) return;
+            const deals = await res.json();
+            if (!Array.isArray(deals) || deals.length === 0) return;
+
+            document.getElementById('dealsGrid').innerHTML = deals.map(d => {
+                const original  = parseFloat(d.original_price);
+                const discounted = parseFloat(d.discounted_price);
+                const pct       = parseFloat(d.discount_percentage);
+                return `
+                    <div class="deal-card" onclick="openProductModal(${d.product_id})">
+                        <span class="deal-badge">${pct.toFixed(2)}% OFF</span>
+                        <div class="pname">${d.product_name}</div>
+                        <div class="old-price">Rs ${original.toFixed(2)}</div>
+                        <div class="deal-price">Rs ${discounted.toFixed(2)}</div>
+                        <button class="add-btn"
+                            onclick="event.stopPropagation(); addToCart(${d.product_id}, '${d.product_name.replace(/'/g, '')}', ${original})">
+                            Add to Cart 🛒
+                        </button>
+                    </div>`;
+            }).join('');
+            document.getElementById('dealsSection').classList.add('visible');
+        } catch (err) {
+            console.error('Deals load error:', err);   // section stays hidden
+        }
     }
 
     // ── Load all products ────────────────────────────────────────
@@ -782,6 +869,7 @@
     buildNav();
     updateWelcome();
     loadAllProducts();
+    loadActiveDeals();
 </script>
 
 </body>
