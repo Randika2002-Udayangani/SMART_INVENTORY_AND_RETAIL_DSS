@@ -1,9 +1,11 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat with Us | SmartDeals</title>
+    <link rel="stylesheet" href="{% static 'css/logout-confirm.css' %}">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #333; }
@@ -433,12 +435,7 @@
         if (e.key === 'Enter') sendMessage();
     });
 
-    function logout() {
-    const orders = sessionStorage.getItem('myOrders');
-    sessionStorage.clear();
-    if (orders) sessionStorage.setItem('myOrders', orders);
-    window.location.href = '/customer/login/';
-}
+    function logout() { showLogoutConfirmation(); }
 
     buildNav();
 
@@ -449,6 +446,7 @@
         }, 400);
     };
 </script>
+<script src="{% static 'js/logout-confirm.js' %}"></script>
 
 </body>
 </html>

@@ -1,9 +1,11 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Orders | SmartDeals</title>
+    <link rel="stylesheet" href="{% static 'css/logout-confirm.css' %}">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #333; }
@@ -172,6 +174,76 @@
         .modal-btn.outline {
             background: white; color: #666; border: 1.5px solid #ddd;
         }
+        .cancel-confirm-overlay {
+            position: fixed; inset: 0; z-index: 10001;
+            display: none; align-items: center; justify-content: center;
+            padding: 20px; background: rgba(17, 24, 39, 0.55);
+        }
+        .cancel-confirm-overlay.visible { display: flex; }
+        .cancel-confirm-box {
+            width: min(420px, 100%); padding: 28px;
+            border-radius: 18px; background: #fff; text-align: center;
+            box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+            animation: cancelDialogIn 0.18s ease-out;
+        }
+        @keyframes cancelDialogIn {
+            from { opacity: 0; transform: translateY(8px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .cancel-confirm-icon {
+            width: 56px; height: 56px; margin: 0 auto 14px;
+            display: grid; place-items: center; border-radius: 50%;
+            background: #fce8e6; color: #c5221f; font-size: 1.55rem;
+        }
+        .cancel-confirm-box h3 { color: #222; font-size: 1.12rem; margin-bottom: 8px; }
+        .cancel-confirm-box p { color: #666; font-size: 0.9rem; line-height: 1.5; margin-bottom: 22px; }
+        .cancel-confirm-actions { display: flex; gap: 10px; }
+        .cancel-confirm-actions button {
+            flex: 1; min-height: 44px; padding: 10px 16px;
+            border-radius: 999px; font: inherit; font-weight: 600; cursor: pointer;
+            transition: background 0.15s ease, transform 0.15s ease;
+        }
+        .cancel-keep-btn { background: #e8f5eb; color: #2d6a4f; border: 1px solid #c9e6d1; }
+        .cancel-keep-btn:hover { background: #d9efdf; }
+        .cancel-confirm-btn { background: #c5221f; color: #fff; border: 1px solid #c5221f; }
+        .cancel-confirm-btn:hover { background: #a61b1b; }
+        .cancel-confirm-actions button:focus-visible { outline: 3px solid rgba(45, 106, 79, 0.3); outline-offset: 2px; }
+        @media (max-width: 380px) {
+            .cancel-confirm-actions { flex-direction: column-reverse; }
+        }
+        .rating-success-overlay {
+            position: fixed; inset: 0; z-index: 10002;
+            display: none; align-items: center; justify-content: center;
+            padding: 20px; background: rgba(17, 24, 39, 0.55);
+        }
+        .rating-success-overlay.visible { display: flex; }
+        .rating-success-box {
+            width: min(420px, 100%); padding: 30px 28px;
+            border-radius: 18px; background: #fff; text-align: center;
+            box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+            animation: cancelDialogIn 0.18s ease-out;
+        }
+        .rating-success-icon {
+            width: 60px; height: 60px; margin: 0 auto 16px;
+            display: grid; place-items: center; border-radius: 50%;
+            background: #e8f5eb; color: #2d6a4f;
+            font-size: 1.8rem; font-weight: 700;
+        }
+        .rating-success-box h3 { color: #222; font-size: 1.15rem; margin-bottom: 8px; }
+        .rating-success-box p { color: #666; font-size: 0.92rem; line-height: 1.5; margin-bottom: 16px; }
+        .verified-purchase-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            margin-bottom: 20px; padding: 7px 12px; border-radius: 999px;
+            background: #e8f5eb; color: #2d6a4f; font-size: 0.82rem; font-weight: 600;
+        }
+        .verified-purchase-badge[hidden] { display: none; }
+        .rating-success-close {
+            width: 100%; min-height: 44px; border: 0; border-radius: 999px;
+            background: #2d6a4f; color: #fff; font: inherit; font-weight: 600;
+            cursor: pointer; transition: background 0.15s ease;
+        }
+        .rating-success-close:hover { background: #1b4332; }
+        .rating-success-close:focus-visible { outline: 3px solid rgba(45, 106, 79, 0.3); outline-offset: 2px; }
         /* ── Order Detail Modal ── */
         .order-modal-overlay {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -300,9 +372,36 @@
     </div>
 </div>
 
+<div class="cancel-confirm-overlay" id="cancelConfirmModal" aria-hidden="true">
+    <div class="cancel-confirm-box" role="dialog" aria-modal="true"
+        aria-labelledby="cancelConfirmTitle" aria-describedby="cancelConfirmDescription">
+        <div class="cancel-confirm-icon" aria-hidden="true">!</div>
+        <h3 id="cancelConfirmTitle">Cancel this order?</h3>
+        <p id="cancelConfirmDescription">This order will be cancelled and its items will no longer be reserved for pickup.</p>
+        <div class="cancel-confirm-actions">
+            <button class="cancel-keep-btn" id="keepOrderBtn" type="button" onclick="closeCancelConfirmation()">Keep Order</button>
+            <button class="cancel-confirm-btn" type="button" onclick="confirmOrderCancellation()">Yes, Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div class="rating-success-overlay" id="ratingSuccessModal" aria-hidden="true">
+    <div class="rating-success-box" role="dialog" aria-modal="true"
+        aria-labelledby="ratingSuccessTitle" aria-describedby="ratingSuccessDescription">
+        <div class="rating-success-icon" aria-hidden="true">✓</div>
+        <h3 id="ratingSuccessTitle">Thank you for your rating!</h3>
+        <p id="ratingSuccessDescription">Your feedback helps other customers make confident choices.</p>
+        <div class="verified-purchase-badge" id="verifiedPurchaseBadge" hidden>
+            <span aria-hidden="true">✓</span> Verified purchase
+        </div>
+        <button class="rating-success-close" id="ratingSuccessCloseBtn" type="button" onclick="closeRatingSuccess()">Done</button>
+    </div>
+</div>
+
   
 <script>
     let ordersData = []; 
+    let pendingCancellation = null;
     const token = sessionStorage.getItem('jwt');
     if (!token) window.location.href = '/customer/login/';    
     const slotLabel = {
@@ -557,8 +656,25 @@
         }).join('');   
     }
 
-    async function cancelOrder(orderId, ref) {
-        if (!confirm('Are you sure you want to cancel this order?')) return;
+    function cancelOrder(orderId, ref) {
+        pendingCancellation = { orderId, ref };
+        const modal = document.getElementById('cancelConfirmModal');
+        modal.classList.add('visible');
+        modal.setAttribute('aria-hidden', 'false');
+        document.getElementById('keepOrderBtn').focus();
+    }
+
+    function closeCancelConfirmation() {
+        const modal = document.getElementById('cancelConfirmModal');
+        modal.classList.remove('visible');
+        modal.setAttribute('aria-hidden', 'true');
+        pendingCancellation = null;
+    }
+
+    async function confirmOrderCancellation() {
+        if (!pendingCancellation) return;
+        const { orderId, ref } = pendingCancellation;
+        closeCancelConfirmation();
 
         // If no real ID — cancel from sessionStorage only
         if (!orderId) {
@@ -654,12 +770,7 @@
         renderOrders(saved);
     }
 
-    function logout() {
-        const orders = sessionStorage.getItem('myOrders');
-        sessionStorage.clear();
-        if (orders) sessionStorage.setItem('myOrders', orders);
-        window.location.href = '/customer/login/';
-    }
+    function logout() { showLogoutConfirmation(); }
 
     function getTimeline(status) {
         const steps = ['PENDING', 'CONFIRMED', 'READY', 'COMPLETED'];
@@ -711,6 +822,21 @@
         });
     }
 
+    function showRatingSuccess(isVerified) {
+        const badge = document.getElementById('verifiedPurchaseBadge');
+        badge.hidden = !isVerified;
+        const modal = document.getElementById('ratingSuccessModal');
+        modal.classList.add('visible');
+        modal.setAttribute('aria-hidden', 'false');
+        document.getElementById('ratingSuccessCloseBtn').focus();
+    }
+
+    function closeRatingSuccess() {
+        const modal = document.getElementById('ratingSuccessModal');
+        modal.classList.remove('visible');
+        modal.setAttribute('aria-hidden', 'true');
+    }
+
     async function submitRating() {
         if (currentRating === 0) {
             alert('Please select a star rating!');
@@ -739,8 +865,7 @@
             if (res.ok) {
                 closeRatingModal();
                 await loadOrders();
-                alert(`✅ Thank you for your rating!${data.is_verified ? ' (Verified purchase ✓)' : ''}`);
-                loadOrders();
+                showRatingSuccess(Boolean(data.is_verified));
             } else {
                 console.error('Rating error:', data);
                 alert(data.error || JSON.stringify(data) || 'Could not submit rating. Please try again.');
@@ -755,10 +880,27 @@
     document.getElementById('ratingModal').addEventListener('click', function(e) {
         if (e.target === this) closeRatingModal();
     });
+    document.getElementById('cancelConfirmModal').addEventListener('click', function(e) {
+        if (e.target === this) closeCancelConfirmation();
+    });
+    document.getElementById('ratingSuccessModal').addEventListener('click', function(e) {
+        if (e.target === this) closeRatingSuccess();
+    });
+    document.addEventListener('keydown', function(e) {
+        const modal = document.getElementById('cancelConfirmModal');
+        if (e.key === 'Escape' && modal.classList.contains('visible')) {
+            closeCancelConfirmation();
+        }
+        const ratingModal = document.getElementById('ratingSuccessModal');
+        if (e.key === 'Escape' && ratingModal.classList.contains('visible')) {
+            closeRatingSuccess();
+        }
+    });
     
     loadOrders();
     
 </script>
+<script src="{% static 'js/logout-confirm.js' %}"></script>
 
 </body>
 </html>

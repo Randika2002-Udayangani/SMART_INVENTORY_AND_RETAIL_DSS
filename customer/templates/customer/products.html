@@ -89,6 +89,7 @@
             cursor: pointer;
             transition: transform 0.2s ease, background 0.2s ease;
         }
+        .logout-btn { background: #1b4332; color: #fff; border-color: rgba(255, 255, 255, 0.45); }
         .nav-cta { background: #fff; color: var(--primary-green); border-color: #fff; }
         .nav-cta.secondary { background: rgba(255, 255, 255, 0.12); color: #fff; }
 
@@ -350,9 +351,7 @@
         }
         .deal-card:hover, .product-card:hover, .category-box:hover { transform: translateY(-4px); box-shadow: 0 14px 28px rgba(0, 0, 0, 0.08); }
         .deal-badge {
-            position: absolute;
-            top: 12px;
-            left: 12px;
+            align-self: flex-start;
             background: var(--accent-red);
             color: #fff;
             font-size: 0.68rem;
@@ -361,17 +360,7 @@
             text-transform: uppercase;
             padding: 5px 8px;
             border-radius: 999px;
-        }
-        .deal-image {
-            margin-top: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 92px;
-            font-size: 2.5rem;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #fff6f5, #e8f5eb);
-            color: var(--primary-green);
+            margin-bottom: 2px;
         }
         .deal-name {
             font-size: 0.9rem;
@@ -521,17 +510,6 @@
             font-weight: 700;
             text-transform: uppercase;
             margin-bottom: 8px;
-        }
-        .product-visual {
-            height: 94px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #f1f8f4, #e8f5eb);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 2.2rem;
-            color: var(--primary-green);
-            margin-bottom: 12px;
         }
         .pname {
             font-size: 0.9rem;
@@ -710,6 +688,43 @@
         .auth-card h3 { margin-bottom: 8px; color: var(--text-dark); }
         .auth-card p { color: var(--text-mid); margin-bottom: 18px; }
         .auth-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+        .logout-confirm-card { max-width: 420px; text-align: center; }
+        .logout-confirm-icon {
+            width: 54px;
+            height: 54px;
+            margin: 0 auto 14px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            background: #e8f5eb;
+            color: var(--primary-green);
+            font-size: 1.5rem;
+        }
+        .logout-confirm-card h3 { margin-bottom: 8px; color: var(--text-dark); }
+        .logout-confirm-card p { margin-bottom: 22px; color: var(--text-mid); }
+        .logout-confirm-actions { display: flex; justify-content: center; gap: 12px; }
+        .logout-confirm-actions button {
+            min-width: 112px;
+            border-radius: 999px;
+            padding: 10px 18px;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .logout-cancel-btn {
+            background: #fff;
+            border: 1px solid var(--border);
+            color: var(--text-mid);
+        }
+        .logout-confirm-btn {
+            background: var(--primary-green);
+            border: 1px solid var(--primary-green);
+            color: #fff;
+        }
+        .logout-confirm-actions button:focus-visible {
+            outline: 3px solid rgba(45, 106, 79, 0.3);
+            outline-offset: 2px;
+        }
         .primary-action, .secondary-action {
             border: none;
             border-radius: 10px;
@@ -873,6 +888,18 @@
         </div>
     </div>
 
+    <div class="auth-modal" id="logoutConfirmModal" aria-hidden="true">
+        <div class="auth-card logout-confirm-card" role="dialog" aria-modal="true" aria-labelledby="logoutConfirmTitle" aria-describedby="logoutConfirmDescription">
+            <div class="logout-confirm-icon" aria-hidden="true">↪</div>
+            <h3 id="logoutConfirmTitle">Log out of your account?</h3>
+            <p id="logoutConfirmDescription">You can sign in again anytime to continue shopping and view your orders.</p>
+            <div class="logout-confirm-actions">
+                <button class="logout-cancel-btn" id="logoutCancelBtn" type="button" onclick="closeLogoutConfirmation()">Cancel</button>
+                <button class="logout-confirm-btn" type="button" onclick="confirmLogout()">Log Out</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const token = sessionStorage.getItem('jwt');
         let allProducts = [];
@@ -947,9 +974,6 @@
                     <a href="/customer/chatbot/">Chat with Us</a>
                     <a href="/customer/cart/" class="cart-link">🛒 Cart <span id="cartBadge" class="cart-badge">0</span></a>
                     <button class="nav-cta secondary" type="button" onclick="window.location.href='/customer/register/'">Register</button>
-
-                    <button class="nav-cta" type="button" onclick="window.location.href='/customer/login/'">Login</button>
-
                     <button class="nav-cta secondary" type="button" onclick="window.location.href='/customer/login/'">Login</button>
                 `;
             }
@@ -1112,11 +1136,9 @@
                         const discounted = parseFloat(p.discount.price || 0);
                         const percent = p.discount.pct || Math.round((1 - discounted / original) * 100);
 
-                        const icon = getCatIcon(p.category_name || 'General');
                         return `
                             <div class="deal-card" onclick="openProductModal(${p.id})" title="${p.product_name}">
                                 <span class="deal-badge">${percent}% OFF</span>
-                                <div class="deal-image">${icon}</div>
                                 <div class="deal-name">${p.product_name}</div>
                                 <div class="deal-price-row">
                                     <span class="deal-old-price">${formatMoney(original)}</span>
@@ -1210,6 +1232,16 @@
             document.getElementById('pagination').innerHTML = '';
         }
 
+        function scrollToCategoryResults() {
+            const target = document.getElementById('breadcrumb');
+            const nav = document.querySelector('.top-nav');
+            if (!target) return;
+
+            const navOffset = nav ? nav.getBoundingClientRect().height + 12 : 12;
+            const top = target.getBoundingClientRect().top + window.scrollY - navOffset;
+            window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+        }
+
         function showCategory(catName, page = 1) {
             currentCat = catName;
             currentPage = page;
@@ -1225,18 +1257,15 @@
                 <span>${catName}</span>
             `;
             document.getElementById('pageTitle').innerHTML = `
-
-                ${getCatIcon(catName)} ${catName}
                 ${catName}
                 <span class="item-count">${products.length} items</span>
             `;
             document.getElementById('mainContent').innerHTML = `
                 <div class="product-grid">
                     ${pageProds.map((p) => `
-                        <div class="product-card" onclick="openProductModal(${p.id})">
-                            ${p.discount ? `<div class="discount-chip">🏷️ ${p.discount.pct}% OFF</div>` : ''}
-                            <div class="product-visual">${getCatIcon(catName)}</div>
-                            <div class="pname">${p.product_name}</div>
+                    <div class="product-card" onclick="openProductModal(${p.id})">
+                        ${p.discount ? `<div class="discount-chip">🏷️ ${p.discount.pct}% OFF</div>` : ''}
+                        <div class="pname">${p.product_name}</div>
                             <div class="pprice ${p.discount ? 'discounted' : ''}">${renderProductPrice(p)}</div>
                             <button type="button" class="add-btn" data-product-id="${p.id}" disabled onclick="event.stopPropagation(); addToCart(${p.id}, '${(p.product_name || '').replace(/'/g, "\\'")}', ${getProductPrice(p)})">Checking stock...</button>
                         </div>
@@ -1254,7 +1283,7 @@
             } else {
                 document.getElementById('pagination').innerHTML = '';
             }
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            scrollToCategoryResults();
         }
 
         async function openProductModal(productId) {
@@ -1274,12 +1303,11 @@
             };
             document.getElementById('modalPrice').innerHTML = initialModalPrice();
 
-            const expiryDateForDisplay = p.expiry_date || '—';
             document.getElementById('modalInfoRows').innerHTML = `
                 ${p.sku_code ? `<div class="modal-info-row"><span class="label">SKU</span><span class="value">${p.sku_code}</span></div>` : ''}
                 <div class="modal-info-row"><span class="label">Category</span><span class="value">${p.category_name || 'General'}</span></div>
                 ${p.brand_name ? `<div class="modal-info-row"><span class="label">Brand</span><span class="value">${p.brand_name}</span></div>` : ''}
-                <div class="modal-info-row"><span class="label">Expiry Date</span><span class="value" id="expiryDisplay">📅 ${expiryDateForDisplay}</span></div>
+                ${p.expiry_date ? `<div class="modal-info-row"><span class="label">Expiry Date</span><span class="value" id="expiryDisplay">📅 ${p.expiry_date}</span></div>` : ''}
                 <div class="modal-info-row"><span class="label">Availability</span><span class="value" id="stockDisplay">⏳ Checking stock...</span></div>
             `;
 
@@ -1464,8 +1492,6 @@
                         ${results.slice(0, 24).map((p) => `
                             <div class="product-card" onclick="openProductModal(${p.id})">
                                 ${p.discount ? `<div class="discount-chip">🏷️ ${p.discount.pct}% OFF</div>` : ''}
-
-                                <div class="product-visual">${getCatIcon(p.category_name || 'General')}</div>
                                 <div class="pname">${p.product_name}</div>
                                 <div class="pprice ${p.discount ? 'discounted' : ''}">${renderProductPrice(p)}</div>
                                 <button class="add-btn" type="button" data-product-id="${p.id}" disabled onclick="event.stopPropagation(); addToCart(${p.id}, '${(p.product_name || '').replace(/'/g, "\\'")}', ${getProductPrice(p)})">Checking stock...</button>
@@ -1540,11 +1566,36 @@
         }
 
         function logout() {
+            const modal = document.getElementById('logoutConfirmModal');
+            modal.classList.add('visible');
+            modal.setAttribute('aria-hidden', 'false');
+            document.getElementById('logoutCancelBtn').focus();
+        }
+
+        function closeLogoutConfirmation() {
+            const modal = document.getElementById('logoutConfirmModal');
+            modal.classList.remove('visible');
+            modal.setAttribute('aria-hidden', 'true');
+            const logoutButton = document.querySelector('.logout-btn');
+            if (logoutButton) logoutButton.focus();
+        }
+
+        function confirmLogout() {
             const orders = sessionStorage.getItem('myOrders');
             sessionStorage.clear();
             if (orders) sessionStorage.setItem('myOrders', orders);
-            window.location.href = '/customer/login/';
+            window.location.href = '/customer/products/';
         }
+
+        document.getElementById('logoutConfirmModal').addEventListener('click', (event) => {
+            if (event.target === event.currentTarget) closeLogoutConfirmation();
+        });
+        document.addEventListener('keydown', (event) => {
+            const modal = document.getElementById('logoutConfirmModal');
+            if (event.key === 'Escape' && modal.classList.contains('visible')) {
+                closeLogoutConfirmation();
+            }
+        });
 
         document.addEventListener('click', (event) => {
             if (!document.querySelector('.search-wrapper').contains(event.target)) {

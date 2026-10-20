@@ -19,7 +19,12 @@ from orders.services.agent import (
     get_best_selling_products, get_expiring_products, run_agent,
 )
 from orders.services.gemini import DEFAULT_GEMINI_MODEL, GeminiProvider, GeminiQuotaExceeded
-from orders.views import ChatbotQueryView, ChatbotSessionDetailView
+from orders.views import (
+    ChatbotQueryView,
+    ChatbotSessionDetailView,
+    OrderListCreateView,
+    _is_pickup_slot_available,
+)
 from products.models import Category, Product
 from purchases.models import Purchase, PurchaseBatch
 from sales.models import ItemSalesRecord
@@ -30,6 +35,51 @@ from zoneinfo import ZoneInfo
 def local_today():
     """The app counts days in Sri Lanka time, so the tests must too."""
     return datetime.now(ZoneInfo('Asia/Colombo')).date()
+
+
+class PickupSlotAvailabilityTests(TestCase):
+    def test_same_day_slot_is_available_until_its_end_time(self):
+        now = datetime(2026, 10, 20, 11, 59, tzinfo=ZoneInfo('Asia/Colombo'))
+        self.assertTrue(_is_pickup_slot_available(date(2026, 10, 20), 'MORNING', now))
+
+        now = datetime(2026, 10, 20, 12, 0, tzinfo=ZoneInfo('Asia/Colombo'))
+        self.assertFalse(_is_pickup_slot_available(date(2026, 10, 20), 'MORNING', now))
+
+    def test_past_slots_and_dates_are_unavailable_but_future_slots_are_available(self):
+        now = datetime(2026, 10, 20, 21, 0, tzinfo=ZoneInfo('Asia/Colombo'))
+        self.assertFalse(_is_pickup_slot_available(date(2026, 10, 20), 'EVENING', now))
+        self.assertFalse(_is_pickup_slot_available(date(2026, 10, 19), 'MORNING', now))
+        self.assertTrue(_is_pickup_slot_available(date(2026, 10, 21), 'MORNING', now))
+
+    @patch('orders.views.timezone.now')
+    def test_order_endpoint_rejects_a_pickup_slot_that_has_passed(self, mocked_now):
+        from django.urls import reverse
+
+        from orders.models import Customer
+
+        local_now = datetime(2026, 10, 20, 20, 30, tzinfo=ZoneInfo('Asia/Colombo'))
+        mocked_now.return_value = local_now
+        customer = Customer.objects.create(
+            name='Pickup Test Customer',
+            email='pickup-test@example.com',
+            password_hash='unused',
+        )
+        request = APIRequestFactory().post(
+            reverse('order-list-create'),
+            {
+                'pickup_date': '2026-10-20',
+                'time_slot': 'MORNING',
+                'items': [{'product_id': 1, 'quantity': 1}],
+            },
+            format='json',
+        )
+        force_authenticate(request, user=customer)
+
+        response = OrderListCreateView.as_view()(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('pickup time has passed', response.data['error'])
+
 
 class ChatbotAgentTests(TestCase):
     def setUp(self):

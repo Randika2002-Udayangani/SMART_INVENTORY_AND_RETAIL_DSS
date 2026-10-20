@@ -35,6 +35,23 @@ from .services.rate_limit import consume_chatbot_request, get_client_ip
 
 LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
+
+PICKUP_SLOT_END_MINUTES = {
+    "MORNING": 12 * 60,
+    "AFTERNOON": 17 * 60,
+    "EVENING": 20 * 60,
+}
+
+
+def _is_pickup_slot_available(pickup_date, time_slot, now=None):
+    local_now = (now or timezone.now()).astimezone(LOCAL_TZ)
+    if pickup_date < local_now.date():
+        return False
+    if pickup_date > local_now.date():
+        return True
+    return PICKUP_SLOT_END_MINUTES[time_slot] > local_now.hour * 60 + local_now.minute
+
+
 class CustomerRegisterView(APIView):
 
     authentication_classes = []
@@ -392,6 +409,12 @@ class OrderListCreateView(APIView):
         except (ValueError, TypeError):
             return Response(
                 {"error": "pickup_date must be in YYYY-MM-DD format"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not _is_pickup_slot_available(pickup_date, time_slot):
+            return Response(
+                {"error": "That pickup time has passed. Choose a future pickup date or time slot."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
