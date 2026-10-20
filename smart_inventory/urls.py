@@ -11,8 +11,10 @@ from customer import views
 from rest_framework_simplejwt.views import TokenRefreshView
 from users.views import LockoutTokenObtainPairView
 
+from customer.views import home_page
+
 def home(request):
-    return HttpResponse("Frontend Working ✅")
+    return home_page(request)
 
 urlpatterns = [
     # Home
