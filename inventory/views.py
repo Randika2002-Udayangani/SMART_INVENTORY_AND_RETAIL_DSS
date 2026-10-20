@@ -9,7 +9,7 @@ from decimal import Decimal
 from users.audit import log_action
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import F, Sum
 from rest_framework import generics, status,permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -376,6 +376,7 @@ class ProductStockDetailView(APIView):
             return Response({'error': 'Product not found'},
                             status=status.HTTP_404_NOT_FOUND)
 
+        batches = get_sellable_batches(product.id).order_by('expiry_date')
         batches     = get_sellable_batches(product.id).order_by('expiry_date')
         total_stock = batches.aggregate(
             total=Sum('remaining_quantity'))['total'] or 0

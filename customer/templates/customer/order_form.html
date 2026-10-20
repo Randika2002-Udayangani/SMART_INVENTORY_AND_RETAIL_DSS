@@ -9,7 +9,7 @@
         body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #333; }
 
         nav {
-            background: #1a73e8; padding: 14px 24px;
+            background: #2d6a4f; padding: 14px 24px;
             display: flex; justify-content: space-between; align-items: center;
         }
         nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
@@ -37,7 +37,7 @@
         }
 
         .form-header {
-            background: #1a73e8; padding: 20px 24px; color: white;
+            background: #2d6a4f; padding: 20px 24px; color: white;
         }
         .form-header h2 { font-size: 1.2rem; margin-bottom: 4px; }
         .form-header p { font-size: 0.85rem; opacity: 0.85; }
@@ -46,13 +46,13 @@
 
         /* ── Selected product ── */
         .selected-product {
-            background: #e8f0fe; border-radius: 10px;
+            background: #e8f5eb; border-radius: 10px;
             padding: 14px 16px; margin-bottom: 20px;
             display: flex; justify-content: space-between; align-items: center;
         }
         .selected-product .pname { font-weight: 700; color: #222; font-size: 1rem; }
         .selected-product .pprice { font-size: 0.85rem; color: #555; margin-top: 3px; }
-        .selected-product .pdiscount { color: #1a73e8; font-weight: 700; font-size: 1.1rem; }
+        .selected-product .pdiscount { color: #2d6a4f; font-weight: 700; font-size: 1.1rem; }
 
         /* ── Form fields ── */
         .form-group { margin-bottom: 18px; }
@@ -65,7 +65,7 @@
             font-size: 0.95rem; outline: none;
             font-family: 'Segoe UI', sans-serif;
         }
-        input:focus, select:focus, textarea:focus { border-color: #1a73e8; }
+        input:focus, select:focus, textarea:focus { border-color: #2d6a4f; }
         textarea { resize: vertical; min-height: 80px; }
 
         .error-text {
@@ -82,8 +82,8 @@
             padding: 12px 8px; text-align: center; cursor: pointer;
             transition: all 0.2s;
         }
-        .time-slot:hover { border-color: #1a73e8; background: #e8f0fe; }
-        .time-slot.selected { border-color: #1a73e8; background: #1a73e8; color: white; }
+        .time-slot:hover { border-color: #2d6a4f; background: #e8f5eb; }
+        .time-slot.selected { border-color: #2d6a4f; background: #2d6a4f; color: white; }
         .time-slot .slot-icon { font-size: 1.4rem; margin-bottom: 4px; }
         .time-slot .slot-name { font-size: 0.85rem; font-weight: 600; }
         .time-slot .slot-time { font-size: 0.75rem; opacity: 0.7; }
@@ -95,7 +95,7 @@
             border-radius: 8px; background: white; font-size: 1.2rem;
             cursor: pointer; display: flex; align-items: center; justify-content: center;
         }
-        .qty-btn:hover { border-color: #1a73e8; color: #1a73e8; }
+        .qty-btn:hover { border-color: #2d6a4f; color: #2d6a4f; }
         .qty-display { font-size: 1.1rem; font-weight: 700; color: #222; min-width: 30px; text-align: center; }
 
         /* ── Order summary ── */
@@ -112,14 +112,14 @@
             font-weight: 700; font-size: 1rem; color: #222;
             border-top: 1px solid #ddd; padding-top: 8px; margin-top: 8px;
         }
-        .summary-row .highlight { color: #1a73e8; font-weight: 700; }
+        .summary-row .highlight { color: #2d6a4f; font-weight: 700; }
 
         .submit-btn {
-            width: 100%; padding: 14px; background: #1a73e8;
+            width: 100%; padding: 14px; background: #2d6a4f;
             color: white; border: none; border-radius: 8px;
             font-size: 1rem; font-weight: 700; cursor: pointer;
         }
-        .submit-btn:hover { background: #1558b0; }
+        .submit-btn:hover { background: #1b4332; }
         .submit-btn:disabled { background: #aaa; cursor: not-allowed; }
 
         /* ── Success screen ── */
@@ -130,17 +130,17 @@
         .success-screen h3 { font-size: 1.3rem; color: #222; margin-bottom: 8px; }
         .success-screen p { color: #666; margin-bottom: 6px; font-size: 0.95rem; }
         .reference {
-            font-size: 1.4rem; font-weight: 700; color: #1a73e8;
-            background: #e8f0fe; padding: 10px 20px;
+            font-size: 1.4rem; font-weight: 700; color: #2d6a4f;
+            background: #e8f5eb; padding: 10px 20px;
             border-radius: 8px; display: inline-block; margin: 12px 0 20px;
         }
         .back-btn {
-            padding: 12px 28px; background: #1a73e8; color: white;
+            padding: 12px 28px; background: #2d6a4f; color: white;
             border: none; border-radius: 8px; cursor: pointer;
             font-size: 0.95rem; font-weight: 600; margin: 0 6px;
         }
         .back-btn.outline {
-            background: white; color: #1a73e8; border: 1.5px solid #1a73e8;
+            background: white; color: #2d6a4f; border: 1.5px solid #2d6a4f;
         }
 
         @media (max-width: 480px) {
@@ -351,7 +351,7 @@
                 <a href="/customer/products/">Products</a>
                 <a href="/customer/chatbot/">Chat with Us</a>
                 <a href="/customer/cart/">🛒 Cart <span id="cartBadge" style="background:red;color:white;border-radius:50%;padding:1px 6px;font-size:0.75rem;display:none;">0</span></a>
-                <a href="/customer/register/" style="background:white;color:#1a73e8;padding:7px 16px;border-radius:20px;margin-left:20px;font-weight:600;">Register</a>
+                <a href="/customer/register/" style="background:white;color:#2d6a4f;padding:7px 16px;border-radius:20px;margin-left:20px;font-weight:600;">Register</a>
                 <a href="/customer/login/" style="background:rgba(255,255,255,0.2);color:white;padding:7px 16px;border-radius:20px;margin-left:8px;">Login</a>
             `;
         }
