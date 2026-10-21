@@ -39,7 +39,7 @@ from inventory.services.reorder_logic import get_urgency
 from inventory.services.fefo import deduct_stock_fefo
 from inventory.services.stock import get_sellable_batches
 
-
+from inventory.services.stock import get_sellable_batches
 from inventory.services.reorder_logic import check_reorder_needs
 
 from orders.models import Notification
