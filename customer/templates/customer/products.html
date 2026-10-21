@@ -1122,7 +1122,12 @@
                 });
 
                 showDiscountedProducts();
-                showCategories();
+                const requestedCategory = new URLSearchParams(window.location.search).get('category');
+                if (requestedCategory && grouped[requestedCategory]) {
+                    showCategory(requestedCategory);
+                } else {
+                    showCategories();
+                }
             } catch (err) {
                 console.error('Load error:', err);
                 document.getElementById('mainContent').innerHTML = `
@@ -1629,5 +1634,6 @@
         initHero();
         loadAllProducts();
     </script>
+    {% include "customer/footer.html" %}
 </body>
 </html>

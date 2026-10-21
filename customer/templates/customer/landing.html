@@ -73,12 +73,6 @@
     .cta h2 { margin-bottom: 8px; }
     .cta .hero-actions { margin-top: 18px; }
 
-    /* Footer — customer links only */
-    footer { background: #16231c; color: #cfe3d7; padding: 28px 24px; text-align: center; font-size: .9rem; }
-    footer a { margin: 0 10px; }
-    footer a:hover { text-decoration: underline; }
-    footer .small { margin-top: 8px; opacity: .7; font-size: .8rem; }
-
     @media (max-width: 640px) {
         .nav-links a.hide-sm { display: none; }
         .hero { padding: 48px 20px 80px; }
@@ -148,15 +142,7 @@
     </section>
 </main>
 
-<footer>
-    <div>
-        <a href="/customer/products/">Products</a>
-        <a href="/customer/chatbot/">Chatbot</a>
-        <a href="/customer/login/">Login</a>
-        <a href="/customer/register/">Register</a>
-    </div>
-    <div class="small">© Samanala Super Mart</div>
-</footer>
+{% include "customer/footer.html" %}
 
 <script>
     // Only the public discount list is used here (product_id, %, price) — nothing private.

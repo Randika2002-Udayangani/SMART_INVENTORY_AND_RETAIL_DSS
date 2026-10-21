@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Product Detail | SmartDeals</title>
+    <title>Product Detail | Samanala Super Mart</title>
     <link rel="stylesheet" href="{% static 'css/logout-confirm.css' %}">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; }
 
         nav {
-            background: #2d6a4f; padding: 14px 24px;
+            background: linear-gradient(135deg, #0f3d3e 0%, #2d6a4f 100%); padding: 14px 24px;
             display: flex; justify-content: space-between; align-items: center;
         }
         nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
@@ -74,7 +74,7 @@
 <body>
 
 <nav>
-    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <a class="brand" href="/customer/products/">🛒 Samanala Super Mart</a>
     <div class="nav-links" id="navLinks"></div>
 </nav>
 
@@ -278,5 +278,6 @@
     loadProduct();
 </script>
 <script src="{% static 'js/logout-confirm.js' %}"></script>
+{% include "customer/footer.html" %}
 </body>
 </html>
