@@ -3,17 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register</title>
+    <title>Register | Samanala Super Mart</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', sans-serif;
             background: #f0f4f8;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .auth-main {
+            flex: 1;
+            width: 100%;
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
-            padding: 20px;
+            padding: 24px 20px;
         }
         .card {
             background: white;
@@ -23,50 +29,54 @@
             width: 100%;
             max-width: 420px;
         }
-        .card h2 { text-align: center; color: #1a73e8; margin-bottom: 6px; }
+        .card h2 { text-align: center; color: #2d6a4f; margin-bottom: 6px; }
         .card p.subtitle { text-align: center; color: #888; margin-bottom: 24px; font-size: 0.9rem; }
         label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 5px; color: #444; }
         input {
             width: 100%; padding: 11px 14px; border: 1px solid #ddd;
             border-radius: 6px; font-size: 1rem; margin-bottom: 16px; outline: none;
         }
-        input:focus { border-color: #1a73e8; }
+        input:focus { border-color: #2d6a4f; }
         .btn {
-            width: 100%; padding: 12px; background: #1a73e8; color: white;
+            width: 100%; padding: 12px; background: #2d6a4f; color: white;
             border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; font-weight: bold;
         }
-        .btn:hover { background: #1558b0; }
+        .btn:hover { background: #1b4332; }
         .btn:disabled { background: #aaa; cursor: not-allowed; }
         .error-msg { color: #d32f2f; font-size: 0.88rem; margin-bottom: 12px; text-align: center; display: none; }
         .success-msg { color: #2e7d32; font-size: 0.88rem; margin-bottom: 12px; text-align: center; display: none; }
+        .password-hint { display: block; margin: -12px 0 16px; color: #667085; font-size: 0.82rem; }
         .login-link { text-align: center; margin-top: 18px; font-size: 0.9rem; color: #666; }
-        .login-link a { color: #1a73e8; text-decoration: none; }
+        .login-link a { color: #2d6a4f; text-decoration: none; }
     </style>
 </head>
 <body>
-<div class="card">
-    <h2>🛒 SmartDeals</h2>
-    <p class="subtitle">Create your account</p>
+<main class="auth-main">
+    <div class="card">
+        <h2>🛒 Samanala Super Mart</h2>
+        <p class="subtitle">Create your account</p>
 
-    <div class="error-msg" id="errorMsg"></div>
-    <div class="success-msg" id="successMsg"></div>
+        <div class="error-msg" id="errorMsg"></div>
+        <div class="success-msg" id="successMsg"></div>
 
-    <label>Full Name</label>
-    <input type="text" id="name" placeholder="Your full name e.g. Chalani">
+        <label>Full Name</label>
+        <input type="text" id="name" placeholder="Your full name e.g. Chalani">
 
-    <label>Email</label>
-    <input type="email" id="email" placeholder="you@email.com">
+        <label>Email</label>
+        <input type="email" id="email" placeholder="you@email.com">
 
-    <label>Password</label>
-    <input type="password" id="password" placeholder="Min 6 characters">
+        <label>Password</label>
+        <input type="password" id="password" placeholder="At least 8 characters" minlength="8">
+        <small class="password-hint">Use a password with at least 8 characters.</small>
 
-    <label>Confirm Password</label>
-    <input type="password" id="confirmPassword" placeholder="Repeat your password">
+        <label>Confirm Password</label>
+        <input type="password" id="confirmPassword" placeholder="Repeat your password">
 
-    <button class="btn" id="registerBtn" onclick="doRegister()">Create Account</button>
+        <button class="btn" id="registerBtn" onclick="doRegister()">Create Account</button>
 
-    <div class="login-link">Already have an account? <a href="/customer/login/">Login here</a></div>
-</div>
+        <div class="login-link">Already have an account? <a href="/customer/login/">Login here</a></div>
+    </div>
+</main>
 
 <script>
     async function doRegister() {
@@ -84,8 +94,8 @@
         if (password !== confirmPassword) {
             showError('Passwords do not match.'); return;
         }
-        if (password.length < 6) {
-            showError('Password must be at least 6 characters.'); return;
+        if (password.length < 8) {
+            showError('Password must be at least 8 characters.'); return;
         }
 
         btn.disabled    = true;
@@ -143,5 +153,6 @@
         document.getElementById('successMsg').style.display = 'none';
     }
 </script>
+{% include "customer/footer.html" %}
 </body>
 </html>

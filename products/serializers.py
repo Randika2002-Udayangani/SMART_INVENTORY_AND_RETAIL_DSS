@@ -66,44 +66,58 @@ class CategorySerializer(serializers.ModelSerializer):
 # until staff assigns a category.
 # ─────────────────────────────────────────────
 class ProductPublicSerializer(serializers.ModelSerializer):
-    expiry_date = serializers.DateField(
-        source='earliest_expiry', read_only=True, allow_null=True
+    category_name  = serializers.CharField(
+        source='category.category_name', read_only=True, allow_null=True
     )
-    category_name = serializers.CharField(
-        source='category.category_name',
-        read_only=True,
-        allow_null=True,
-        default=None    # returns null instead of crashing for R8 products
+    brand_name     = serializers.CharField(
+        source='brand.brand_name', read_only=True, allow_null=True
     )
-    brand_name = serializers.CharField(
-        source='brand.brand_name',
-        read_only=True,
-        allow_null=True,
-        default=None    # returns null instead of crashing for unbranked products
-    )
+    expiry_date    = serializers.SerializerMethodField()
     is_near_expiry = serializers.SerializerMethodField()
+    discount       = serializers.SerializerMethodField()
+    discounted_price = serializers.SerializerMethodField()
+    discount_percentage = serializers.SerializerMethodField()
+
+    def get_expiry_date(self, obj):
+        expiry_date = getattr(obj, 'earliest_expiry', None)
+        return expiry_date.isoformat() if expiry_date else None
+
+    def get_is_near_expiry(self, obj):
+        from django.utils import timezone
+        expiry_date = getattr(obj, 'earliest_expiry', None)
+        today = timezone.localdate()
+        return bool(expiry_date and today <= expiry_date <= today + timezone.timedelta(days=30))
+
+    def _get_customer_discount(self, obj):
+        discounts = getattr(obj, '_pending_discounts', ())
+        return discounts[0] if discounts else None
+
+    def get_discount(self, obj):
+        discount = self._get_customer_discount(obj)
+        if discount is None:
+            return None
+        return {
+            'pct': float(discount.recommended_discount_pct),
+            'price': float(discount.recommended_price)
+        }
+
+    def get_discounted_price(self, obj):
+        discount = self._get_customer_discount(obj)
+        return discount.recommended_price if discount else None
+
+    def get_discount_percentage(self, obj):
+        discount = self._get_customer_discount(obj)
+        return discount.recommended_discount_pct if discount else None
 
     class Meta:
         model  = Product
         fields = [
-            'id', 'product_name', 'sku_code',
-            'unit_price',               # selling price — safe to show publicly
+            'id', 'product_name', 'sku_code', 'unit_price',
             'reorder_threshold', 'introduced_date', 'is_active',
-            'category', 'category_name',
-            'brand', 'brand_name',
-            'expiry_date',
-            'is_near_expiry',
-            # cost_price    — excluded: internal supplier cost
-            # avg_cost_price — excluded: internal WAC used for profit calc
+            'category', 'category_name', 'brand', 'brand_name',
+            'expiry_date', 'is_near_expiry', 'discount',
+            'discounted_price', 'discount_percentage'
         ]
-
-    def get_is_near_expiry(self, obj):
-        expiry_date = getattr(obj, 'earliest_expiry', None)
-        today = datetime.now(LOCAL_TZ).date()
-        return bool(
-            expiry_date
-            and today <= expiry_date <= today + timedelta(days=30)
-        )
 
 # ─────────────────────────────────────────────
 # Product — STAFF serializer

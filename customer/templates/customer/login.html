@@ -4,17 +4,24 @@
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Customer Login</title>
+    <title>Login | Samanala Super Mart</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: 'Segoe UI', sans-serif;
             background: #f0f4f8;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .auth-main {
+            flex: 1;
+            width: 100%;
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
+            padding: 24px 20px;
         }
         .card {
             background: white;
@@ -27,7 +34,7 @@
 
         .card h2 {
             text-align: center;
-            color: #1a73e8;
+            color: #2d6a4f;
             margin-bottom: 8px;
         }
 
@@ -55,12 +62,12 @@
             margin-bottom: 18px;
             outline: none;
         }
-        input:focus { border-color: #1a73e8; }
+        input:focus { border-color: #2d6a4f; }
 
         .btn {
             width: 100%;
             padding: 12px;
-            background: #1a73e8;
+            background: #2d6a4f;
             color: white;
             border: none;
             border-radius: 6px;
@@ -68,7 +75,7 @@
             cursor: pointer;
             font-weight: bold;
         }
-        .btn:hover { background: #1558b0; }
+        .btn:hover { background: #1b4332; }
         .btn:disabled { background: #aaa; cursor: not-allowed; }
 
         .error-msg {
@@ -78,6 +85,12 @@
             text-align: center;
             display: none;
         }
+        .password-hint {
+            display: block;
+            margin: -12px 0 16px;
+            color: #667085;
+            font-size: 0.82rem;
+        }
 
         .register-link {
             text-align: center;
@@ -85,29 +98,32 @@
             font-size: 0.9rem;
             color: #666;
         }
-        .register-link a { color: #1a73e8; text-decoration: none; }
+        .register-link a { color: #2d6a4f; text-decoration: none; }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <h2>🛒 SmartDeals</h2>
-    <p class="subtitle">Sign in to your account</p>
+<main class="auth-main">
+    <div class="card">
+        <h2>🛒 Samanala Super Mart</h2>
+        <p class="subtitle">Sign in to your account</p>
 
-    <div class="error-msg" id="errorMsg"></div>
+        <div class="error-msg" id="errorMsg"></div>
 
-    <label>Email</label>
-    <input type="email" id="email" placeholder="you@email.com">
+        <label>Email</label>
+        <input type="email" id="email" placeholder="you@email.com">
 
-    <label>Password</label>
-    <input type="password" id="password" placeholder="Your password">
+        <label>Password</label>
+        <input type="password" id="password" placeholder="Your password">
+        <small class="password-hint">Use a password with at least 8 characters.</small>
 
-    <button class="btn" id="loginBtn" onclick="doLogin()">Login</button>
+        <button class="btn" id="loginBtn" onclick="doLogin()">Login</button>
 
-    <div class="register-link">
-        Don't have an account? <a href="/customer/register/">Register here</a>
+        <div class="register-link">
+            Don't have an account? <a href="/customer/register/">Register here</a>
+        </div>
     </div>
-</div>
+</main>
 
 <script>
     if (sessionStorage.getItem('jwt')) {
@@ -168,5 +184,6 @@
     });
 </script>
 
+{% include "customer/footer.html" %}
 </body>
 </html>

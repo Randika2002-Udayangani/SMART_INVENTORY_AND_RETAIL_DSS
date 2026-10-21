@@ -7,16 +7,14 @@ from django.contrib import admin
 from django.urls import path, include
 from django.http import HttpResponse
 from customer import views
+from customer import views as customer_views
 
 from rest_framework_simplejwt.views import TokenRefreshView
 from users.views import LockoutTokenObtainPairView
 
-def home(request):
-    return HttpResponse("Frontend Working ✅")
-
 urlpatterns = [
     # Home
-    path('', home),
+    path('', customer_views.landing_page, name='landing'),
 
     # Admin
     path('admin/', admin.site.urls),
