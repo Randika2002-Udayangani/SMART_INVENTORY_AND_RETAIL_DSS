@@ -109,7 +109,7 @@
       auditTotalPages = Array.isArray(response) ? 1 : (response.total_pages ?? 1);
       auditPage = Array.isArray(response) ? auditPage : (response.page ?? auditPage);
       renderAuditLogs();
-      document.getElementById('lastUpdated').innerText = `Last updated ${new Date().toLocaleTimeString()}`;
+      document.getElementById('lastUpdated').innerText = `Last updated ${formatDate(new Date().toISOString())}`;
     } catch (error) {
       document.getElementById('logBody').innerHTML = `<tr><td colspan="7" class="text-center text-danger">${escapeHtml(error.message)}</td></tr>`;
       document.getElementById('auditPagination').innerHTML = '';
@@ -126,7 +126,7 @@
       return;
     }
 
-    body.innerHTML = rows.map(log => `<tr><td>${log.timestamp ? escapeHtml(new Date(log.timestamp).toLocaleString()) : '-'}</td><td>${escapeHtml(log.username || 'Unknown')} <span class="text-muted">#${escapeHtml(log.user_id || '-')}</span></td><td><span class="badge text-bg-secondary">${escapeHtml(log.action)}</span></td><td>${escapeHtml(log.table_name)}</td><td title="Database row ID in ${escapeHtml(log.table_name || 'the affected table')}">${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</td><td>${escapeHtml(log.ip_address || '-')}</td><td><button class="btn btn-outline-secondary btn-sm" onclick="showDetails(${log.id})">Details</button></td></tr>`).join('');
+    body.innerHTML = rows.map(log => `<tr><td>${escapeHtml(formatDate(log.timestamp))}</td><td>${escapeHtml(log.username || 'Unknown')} <span class="text-muted">#${escapeHtml(log.user_id || '-')}</span></td><td><span class="badge text-bg-secondary">${escapeHtml(log.action)}</span></td><td>${escapeHtml(log.table_name)}</td><td title="Database row ID in ${escapeHtml(log.table_name || 'the affected table')}">${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</td><td>${escapeHtml(log.ip_address || '-')}</td><td><button class="btn btn-outline-secondary btn-sm" onclick="showDetails(${log.id})">Details</button></td></tr>`).join('');
 
     document.getElementById('auditPagination').innerHTML = auditTotalPages > 1 ? `
       <button class="btn btn-sm btn-outline-secondary" onclick="changeAuditPage(-1)" ${auditPage === 1 ? 'disabled' : ''}>Previous</button>
@@ -144,7 +144,7 @@
   async function showDetails(id) {
     try {
       const log = await apiFetch(`/api/audit-log/${id}/`);
-      document.getElementById('detailBody').innerHTML = `<div class="row g-3"><div class="col-md-6"><strong>User who performed action</strong><div>${escapeHtml(log.username || 'Unknown')} #${escapeHtml(log.user_id || '-')}</div></div><div class="col-md-6"><strong>Time</strong><div>${escapeHtml(log.timestamp ? new Date(log.timestamp).toLocaleString() : '-')}</div></div><div class="col-md-6"><strong>Action</strong><div>${escapeHtml(log.action)}</div></div><div class="col-md-6"><strong>Affected table</strong><div><span class="badge text-bg-light">${escapeHtml(log.table_name)}</span></div></div><div class="col-md-6"><strong>Affected record ID</strong><div>${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</div></div><div class="col-md-6"><strong>IP address</strong><div>${escapeHtml(log.ip_address || '-')}</div></div><div class="col-12"><strong>Old value</strong><pre class="audit-detail">${jsonText(log.old_value)}</pre></div><div class="col-12"><strong>New value</strong><pre class="audit-detail">${jsonText(log.new_value)}</pre></div></div>`;
+      document.getElementById('detailBody').innerHTML = `<div class="row g-3"><div class="col-md-6"><strong>User who performed action</strong><div>${escapeHtml(log.username || 'Unknown')} #${escapeHtml(log.user_id || '-')}</div></div><div class="col-md-6"><strong>Time</strong><div>${escapeHtml(formatDate(log.timestamp))}</div></div><div class="col-md-6"><strong>Action</strong><div>${escapeHtml(log.action)}</div></div><div class="col-md-6"><strong>Affected table</strong><div><span class="badge text-bg-light">${escapeHtml(log.table_name)}</span></div></div><div class="col-md-6"><strong>Affected record ID</strong><div>${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</div></div><div class="col-md-6"><strong>IP address</strong><div>${escapeHtml(log.ip_address || '-')}</div></div><div class="col-12"><strong>Old value</strong><pre class="audit-detail">${jsonText(log.old_value)}</pre></div><div class="col-12"><strong>New value</strong><pre class="audit-detail">${jsonText(log.new_value)}</pre></div></div>`;
       bootstrap.Modal.getOrCreateInstance(document.getElementById('detailModal')).show();
     } catch (error) { showMessage(error.message); }
   }

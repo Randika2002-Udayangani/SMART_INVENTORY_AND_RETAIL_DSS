@@ -8,8 +8,6 @@
     .kpi-card { background:var(--card); border-radius:12px; padding:18px; border:1px solid var(--border); text-align:center; }
     .kpi-val { font-size:24px; font-weight:700; color: var(--txt); }
     .kpi-lbl { font-size:11px; color:var(--muted); text-transform:uppercase; }
-    .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
-    .nav-tabs .nav-link { color:var(--txt); }
     .badge-active { background:#F0FDF4; color:#16A34A; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
     .badge-expired { background:#FEF2F2; color:#DC2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
     .badge-disposed { background:#F1F5F9; color:#64748B; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
@@ -22,6 +20,7 @@
     }
     .btn-primary { background: var(--sidebar); border: none; }
     .btn-primary:hover { background: #14532d; }
+    .btn-outline-primary:hover { background:#14532d; border-color:#14532d; color:#fff; }
     .restricted-cell { color: var(--muted); font-style: italic; font-size: 11.5px; }
     #tab-new .card { max-width: none !important; width: 100%; }
     #tab-new .card + .card { margin-top: 16px; }
@@ -77,9 +76,9 @@
     <div class="mb-3 d-flex gap-2">
         <select id="batchStatusFilter" class="form-select form-select-sm" style="width:180px;" onchange="loadBatches()">
             <option value="">All Status</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="EXPIRED">EXPIRED</option>
-            <option value="DISPOSED">DISPOSED</option>
+            <option value="ACTIVE">In stock</option>
+            <option value="EXPIRED">Expired</option>
+            <option value="DISPOSED">Disposed</option>
         </select>
         <button class="btn btn-sm btn-outline-primary" onclick="updateSelectedBatchStatuses('ACTIVE')">Mark Active</button>
         <button class="btn btn-sm btn-outline-danger" onclick="updateSelectedBatchStatuses('EXPIRED')">Mark Expired</button>
@@ -384,7 +383,7 @@ function renderPurchasesTable() {
         <tr>
             <td><a href="/dashboard/purchases/detail/${p.id}/">${p.invoice_number ?? '—'}</a></td>
             <td>${p.supplier_name ?? (typeof p.supplier === 'object' ? p.supplier?.name : p.supplier) ?? '—'}</td>
-            <td>${p.purchase_date ?? '—'}</td>
+            <td>${formatDate(p.purchase_date)}</td>
             <td>${canSeeFinancials ? formatMoney(p.total_amount) : '<span class="restricted-cell">Restricted</span>'}</td>
             <td>${(p.batches ?? []).length || p.batch_count || '—'}</td>
         </tr>
@@ -403,7 +402,7 @@ function changePurchasesPage(delta) {
 
 function batchStatusBadge(s) {
     const map = { 'ACTIVE': 'badge-active', 'EXPIRED': 'badge-expired', 'DISPOSED': 'badge-disposed', 'PENDING_EXPIRY': 'badge-pending' };
-    return `<span class="${map[s] || 'badge-active'}">${s ?? '—'}</span>`;
+    return `<span class="${map[s] || 'badge-active'}">${displayLabel(BATCH_STATUS_LABELS, s)}</span>`;
 }
 
 let allBatches = [];
@@ -459,7 +458,7 @@ function renderBatches() {
         const isPending = b.status === 'PENDING_EXPIRY';
         const expiryCell = isPending
             ? `<input type="date" id="expiryInput_${b.id}" class="form-control form-control-sm" style="min-width:150px;">`
-            : (b.expiry_date ?? '—');
+            : formatDate(b.expiry_date);
         // Fix: previously this checkbox only rendered for PENDING_EXPIRY rows,
         // so Mark Active / Mark Expired / Mark Disposed had nothing to select
         // for any other status. Now every row is selectable; bulkConfirmExpiry()
@@ -603,7 +602,7 @@ function renderExpiring() {
             <td>${b.product_name ?? '—'}</td>
             <td>${b.batch_id ?? b.id ?? '—'}</td>
             <td>${b.remaining_quantity ?? '—'}</td>
-            <td>${b.expiry_date ?? '—'}</td>
+            <td>${formatDate(b.expiry_date)}</td>
             <td>${daysLeftCell(b.expiry_date)}</td>
         </tr>
     `).join('');

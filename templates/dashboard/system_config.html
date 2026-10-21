@@ -61,7 +61,7 @@
   function encodeKey(key) { return encodeURIComponent(String(key)).replace(/'/g, '%27'); }
   function titleCaseKey(key) { return String(key).replace(/[_-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()); }
   function showMessage(text, type = 'success') { const element = document.getElementById('message'); element.className = `alert alert-${type}`; element.innerText = text; element.hidden = false; }
-  function updatedText(row) { return row.updated_at ? new Date(row.updated_at).toLocaleString() : '-'; }
+  function updatedText(row) { return formatDate(row.updated_at); }
   function isNumericValue(value) { return value !== '' && Number.isFinite(Number(value)); }
   function configMeta(key, value) { if (CONFIG_LABELS[key]) return CONFIG_LABELS[key]; return { label: titleCaseKey(key), unit: '', group: /sync|log|date/i.test(key) ? 'Other' : 'Other Settings', section: /sync|log|date/i.test(key) ? 'status' : 'settings' }; }
 

@@ -401,7 +401,7 @@ async function showPurchaseHistory(id) {
         const data = await res.json();
         const purchases = extractArray(data).filter(p => String(p.supplier ?? p.supplier_id) === String(id));
         showSupplierModal('Supplier Purchase History', purchases.length ? `<div class="table-scroll-wrap">
-<table class="table table-sm"><thead><tr><th>Invoice</th><th>Date</th><th>Total</th></tr></thead><tbody>${purchases.map(p => `<tr><td>${p.invoice_number ?? '—'}</td><td>${p.purchase_date ?? '—'}</td><td>${p.total_amount ?? '—'}</td></tr>`).join('')}</tbody></table>
+<table class="table table-sm"><thead><tr><th>Invoice</th><th>Date</th><th>Total</th></tr></thead><tbody>${purchases.map(p => `<tr><td>${p.invoice_number ?? '—'}</td><td>${formatDate(p.purchase_date)}</td><td>${p.total_amount ?? '—'}</td></tr>`).join('')}</tbody></table>
 </div>` : '<div class="text-muted">No purchases found.</div>');
     } catch (e) {
         showSupplierModal('Supplier Purchase History', '<div class="text-danger">Could not load purchase history.</div>');

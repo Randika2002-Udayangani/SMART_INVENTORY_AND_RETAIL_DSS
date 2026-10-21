@@ -6,6 +6,8 @@
 <style>
   .sales-upload-header { margin-bottom: 24px; }
   .upload-card h5 { color: var(--sidebar); }
+  .btn-primary { background:#14532d; border-color:#14532d; }
+  .btn-primary:hover { background:#14532d; border-color:#14532d; }
   .muted { color: var(--muted); }
   .message { min-height: 24px; }
   .upload-table-wrap { overflow: visible; }
@@ -248,9 +250,9 @@
 
     body.innerHTML = rows.map(log => `
         <tr>
-          <td>${log.upload_date ? escapeHtml(new Date(log.upload_date).toLocaleString()) : '-'}</td>
+          <td>${escapeHtml(formatDate(log.upload_date))}</td>
           <td>${escapeHtml(log.file_name)}</td>
-          <td>${escapeHtml(log.upload_type)}</td>
+          <td>${escapeHtml(displayLabel(UPLOAD_TYPE_LABELS, log.upload_type))}</td>
           <td>${statusBadge(log.status)}</td>
           <td>${escapeHtml(log.uploaded_by_username ?? '-')}</td>
           <td><button class="btn btn-outline-secondary btn-sm" onclick="showDetails(${log.id})">Details</button></td>
@@ -293,7 +295,7 @@
 
       document.getElementById('uploadDetailsBody').innerHTML =
         field('File', data.file_name) +
-        field('Type', data.upload_type) +
+        field('Type', displayLabel(UPLOAD_TYPE_LABELS, data.upload_type)) +
         field('Status', data.status) +
         field('Details', errorMessage);
 

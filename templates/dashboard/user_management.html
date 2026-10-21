@@ -57,7 +57,7 @@
       <div class="row g-2">
         <div class="col-md-3"><input id="newUsername" class="form-control" placeholder="Username" autocomplete="off"></div>
         <div class="col-md-3"><input id="newPassword" type="password" class="form-control" placeholder="Password" autocomplete="new-password"></div>
-        <div class="col-md-3"><select id="newRole" class="form-select"><option>STAFF</option><option>MANAGER</option><option>ADMIN</option></select></div>
+        <div class="col-md-3"><select id="newRole" class="form-select"><option value="STAFF">Staff</option><option value="MANAGER">Manager</option><option value="ADMIN">Admin</option></select></div>
         <div class="col-md-3"><button class="btn btn-primary w-100" id="createUserButton" onclick="createUser()">Create user</button></div>
       </div>
     </div>
@@ -113,7 +113,7 @@
   }
 
   function roleLabel(user) {
-    return `<span class="badge text-bg-secondary">${escapeHtml(user.role)}</span>`;
+    return `<span class="badge text-bg-secondary">${escapeHtml(displayLabel(ROLE_LABELS, user.role))}</span>`;
   }
 
   function statusLabel(user) {
@@ -137,7 +137,7 @@
           <td>${escapeHtml(user.username)}</td>
           <td>${roleLabel(user)}</td>
           <td>${statusLabel(user)}</td>
-          <td>${user.date_joined ? escapeHtml(new Date(user.date_joined).toLocaleDateString()) : '-'}</td>
+          <td>${escapeHtml(formatDate(user.date_joined))}</td>
           <td><div class="user-actions">
             <button class="btn btn-outline-secondary btn-sm" data-user-action="toggle" data-user-id="${user.id}" data-active="${user.is_active}">${user.is_active ? 'Deactivate' : 'Activate'}</button>
             ${showUnlock ? `<button class="btn btn-outline-warning btn-sm" data-user-action="unlock" data-user-id="${user.id}">Unlock</button>` : ''}

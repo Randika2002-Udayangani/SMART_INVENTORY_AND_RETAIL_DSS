@@ -8,8 +8,6 @@
         .btn-primary { background:var(--sidebar); border:none; }
         .btn-primary:hover { background:#14532d; }
         .table thead.table-light th { position:sticky; top:0; z-index:120; background:var(--card2); }
-        .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
-        .nav-tabs .nav-link { color:var(--txt); }
         .zone-header-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
         .zone-last-calculated { margin-top:4px; font-size:11px; color:var(--muted); }
 
@@ -391,7 +389,7 @@ async function loadLastRun() {
         document.getElementById('kpiEvaluated').textContent = run.products_evaluated;
         document.getElementById('kpiUnmapped').textContent = run.categories_unmapped_count;
         document.getElementById('lastCalculated').textContent =
-            'Last calculated: ' + new Date(run.run_at).toLocaleString();
+            'Last calculated: ' + formatDate(run.run_at);
     } catch (e) {
         // leave placeholders as-is — not worth surfacing an error for this
     }
@@ -408,7 +406,7 @@ async function calculateRecommendations() {
         if (res.ok) {
             document.getElementById('kpiEvaluated').textContent = data.products_evaluated ?? '—';
             document.getElementById('lastCalculated').textContent =
-                'Last calculated: ' + new Date(data.run_at).toLocaleString();
+                'Last calculated: ' + formatDate(data.run_at);
             const unmapped = data.zone_assignment?.categories_unmapped ?? [];
             document.getElementById('kpiUnmapped').textContent = unmapped.length;
             showMsg(

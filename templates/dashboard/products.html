@@ -7,10 +7,11 @@
         .btn-primary { background:var(--sidebar); border:none; }
         .btn-primary:hover { background:#14532d; }
         .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
-        .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
-        .nav-tabs .nav-link { color:var(--txt); }
         .table thead.table-light th { position:sticky; top:0; z-index:120; background:var(--card2); }
         .crud-form { max-width: 520px; }
+        #tab-list .table-scroll-wrap { overflow-x:auto; }
+        #tab-list table { min-width:900px; }
+        #tab-list table th:first-child, #tab-list table td:first-child { min-width:260px; white-space:normal; }
     </style>
 {% endblock %}
 {% block content %}
@@ -87,7 +88,8 @@
                 <option value="">All Categories</option>
             </select>
             <button class="btn btn-primary btn-sm" onclick="loadProducts()">Search</button>
-            <button class="btn btn-outline-secondary btn-sm" id="reclassifyBtn" onclick="reclassify()">Reclassify Products</button>
+            <button class="btn btn-outline-secondary btn-sm" id="reclassifyBtn" onclick="reclassify()">Reclassify Products <span class="tooltip-icon" title="Re-assigns categories using the product name">ⓘ</span></button>
+            <button class="btn btn-outline-warning btn-sm" onclick="updateBuyingPrices()">Update buying prices</button>
             <button class="btn btn-primary btn-sm" onclick="openAddForm()">+ Add Product</button>
         </div>
         <div class="card p-4">
@@ -111,7 +113,7 @@
     <!-- Import Tab -->
     <div id="tab-import" style="display:none;">
         <div class="card p-4" style="max-width:600px;">
-            <h6 class="fw-bold mb-3">Import Item Master Excel</h6>
+            <h6 class="fw-bold mb-3">Import product list (Excel)</h6>
             <input type="file" id="importFile" class="form-control mb-3" accept=".xlsx,.xls">
             <button class="btn btn-primary" onclick="submitImport()">Upload & Import</button>
             <div id="importMsg" class="mt-3"></div>
@@ -138,10 +140,10 @@
             <div class="table-scroll-wrap">
 <table class="table table-hover">
                 <thead class="table-light">
-                    <tr><th>ID</th><th>Brand Name</th><th>Actions</th></tr>
+                    <tr><th>Brand Name</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="brandsBody">
-                    <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
+                    <tr><td colspan="2" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
 </div>
@@ -168,10 +170,10 @@
             <div class="table-scroll-wrap">
 <table class="table table-hover">
                 <thead class="table-light">
-                    <tr><th>ID</th><th>Category Name</th><th>Actions</th></tr>
+                    <tr><th>Category Name</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="categoriesBody">
-                    <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
+                    <tr><td colspan="2" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
 </div>
@@ -211,10 +213,10 @@
             <div class="table-scroll-wrap">
 <table class="table table-hover">
                 <thead class="table-light">
-                    <tr><th>ID</th><th>Zone Name</th><th>Traffic</th><th>Description</th><th>Actions</th></tr>
+                    <tr><th>Zone Name</th><th>Traffic</th><th>Description</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="zonesCrudBody">
-                    <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
+                    <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
 </div>
@@ -470,7 +472,8 @@ async function loadProducts() {
 }
 
 function renderProducts() {
-    const rows = allProducts;
+    const rows = [...allProducts].sort((a, b) =>
+        String(a.product_name ?? '').localeCompare(String(b.product_name ?? '')));
     const tbody = document.getElementById('prodBody');
 
     if (rows.length === 0) {
@@ -490,7 +493,6 @@ function renderProducts() {
                 <div class="d-flex gap-2 flex-wrap">
                     <button class="btn btn-sm btn-outline-secondary" onclick="openEditFormPayload('${encodePayload(p)}')">Edit</button>
                     <button class="btn btn-sm btn-outline-primary" onclick='viewProductAvailability(${p.id})'>View</button>
-                    <button class="btn btn-sm btn-outline-warning" onclick='recalculateWAC(${p.id})'>Recalculate average cost</button><span class="tooltip-icon" data-tooltip="Weighted Average Cost — the average price paid per unit across all purchases" tabindex="0">ⓘ</span>
                 </div>
             </td>
         </tr>
@@ -729,8 +731,28 @@ async function recalculateWAC(id) {
         } else {
             showProductMessage(data.detail || data.error || 'Average cost recalculation failed.');
         }
+
     } catch (e) {
         showProductMessage('Network error while recalculating average cost: ' + e.message);
+    }
+}
+
+async function updateBuyingPrices() {
+    if (!allProducts.length || !confirm('Update buying prices for the products on this page?')) return;
+    try {
+        const results = await Promise.all(allProducts.map(async product => {
+            const res = await request(`/api/products/${product.id}/recalculate-wac/`, { method: 'POST' });
+            return res.ok;
+        }));
+        const updated = results.filter(Boolean).length;
+        if (updated === results.length) {
+            showProductMessage('Buying prices updated.', 'success');
+        } else {
+            showProductMessage(`${updated} of ${results.length} buying prices were updated.`, 'warning');
+        }
+        loadProducts();
+    } catch (e) {
+        showProductMessage('Could not update buying prices: ' + e.message);
     }
 }
 
@@ -800,17 +822,17 @@ async function loadBrands() {
     try {
         const res = await request('/api/brands/');
         const data = await res.json();
-        const rows = extractArray(data);
+        const rows = extractArray(data).sort((a, b) =>
+            String(a.brand_name ?? '').localeCompare(String(b.brand_name ?? '')));
         const tbody = document.getElementById('brandsBody');
 
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No brands found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No brands found.</td></tr>';
             return;
         }
 
         tbody.innerHTML = rows.map(b => `
             <tr>
-                <td>${b.id ?? '—'}</td>
                 <td>${escapeHtml(b.brand_name ?? '—')}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="editBrandPayload('${encodePayload(b)}')">Edit</button>
@@ -819,7 +841,7 @@ async function loadBrands() {
             </tr>
         `).join('');
     } catch(e) {
-        document.getElementById('brandsBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading brands.</td></tr>';
+        document.getElementById('brandsBody').innerHTML = '<tr><td colspan="2" class="text-center text-danger">Error loading brands.</td></tr>';
     }
 }
 
@@ -892,17 +914,17 @@ async function loadCategoriesCrud() {
     try {
         const res = await request('/api/categories/');
         const data = await res.json();
-        const rows = extractArray(data);
+        const rows = extractArray(data).sort((a, b) =>
+            String(a.category_name ?? '').localeCompare(String(b.category_name ?? '')));
         const tbody = document.getElementById('categoriesBody');
 
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No categories found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No categories found.</td></tr>';
             return;
         }
 
         tbody.innerHTML = rows.map(c => `
             <tr>
-                <td>${c.id ?? '—'}</td>
                 <td>${escapeHtml(c.category_name ?? '—')}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="editCategoryPayload('${encodePayload(c)}')">Edit</button>
@@ -911,7 +933,7 @@ async function loadCategoriesCrud() {
             </tr>
         `).join('');
     } catch(e) {
-        document.getElementById('categoriesBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading categories.</td></tr>';
+        document.getElementById('categoriesBody').innerHTML = '<tr><td colspan="2" class="text-center text-danger">Error loading categories.</td></tr>';
     }
 }
 
@@ -990,13 +1012,12 @@ async function loadStoreZones() {
         const tbody = document.getElementById('zonesCrudBody');
 
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No zones found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No zones found.</td></tr>';
             return;
         }
 
         tbody.innerHTML = rows.map(z => `
             <tr>
-                <td>${z.id ?? '—'}</td>
                 <td>${escapeHtml(z.zone_name ?? '—')}</td>
                 <td>${escapeHtml(z.traffic_level ?? '—')}</td>
                 <td>${escapeHtml(z.description ?? '—')}</td>
@@ -1007,7 +1028,7 @@ async function loadStoreZones() {
             </tr>
         `).join('');
     } catch(e) {
-        document.getElementById('zonesCrudBody').innerHTML = '<tr><td colspan="5" class="text-center text-danger">Error loading zones.</td></tr>';
+        document.getElementById('zonesCrudBody').innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error loading zones.</td></tr>';
     }
 }
 

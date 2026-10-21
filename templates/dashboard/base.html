@@ -138,8 +138,6 @@
     .main button[onclick="doLogout()"] { display: none !important; }
     .table-scroll-wrap {
       overflow-x: auto;
-      overflow-y: auto;
-      max-height: 480px;
       -webkit-overflow-scrolling: touch;
     }
     .table-responsive {
@@ -157,8 +155,8 @@
     .topbar {
       display: flex; align-items: flex-start; justify-content: space-between;
       margin-bottom: 22px;
-      position: sticky; top: 0; z-index: 150;
-      background: var(--bg);
+      position: sticky; top: 0; z-index: 100;
+      background: white;
       padding: 12px 0 8px;
       padding-left: 56px;
     }
@@ -166,6 +164,10 @@
     .topbar .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
     /* Breadcrumb headers provide the page title and description consistently. */
     .topbar > div:first-child:has(h1) { display: none; }
+    .topbar > div:first-child,
+    .page-header > div:first-child { display: none; }
+    .btn-primary { background:#14532d !important; border-color:#14532d !important; }
+    .btn-primary:hover, .btn-primary:focus { background:#14532d !important; border-color:#14532d !important; }
     .topbar:not(:has(button)):not(:has(a)) { display: none; }
     .page-header > div:first-child:has(h4) { display: none; }
     .page-header:not(:has(button)):not(:has(a)) { display: none; }
@@ -191,6 +193,8 @@
     .notification-nav {
       position:fixed; top:18px; right:28px; z-index:260;
       display:flex; align-items:center; gap:8px;
+      background:#fff; padding:6px 8px; border-radius:10px;
+      box-shadow:0 1px 4px rgba(0,0,0,.06);
     }
     .header-logout {
       height:36px; border:0; border-radius:8px; padding:0 12px;
@@ -210,6 +214,13 @@
       display:flex; align-items:center; justify-content:center; border:2px solid var(--bg);
     }
     .notification-count.is-empty { display:none; }
+    .notification-count.is-ping { animation: notification-ping .7s ease-out; }
+    @keyframes notification-ping {
+      0% { transform: scale(1); }
+      35% { transform: scale(1.45); }
+      100% { transform: scale(1); }
+    }
+    @media (prefers-reduced-motion: reduce) { .notification-count.is-ping { animation: none; } }
     .notification-dropdown {
       position:absolute; top:44px; right:0; width:min(390px, calc(100vw - 24px));
       background:var(--card); border:1px solid var(--border); border-radius:10px;
@@ -348,12 +359,41 @@
   </style>
   {% block extra_css %}{% endblock %}
   <style>
+    .nav-tabs .nav-link {
+      color: #64748B;
+      border: none;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      padding: 8px 16px;
+      font-size: 0.82rem;
+      font-weight: 500;
+    }
+    .nav-tabs .nav-link.active {
+      color: #14532d;
+      border-bottom-color: #22C55E;
+      font-weight: 600;
+      background: transparent;
+    }
+    .nav-tabs .nav-link:hover {
+      color: #1e293b;
+      border-bottom-color: #CBD5E1;
+    }
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main, .main-content { width: 100%; margin-left: 0; }
+      .kpi-grid, .grid-4, .row.g-3 { grid-template-columns: repeat(2, 1fr); }
+      .table-responsive { overflow-x: auto; }
+      .page-header-breadcrumb { padding: 12px 16px; }
+      .btn { font-size: 0.75rem; padding: 4px 10px; }
+    }
+    @media (max-width: 480px) {
+      .kpi-grid, .grid-4 { grid-template-columns: 1fr; }
+    }
     .sb-nav a.active {
       border-left: 3px solid #22C55E;
       border-radius: 0 7px 7px 0;
       padding-left: 7px;
     }
-    .nav-tabs .nav-link.active,
     .notification-tab.active {
       color: #22C55E !important;
       border-color: #22C55E !important;
@@ -369,6 +409,7 @@
     .upload-status {
       border: 1px solid currentColor;
       border-radius: 999px !important;
+      white-space: nowrap;
     }
     .status-badge,
     .status-pill,
@@ -554,6 +595,26 @@
     'COMPLETED': 'Completed', 'CANCELLED': 'Cancelled', 'REJECTED': 'Rejected',
     'APPLIED': 'Applied', 'IGNORED': 'Ignored', 'ACTIVE': 'Active', 'INACTIVE': 'Inactive'
   };
+  const ORDER_STATUS_LABELS = {
+    'COMPLETED': 'Collected', 'CANCELLED': 'Cancelled', 'EXPIRED': 'Pickup deadline missed',
+    'PENDING': 'Waiting for confirmation', 'CONFIRMED': 'Confirmed', 'READY': 'Ready for pickup'
+  };
+  const LOSS_TYPE_LABELS = { 'EXPIRY': 'Expired stock', 'DAMAGE': 'Damaged', 'OTHER': 'Other loss' };
+  const ROLE_LABELS = { 'STAFF': 'Staff', 'MANAGER': 'Manager', 'ADMIN': 'Admin' };
+  const LIFECYCLE_ACTION_LABELS = {
+    'RETAIN': 'Keep selling', 'MONITOR': 'Watch closely', 'DISCOUNT': 'Apply discount',
+    'CLEARANCE': 'Clearance sale', 'PHASE_OUT': 'Phase out', 'DISCONTINUE': 'Discontinue'
+  };
+  const BATCH_STATUS_LABELS = {
+    'ACTIVE': 'In stock', 'DEPLETED': 'Sold out', 'DISPOSED': 'Disposed', 'PENDING_EXPIRY': 'Needs expiry date'
+  };
+  const UPLOAD_TYPE_LABELS = {
+    'EXPORT': 'Report download', 'SUPPLIER_RETURN': 'Supplier return',
+    'SUPPLIER_INVOICE': 'Supplier invoice', 'DAILY_BILL': 'Daily bills', 'ITEM_SALES': 'Item-wise sales'
+  };
+  const REORDER_STATUS_LABELS = {
+    'ORDERED': 'Marked as ordered', 'PENDING': 'Not ordered yet', 'IGNORED': 'Ignored', 'AUTO_RESOLVED': 'Auto resolved'
+  };
   const TRANSACTION_LABELS = {
     'PURCHASE': 'Purchase', 'SALE_SYNC': 'Sale Sync', 'MANUAL_ADJUSTMENT': 'Manual Adjustment'
   };
@@ -565,6 +626,14 @@
   function displayLabel(labels, value) {
     const key = String(value ?? '').replaceAll(' ', '_');
     return labels[key] || String(value ?? '—');
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' +
+      d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
   }
 
   function formatMoney(amount) {
@@ -620,6 +689,13 @@
   }).observe(document.body, { childList: true, subtree: true });
 
   // ── SIDEBAR TOGGLE — persists collapsed/open state across pages ──
+  document.addEventListener('DOMContentLoaded', function() {
+    const activeItem = document.querySelector('.nav-item.active, .sidebar .active');
+    if (activeItem) {
+      activeItem.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  });
+
   (function() {
     const STORAGE_KEY = 'sidebar_collapsed';
     const toggles = document.querySelectorAll('#sbToggle, #sbToggleReopen');
@@ -746,6 +822,14 @@
       error.data = data;
       throw error;
     }
+    // Any save/update/delete can create a notification as a side effect (placing
+    // a reorder, adding a purchase, changing a product...). Re-check the bell
+    // shortly afterwards so the manager's own actions show up straight away.
+    // Notification calls themselves are handled by the bell, so skip those.
+    const method = String(options.method || 'GET').toUpperCase();
+    if (method !== 'GET' && !String(url).includes('/api/notifications/') && window.refreshNotificationCount) {
+      window.setTimeout(window.refreshNotificationCount, 400);
+    }
     if (response.status === 204) return null;
     return response.json();
   }
@@ -819,6 +903,26 @@
       return 'Just now';
     }
 
+    // Last unread total we showed. When it changes (new order, read on another
+    // tab, etc.) we tell every other widget on the page via 'notifications:changed'
+    // so the Dashboard card/list and the Notifications page stay in step with the bell.
+    let lastUnread = null;
+
+    function announceChange(unread) {
+      if (lastUnread !== null && unread !== lastUnread) {
+        const increased = unread > lastUnread;
+        if (increased) {
+          countBadge.classList.remove('is-ping');
+          void countBadge.offsetWidth; // restart the animation
+          countBadge.classList.add('is-ping');
+        }
+        document.dispatchEvent(new CustomEvent('notifications:changed', { detail: { unread: unread, previous: lastUnread, increased: increased } }));
+        // A new alert arrived while the dropdown is open — show it straight away.
+        if (increased && nav.classList.contains('is-open')) loadNotifications();
+      }
+      lastUnread = unread;
+    }
+
     function updateCounts(unreadOverride) {
       const unread = unreadOverride ?? notifications.filter(item => !item.is_read).length;
       countBadge.textContent = unread > 99 ? '99+' : unread;
@@ -830,6 +934,7 @@
       const dashBadge = document.getElementById('dashboardNavBadge');
       if (sidebarBadge) sidebarBadge.textContent = unread;
       if (dashBadge) dashBadge.textContent = unread;
+      announceChange(unread);
     }
 
     function renderNotifications() {
@@ -853,14 +958,24 @@
       }).join('');
     }
 
-    async function refreshUnreadCount() {
-      try {
-        const data = await notificationFetch('/api/notifications/?status=unread');
-        updateCounts(getNotificationArray(data).length);
-      } catch (error) {
-        console.error('refreshUnreadCount failed:', error);
-      }
+    // One shared "re-check the unread count" used by the bell, both sidebar
+    // badges and every page. Overlapping calls share a single request.
+    let unreadRequest = null;
+    function refreshUnreadCount() {
+      if (unreadRequest) return unreadRequest;
+      unreadRequest = (async function() {
+        try {
+          const data = await notificationFetch('/api/notifications/?status=unread');
+          updateCounts(getNotificationArray(data).length);
+        } catch (error) {
+          console.error('refreshUnreadCount failed:', error);
+        } finally {
+          unreadRequest = null;
+        }
+      })();
+      return unreadRequest;
     }
+    window.refreshNotificationCount = refreshUnreadCount;
 
     async function loadNotifications() {
       try {
@@ -929,8 +1044,14 @@
       }
     });
 
+    // Check every 15s while the tab is visible (a new online order shows up
+    // within seconds), and straight away when the manager comes back to the tab —
+    // browsers slow background-tab timers to about once a minute.
+    const NOTIFICATION_POLL_MS = 15000;
     refreshUnreadCount();
-    window.setInterval(refreshUnreadCount, 60000);
+    window.setInterval(function() { if (!document.hidden) refreshUnreadCount(); }, NOTIFICATION_POLL_MS);
+    document.addEventListener('visibilitychange', function() { if (!document.hidden) refreshUnreadCount(); });
+    window.addEventListener('focus', refreshUnreadCount);
   })();
 
   // ── SIDEBAR ALERT BADGES — shared across every dashboard page ──
@@ -943,19 +1064,15 @@
   // page load, regardless of which page-specific script is also loaded.
   // GET /api/notifications/ returns only unread notifications (API Design
   // Doc §21.2), so its length is exactly what both badges should show.
-  async function refreshSidebarAlertBadge() {
-    try {
-      const data = await apiFetch('/api/notifications/');
-      const count = Array.isArray(data) ? data.length : (data.count ?? (data.results ?? []).length);
-      const sidebarBadge = document.getElementById('sidebarAlertCount');
-      const dashBadge = document.getElementById('dashboardNavBadge');
-      if (sidebarBadge) sidebarBadge.innerText = count;
-      if (dashBadge) dashBadge.innerText = count;
-    } catch(e) {
-      console.error('refreshSidebarAlertBadge failed:', e);
-    }
+  //
+  // This used to run its own separate fetch that updated only the two sidebar
+  // badges, so after reading or dismissing on the Notifications page the bell
+  // kept the old number until its next poll. It now just asks the bell's shared
+  // refresh (see window.refreshNotificationCount above), which updates the bell
+  // AND both sidebar badges in one go. Page scripts keep calling this name.
+  function refreshSidebarAlertBadge() {
+    return window.refreshNotificationCount ? window.refreshNotificationCount() : Promise.resolve();
   }
-  refreshSidebarAlertBadge();
 </script>
 {% block extra_js %}{% endblock %}
 {% block page_scripts %}{% endblock %}

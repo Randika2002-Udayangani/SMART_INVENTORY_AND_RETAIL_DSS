@@ -164,7 +164,7 @@ async function loadDetail() {
 
         document.getElementById('sInvoice').textContent = p.invoice_number ?? '—';
         document.getElementById('sSupplier').textContent = p.supplier_name ?? '—';
-        document.getElementById('sDate').textContent = p.purchase_date ?? '—';
+        document.getElementById('sDate').textContent = formatDate(p.purchase_date);
         document.getElementById('sTotal').textContent = canSeeFinancials
             ? formatMoney(p.total_amount)
             : 'Restricted';
@@ -182,7 +182,7 @@ async function loadDetail() {
                     <td>${b.quantity_received ?? '—'}</td>
                     <td>${b.remaining_quantity ?? '—'}</td>
                     <td>${canSeeFinancials ? formatMoney(b.cost_price) : '<span class="restricted-cell">Restricted</span>'}</td>
-                    <td>${b.expiry_date ?? '—'}</td>
+                    <td>${formatDate(b.expiry_date)}</td>
                     <td>${daysLeftCell(b.expiry_date)}</td>
                     <td>${batchStatusBadge(b.status)}</td>
                 </tr>

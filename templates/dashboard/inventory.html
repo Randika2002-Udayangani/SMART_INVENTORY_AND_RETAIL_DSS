@@ -12,8 +12,6 @@
         .badge-available { background:#F0FDF4; color:#16A34A; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
         .badge-low { background:#FEFCE8; color:#CA8A04; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
         .badge-out { background:#FEF2F2; color:#DC2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
-        .nav-tabs .nav-link { color:var(--txt); }
         .table thead.table-light th { position:sticky; top:0; z-index:120; background:var(--card2); }
         .detail-modal {
         display: none;
@@ -387,7 +385,7 @@ async function loadUploadSummary() {
         target.innerHTML = uploads.map(u => {
             const status = (u.status || 'PENDING').toUpperCase();
             const statusClass = status === 'SUCCESS' ? 'upload-success' : 'upload-partial';
-            const date = u.upload_date ? new Date(u.upload_date).toLocaleString() : 'No upload yet';
+            const date = u.upload_date ? formatDate(u.upload_date) : 'No upload yet';
             const label = (u.upload_type || 'Unknown source').replaceAll('_', ' ');
             return `<div class="upload-item">
                 <div class="upload-icon"><i class="bi bi-cloud-arrow-up"></i></div>
@@ -482,7 +480,7 @@ async function viewDetail(productId) {
             <div class="table-scroll-wrap">
 <table class="table table-sm">
                 <thead><tr><th>Batch</th><th>Remaining</th><th>Expiry</th><th>Status</th></tr></thead>
-                <tbody>${batches.map(b => `<tr><td>${b.batch_id ?? b.id ?? '—'}</td><td>${b.remaining_quantity ?? '—'}</td><td>${b.expiry_date ?? '—'}</td><td>${b.status ?? '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="text-muted">No active batches found.</td></tr>'}</tbody>
+                <tbody>${batches.map(b => `<tr><td>${b.batch_id ?? b.id ?? '—'}</td><td>${b.remaining_quantity ?? '—'}</td><td>${formatDate(b.expiry_date)}</td><td>${displayLabel(BATCH_STATUS_LABELS, b.status)}</td></tr>`).join('') || '<tr><td colspan="4" class="text-muted">No active batches found.</td></tr>'}</tbody>
             </table>
 </div>
             <hr>

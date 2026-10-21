@@ -369,29 +369,29 @@
         <div class="sh">Inventory Health Score</div>
         <div class="ss">Composite 0–100 score · 4-band classification · triggered on-demand </div>
       </div>
-      <button class="calc-btn" onclick="runHealthCalculation(this)">&#9654; Run Health Calculation</button>
+      <button class="calc-btn" onclick="runHealthCalculation(this)">Update health scores</button>
     </div>
 
     <div class="health-bands" style="margin-bottom:16px;">
       <div class="hband hb-h">
         <div class="bl" data-health-label="HEALTHY"></div>
         <div class="bv" id="hbHealthy">—</div>
-        <div class="bs">Monitor normally</div>
+        <div class="bs">Healthy</div>
       </div>
       <div class="hband hb-w">
         <div class="bl" data-health-label="WATCH"></div>
         <div class="bv" id="hbWatch">—</div>
-        <div class="bs">Keep an eye on these</div>
+        <div class="bs">Needs Attention</div>
       </div>
       <div class="hband hb-a">
         <div class="bl" data-health-label="AT_RISK"></div>
         <div class="bv" id="hbAtRisk">—</div>
-        <div class="bs">Needs attention soon</div>
+        <div class="bs">At Risk</div>
       </div>
       <div class="hband hb-c">
         <div class="bl" data-health-label="CRITICAL"></div>
         <div class="bv" id="hbCritical">—</div>
-        <div class="bs">Immediate action required</div>
+        <div class="bs">Act Now</div>
       </div>
     </div>
 
@@ -432,7 +432,7 @@
 {% block page_scripts %}
 <script>
   document.getElementById('dateStr').textContent =
-    new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    formatDate(new Date().toISOString());
 
   Chart.defaults.color = '#64748B';
   Chart.defaults.font.family = "'Inter', sans-serif";
@@ -661,12 +661,23 @@
         `${counts.CRITICAL} ${PRIORITY_LABELS.CRITICAL} · ${counts.HIGH} ${PRIORITY_LABELS.HIGH} · ${counts.MEDIUM} ${PRIORITY_LABELS.MEDIUM}`;
       document.getElementById('activeAlertsUnread').innerText = data.length + ' unread';
       updateDashboardBars();
+      // The summary sentence quotes the "Act Now" count, which only exists once
+      // alerts have loaded — recompute it here so it never stays at 0.
+      updateDashboardSummary();
     } catch(e) {
       console.error('fetchNotifications failed:', e);
       document.getElementById('notificationBadge').innerText = 'Unavailable';
       showInlineError('notifList', 'Notifications could not be loaded.');
     }
   }
+
+  // Keep the alert banner, Active Alerts card, alerts list and Pending Orders
+  // card live: the bell (base.html) fires this whenever the unread count changes
+  // — a new online order, or something read/dismissed from the bell or another page.
+  document.addEventListener('notifications:changed', function() {
+    fetchNotifications();
+    fetchPendingOrders();
+  });
 
   async function fetchProfitSummary() {
     try {
@@ -823,7 +834,7 @@
       console.error('runHealthCalculation failed:', e);
       alert('Health calculation could not be completed.');
     }
-    btn.innerHTML = '&#9654; Run Health Calculation';
+    btn.innerHTML = 'Update health scores';
     btn.disabled = false;
   }
 

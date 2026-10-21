@@ -24,7 +24,7 @@
   .flag-btn { border: 1px solid var(--border); background: var(--card2); border-radius: 8px; padding: 12px; text-align: left; width: 100%; cursor: pointer; }
   .flag-btn:hover { border-color: var(--green2); }
   .quality-banner { background: #FFF7ED; border: 1px solid #FDBA74; color: #EA580C; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
-  .an-table-wrap { max-height: 65vh; overflow: auto; }
+  .summary-line { color: var(--txt); font-size: 0.9rem; margin: 0 0 16px; }
   .an-table thead th { position: sticky; top: 0; background: var(--card2) !important; z-index: 10; cursor: pointer; user-select: none; white-space: nowrap; }
   .an-table thead th.sortable:hover { color: var(--green2); }
   .an-table thead th .sort-arrow { font-size: 10px; opacity: .6; margin-left: 2px; }
@@ -114,6 +114,7 @@
 
 
 <!-- KPIs -->
+<p class="summary-line">Your store made <strong id="summaryProfit">—</strong> profit this period with a margin of <strong id="summaryMargin">—</strong>%.</p>
 <div id="anKpis" class="row g-3 mb-4"></div>
 
 <!-- Trend + Comparison -->
@@ -363,6 +364,10 @@
 
 
     const s = o.summary, c = o.changes;
+    $('summaryProfit').innerText = money(s.profit);
+    $('summaryMargin').innerText = s.margin_pct === null || s.margin_pct === undefined
+      ? '—'
+      : Number(s.margin_pct).toFixed(1);
     const cards = [
       ['Total Revenue', money(s.revenue), c.revenue_pct, 'vs previous period'],
       ['Cost (average-cost based)', money(s.cost), null, 'Weighted Average Cost'],

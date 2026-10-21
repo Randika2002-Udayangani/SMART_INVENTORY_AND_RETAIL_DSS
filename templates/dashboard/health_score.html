@@ -13,6 +13,7 @@
     .badge-atrisk { background:#FFF7ED; color:#EA580C; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
     .badge-critical { background:#FEF2F2; color:#DC2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
     .kpi-card { background:var(--card); border-radius:12px; padding:20px; border:1px solid var(--border); text-align:center; }
+    .kpi-card[role="button"] { cursor:pointer; }
     .kpi-val { font-size:28px; font-weight:700; color: var(--txt); }
     .kpi-lbl { font-size:12px; color:var(--muted); text-transform:uppercase; }
     .table thead.table-light th {
@@ -63,7 +64,7 @@
 {% block content %}
 <div class="page-header-breadcrumb">
   <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Decision Support</span><span>›</span><span class="current-page">Health Score</span></div>
-  <h1 class="page-title">Health Score</h1>
+  <h1 class="page-title">Health Score <span class="tooltip-icon" title="Healthy 70+, Needs Attention 55–70, At Risk 40–55, Act Now below 40">ⓘ</span></h1>
   <p class="page-subtitle">Evaluate stock health across products using the latest inventory signals.</p>
 </div>
 <div class="topbar">
@@ -73,7 +74,7 @@
     </div>
     <div>
         <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
-            <button class="btn btn-primary btn-sm" id="calcBtn" onclick="runCalculation()">▶ Run Health Calculation</button>
+            <button class="btn btn-primary btn-sm" id="calcBtn" onclick="runCalculation()">Update health scores</button>
             <small id="lastCalculatedLabel" class="text-muted">Last calculated: --</small>
         </div>
         <div class="mt-2 d-flex justify-content-end">
@@ -85,31 +86,31 @@
 <!-- Band Cards -->
 <div class="row g-3 mb-4">
     <div class="col-md-3">
-        <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#16A34A;" data-health-label="HEALTHY"></div>
+        <div class="kpi-card" role="button" tabindex="0" onclick="filterTable('HEALTHY')" onkeydown="if(event.key==='Enter'||event.key===' ') filterTable('HEALTHY')">
+            <div class="kpi-lbl" style="color:#16A34A;">Healthy</div>
             <div class="kpi-val" style="color:#16A34A;" id="countHealthy">0</div>
-            <small class="text-muted">Monitor normally</small>
+            <small class="text-muted">Healthy</small>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#CA8A04;" data-health-label="WATCH"></div>
+        <div class="kpi-card" role="button" tabindex="0" onclick="filterTable('WATCH')" onkeydown="if(event.key==='Enter'||event.key===' ') filterTable('WATCH')">
+            <div class="kpi-lbl" style="color:#CA8A04;">Needs Attention</div>
             <div class="kpi-val" style="color:#CA8A04;" id="countWatch">0</div>
-            <small class="text-muted">Keep an eye on these</small>
+            <small class="text-muted">Needs Attention</small>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#EA580C;" data-health-label="AT_RISK"></div>
+        <div class="kpi-card" role="button" tabindex="0" onclick="filterTable('AT RISK')" onkeydown="if(event.key==='Enter'||event.key===' ') filterTable('AT RISK')">
+            <div class="kpi-lbl" style="color:#EA580C;">At Risk</div>
             <div class="kpi-val" style="color:#F97316;" id="countAtRisk">0</div>
-            <small class="text-muted">Needs attention soon</small>
+            <small class="text-muted">At Risk</small>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#DC2626;" data-health-label="CRITICAL"></div>
+        <div class="kpi-card" role="button" tabindex="0" onclick="filterTable('CRITICAL')" onkeydown="if(event.key==='Enter'||event.key===' ') filterTable('CRITICAL')">
+            <div class="kpi-lbl" style="color:#DC2626;">Act Now</div>
             <div class="kpi-val" style="color:#DC2626;" id="countCritical">0</div>
-            <small class="text-muted">Immediate action required</small>
+            <small class="text-muted">Act Now</small>
         </div>
     </div>
 </div>
@@ -167,7 +168,7 @@
     <button class="btn btn-sm" style="border:1px solid #EA580C;color:#EA580C;" onclick="filterTable('AT RISK', this)">At Risk</button>
     <button class="btn btn-sm btn-outline-danger" onclick="filterTable('CRITICAL', this)">Act Now</button>
     <input type="text" id="productSearch" class="form-control form-control-sm ms-auto" style="max-width:260px;"
-           placeholder="Search product name or Product code..." oninput="handleSearchInput()">
+           placeholder="Search product…" autocomplete="off" oninput="handleSearchInput()">
 </div>
 
 <!-- Table -->
@@ -180,7 +181,7 @@
                     <th>Category</th>
                     <th>Sales speed <span class="tooltip-icon" title="How fast a product sells — units sold per day">ⓘ</span></th>
                     <th>Margin % <span class="tooltip-icon" title="Margin percentage — the share of each sale left after the product cost">ⓘ</span></th>
-                    <th>Expiry Risk</th>
+                    <th>Expiry safety <span class="tooltip-icon" title="100 = no expiry worries, 0 = expires very soon">ⓘ</span></th>
                     <th>Stock Duration</th>
                     <th>Overall Score</th>
                     <th>Status</th>
@@ -250,7 +251,7 @@ function statusBadge(s) {
 
 function numberCell(value) {
     const num = Number(value);
-    return Number.isFinite(num) ? num.toFixed(2) : '—';
+    return Number.isFinite(num) ? String(Math.round(num)) : '—';
 }
 
 function formatTimestamp(value) {
@@ -280,7 +281,12 @@ function setLastCalculatedLabel(rawValue, fallbackToNow = false) {
 function filterTable(filter, btn) {
     currentFilter = filter;
     document.querySelectorAll('#filterButtons button').forEach(b => b.classList.remove('active'));
-    if (btn) btn.classList.add('active');
+    const activeButton = btn || [...document.querySelectorAll('#filterButtons button')]
+        .find(button => button.textContent.trim() === ({
+            ALL: 'All', HEALTHY: 'Healthy', WATCH: 'Needs Attention',
+            'AT RISK': 'At Risk', CRITICAL: 'Act Now'
+        }[filter] || ''));
+    if (activeButton) activeButton.classList.add('active');
     hsPage = 1; // filter changed — back to page 1
     fetchHealthScorePage();
 }
@@ -350,11 +356,14 @@ async function showProductDetails(productId) {
             apiFetch(`/api/health-scores/history/${productId}/`)
         ]);
 
-        const field = (label, value, full = false) => `
+        const field = (label, value, full = false) => {
+            if (value === null || value === undefined || ['','—'].includes(String(value).trim())) return '';
+            return `
             <div class="hs-detail-item${full ? ' full' : ''}">
                 <div class="lbl">${escapeHtmlHs(label)}</div>
-                <div class="val">${escapeHtmlHs(value ?? '—')}</div>
+                <div class="val">${escapeHtmlHs(value)}</div>
             </div>`;
+        };
 
         document.getElementById('hsDetailsTitle').textContent = detail.product_name ?? 'Product Health Details';
 
@@ -386,10 +395,9 @@ async function showProductDetails(productId) {
                 ${field('Overall Score', `${numberCell(detail.overall_score)} (${displayLabel(HEALTH_LABELS, detail.status)})`)}
                 ${field('Sales speed', numberCell(detail.velocity_score))}
                 ${field('Margin %', numberCell(detail.margin_score))}
-                ${field('Expiry Risk', numberCell(detail.expiry_risk_score))}
+                ${field('Expiry safety', numberCell(detail.expiry_risk_score))}
                 ${field('Stock Duration', numberCell(detail.stock_duration_score))}
                 ${field('Rating Score', detail.rating_sufficient ? numberCell(detail.rating_score) : 'Not enough ratings yet')}
-                ${field('Weighting Mode', detail.weighting_mode)}
                 ${field('Recommended Action', detail.recommended_action, true)}
                 ${field('Calculated At', formatTimestamp(detail.calculated_at), true)}
             </div>
@@ -592,7 +600,7 @@ async function runCalculation() {
             '<tr><td colspan="10" class="text-center text-danger">Calculation failed. Please try again.</td></tr>';
     }
     document.querySelectorAll('#filterButtons button').forEach(b => b.disabled = false);
-    btn.innerHTML = '▶ Run Health Calculation';
+    btn.innerHTML = 'Update health scores';
     btn.disabled = false;
 }
 

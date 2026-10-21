@@ -88,12 +88,12 @@
         <label class="visually-hidden" for="lifecycleRecommendation">Filter by recommendation</label>
         <select class="form-select form-select-sm" id="lifecycleRecommendation">
           <option value="">All recommendations</option>
-          <option value="RETAIN">RETAIN</option>
-          <option value="MONITOR">MONITOR</option>
-          <option value="DISCOUNT">DISCOUNT</option>
-          <option value="CLEARANCE">CLEARANCE</option>
-          <option value="PHASE_OUT">PHASE_OUT</option>
-          <option value="DISCONTINUE">DISCONTINUE</option>
+          <option value="RETAIN">Keep selling</option>
+          <option value="MONITOR">Watch closely</option>
+          <option value="DISCOUNT">Apply discount</option>
+          <option value="CLEARANCE">Clearance sale</option>
+          <option value="PHASE_OUT">Phase out</option>
+          <option value="DISCONTINUE">Discontinue</option>
         </select>
       </div>
     </div>
@@ -185,7 +185,7 @@
       PHASE_OUT: '#FFF7ED;color:#EA580C', DISCONTINUE: '#FEF2F2;color:#DC2626'
     };
     const safeRecommendation = String(recommendation ?? '—');
-    return `<span class="pill" style="background:${map[safeRecommendation] || '#F1F5F9;color:#64748B'}">${escapeHtml(safeRecommendation)}</span>`;
+    return `<span class="pill" style="background:${map[safeRecommendation] || '#F1F5F9;color:#64748B'}">${escapeHtml(displayLabel(LIFECYCLE_ACTION_LABELS, safeRecommendation))}</span>`;
   }
 
   function showError(message) {
@@ -283,7 +283,7 @@
         <td>${statusBadge(result.lifecycle_status ?? result.status)}</td>
         <td>${recPill(result.recommendation)}</td>
         <td>${escapeHtml(result.sales_velocity)}</td>
-        <td>${escapeHtml(result.calculated_date)}</td>
+        <td>${escapeHtml(formatDate(result.calculated_date))}</td>
         ${thresholdCell}
       </tr>`;
     }).join('');
@@ -342,7 +342,7 @@
         </div>`;
       document.getElementById('historyBody').innerHTML = history.length ? history.map(record => `
         <tr>
-          <td>${escapeHtml(record.calculated_date)}</td>
+          <td>${escapeHtml(formatDate(record.calculated_date))}</td>
           <td>${escapeHtml(record.comparison_period)}</td>
           <td>${escapeHtml(record.sales_velocity)}</td>
           <td>${statusBadge(record.status)}</td>

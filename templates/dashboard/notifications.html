@@ -146,9 +146,10 @@
   <div class="topbar">
     <div>
       <h1>Notifications &amp; Alerts</h1>
-      <div class="sub">Unread staff notifications — CRITICAL / HIGH / MEDIUM</div>
+      <div class="sub">Unread staff notifications — Critical · High priority · Medium priority</div>
     </div>
     <div style="display:flex; gap:8px;">
+      <button onclick="markAllAsRead()" class="btn btn-sm btn-outline-success">Mark all as read</button>
       <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
         <i class="bi bi-box-arrow-right"></i> Logout
       </button>
@@ -274,9 +275,11 @@
 
   function populateTypeSelect() {
     const select = document.getElementById('typeSelect');
+    const current = select.value; // keep the manager's chosen type across background refreshes
     const types = [...new Set(allNotifications.map(n => n.type))].sort();
     select.innerHTML = '<option value="all">All types</option>' +
       types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+    if (current && [...select.options].some(option => option.value === current)) select.value = current;
   }
 
   function updateSummary() {
@@ -312,7 +315,9 @@
       return true;
     });
 
-    document.getElementById('listCount').innerText = `${rows.length} shown`;
+    const firstShown = rows.length ? (notifPage - 1) * notifPageSize + 1 : 0;
+    const lastShown = Math.min(notifPage * notifPageSize, rows.length);
+    document.getElementById('listCount').innerText = `Showing ${firstShown}–${lastShown} of ${rows.length}`;
 
     const body = document.getElementById('listBody');
     if (!rows.length) {
@@ -355,14 +360,18 @@
     renderList();
   }
 
-  async function loadNotifications() {
-    document.getElementById('listBody').innerHTML = `<div class="empty-state">Loading notifications...</div>`;
+  // silent = true is used for automatic background refreshes (a new alert arrived):
+  // no "Loading…" flash and the manager stays on the page they were reading.
+  async function loadNotifications(silent) {
+    if (silent !== true) {
+      document.getElementById('listBody').innerHTML = `<div class="empty-state">Loading notifications...</div>`;
+    }
     try {
       const data = await apiFetch(`/api/notifications/?status=${statusTab}`);
       allNotifications = Array.isArray(data) ? data : [];
       populateTypeSelect();
       updateSummary();
-      notifPage = 1; // fresh data — back to page 1
+      if (silent !== true) notifPage = 1; // fresh data — back to page 1
       renderList();
       refreshSidebarAlertBadge(); // keep the shared badges in sync with the true unread count
     } catch (e) {
@@ -382,6 +391,18 @@
     } catch (e) {
       console.error('markRead failed:', e);
       alert('Could not mark notification as read.');
+    }
+
+    async function markAllAsRead() {
+      const unread = allNotifications.filter(notification => !notification.is_read);
+      try {
+        await Promise.all(unread.map(notification =>
+          apiFetch(`/api/notifications/${notification.id}/read/`, { method: 'PATCH' })));
+        await loadNotifications();
+      } catch (e) {
+        console.error('markAllAsRead failed:', e);
+        alert('Could not mark all notifications as read.');
+      }
     }
   }
 
@@ -416,9 +437,9 @@
         <div class="detail-row"><span class="dk">Type</span><span class="dv">${escapeHtml(n.type)}</span></div>
         <div class="detail-row"><span class="dk">Message</span><span class="dv" style="text-align:left;max-width:60%;font-family:'Inter',sans-serif;">${escapeHtml(n.message || '—')}</span></div>
         <div class="detail-row"><span class="dk">Reference</span><span class="dv">${escapeHtml(n.reference_table || '—')} #${n.reference_id ?? '—'}</span></div>
-        <div class="detail-row"><span class="dk">Created</span><span class="dv">${new Date(n.created_at).toLocaleString('en-GB')}</span></div>
-        <div class="detail-row"><span class="dk">Read</span><span class="dv">${n.is_read ? 'Yes — ' + new Date(n.read_at).toLocaleString('en-GB') : 'No'}</span></div>
-        ${n.expires_at ? `<div class="detail-row"><span class="dk">Expires</span><span class="dv">${new Date(n.expires_at).toLocaleString('en-GB')}</span></div>` : ''}
+        <div class="detail-row"><span class="dk">Created</span><span class="dv">${formatDate(n.created_at)}</span></div>
+        <div class="detail-row"><span class="dk">Read</span><span class="dv">${n.is_read ? 'Yes — ' + formatDate(n.read_at) : 'No'}</span></div>
+        ${n.expires_at ? `<div class="detail-row"><span class="dk">Expires</span><span class="dv">${formatDate(n.expires_at)}</span></div>` : ''}
         ${n.type === 'PRICE_REVIEW' && n.reference_table === 'product' && n.reference_id ? `<div class="mt-3 text-end"><a class="btn btn-sm btn-outline-primary" href="/dashboard/products/?edit=${encodeURIComponent(n.reference_id)}"><i class="bi bi-pencil-square"></i> Open Products</a></div>` : ''}
       `;
       document.getElementById('modalReadBtn').style.display = n.is_read ? 'none' : 'inline-block';
@@ -441,6 +462,10 @@
     bootstrap.Modal.getOrCreateInstance(document.getElementById('detailModal')).hide();
     await dismiss(id);
   }
+
+  // A new alert arrived (e.g. a customer placed an order), or something was read
+  // from the bell: refresh the list quietly so the page matches the bell.
+  document.addEventListener('notifications:changed', function() { loadNotifications(true); });
 
   fetchCurrentUser();
   loadNotifications();

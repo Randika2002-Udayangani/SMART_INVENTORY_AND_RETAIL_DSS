@@ -61,9 +61,9 @@
       <option value="PENDING">Pending</option>
       <option value="CONFIRMED">Confirmed</option>
       <option value="READY">Ready</option>
-      <option value="COMPLETED">COMPLETED</option>
-      <option value="CANCELLED">CANCELLED</option>
-      <option value="EXPIRED">EXPIRED</option>
+      <option value="COMPLETED">Collected</option>
+      <option value="CANCELLED">Cancelled</option>
+      <option value="EXPIRED">Pickup deadline missed</option>
     </select>
     <input id="dateFromFilter" class="form-control form-control-sm" style="width:160px;" type="date" onchange="loadOrders()">
     <input id="dateToFilter" class="form-control form-control-sm" style="width:160px;" type="date" onchange="loadOrders()">
@@ -121,10 +121,10 @@
 
   function showError(message) { const el = document.getElementById('errorState'); el.innerText = message; el.hidden = false; }
   function clearError() { document.getElementById('errorState').hidden = true; }
-  function displayDate(value) { return value ? escapeHtml(String(value).slice(0, 10)) : '—'; }
+  function displayDate(value) { return escapeHtml(formatDate(value)); }
   function money(value) { return value == null ? '—' : formatMoney(value); }
   function statusBadge(value) {
-    return `<span class="badge bg-secondary">${escapeHtml(displayLabel(STATUS_LABELS, value))}</span>`;
+    return `<span class="badge bg-secondary">${escapeHtml(displayLabel(ORDER_STATUS_LABELS, value))}</span>`;
   }
   function loadOrdersDebounced() { clearTimeout(searchTimer); searchTimer = setTimeout(loadOrders, 250); }
 

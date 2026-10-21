@@ -63,9 +63,9 @@
     <select id="statusFilter" class="form-select form-select-sm" style="width:160px;" onchange="handleReorderFilterChange()">
       <option value="">All Status</option>
       <option value="PENDING">Pending</option>
-      <option value="ORDERED">ORDERED</option>
-      <option value="IGNORED">IGNORED</option>
-      <option value="AUTO_RESOLVED">AUTO_RESOLVED</option>
+      <option value="ORDERED">Marked as ordered</option>
+      <option value="IGNORED">Ignored</option>
+      <option value="AUTO_RESOLVED">Auto resolved</option>
     </select>
   </div>
 
@@ -191,7 +191,7 @@
         <td>${escapeHtml(recommendation.safety_stock)}</td>
         <td>${escapeHtml(recommendation.suggested_quantity)}</td>
         <td>${urgencyBadge(recommendation.urgency)}</td>
-        <td><span class="badge bg-secondary">${escapeHtml(recommendation.status)}</span></td>
+        <td><span class="badge bg-secondary">${escapeHtml(displayLabel(REORDER_STATUS_LABELS, recommendation.status))}</span></td>
         <td class="action-cell">${renderActionCell(recommendation)}</td>
       </tr>
     `).join('');
