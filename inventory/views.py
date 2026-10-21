@@ -1,8 +1,7 @@
-from datetime import date, timedelta  
+from datetime import date, datetime, timedelta
 import csv
 import io
 import re
-from datetime import datetime
 from zoneinfo import ZoneInfo
 from users.permissions import IsManagerOrAdmin  
 from decimal import Decimal
@@ -38,17 +37,9 @@ from sales.models import UploadLog
 from inventory.services.reorder_logic import get_urgency
 from inventory.services.fefo import deduct_stock_fefo
 from inventory.services.stock import get_sellable_batches
-
-from inventory.services.stock import get_sellable_batches
 from inventory.services.reorder_logic import check_reorder_needs
 
 from orders.models import Notification
-
-from datetime import date
-#   from inventory.services.reorder_logic import check_reorder_needs
-
-
-from django.utils import timezone as dj_timezone
 
 from django.utils import timezone as dj_timezone
 from core.utils import get_last_sync_date, get_latest_sync_uploads
@@ -377,7 +368,6 @@ class ProductStockDetailView(APIView):
                             status=status.HTTP_404_NOT_FOUND)
 
         batches = get_sellable_batches(product.id).order_by('expiry_date')
-        batches     = get_sellable_batches(product.id).order_by('expiry_date')
         total_stock = batches.aggregate(
             total=Sum('remaining_quantity'))['total'] or 0
 

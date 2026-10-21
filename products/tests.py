@@ -2,15 +2,16 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
 from inventory.models import DiscountRecommendation
 from purchases.models import Purchase, PurchaseBatch
 from suppliers.models import Supplier
 
-from .models import Product
-from .serializers import ProductPublicSerializer
+from .models import Brand, Category, Product
 
 
 class ProductDiscountSerializerTests(TestCase):
@@ -50,10 +51,13 @@ class ProductDiscountSerializerTests(TestCase):
 			status='PENDING',
 		)
 
-		data = ProductPublicSerializer(self.product).data
+		response = APIClient().get(f'/api/products/{self.product.id}/')
+		self.assertEqual(response.status_code, 200)
+		data = response.data
 
 		self.assertEqual(data['discounted_price'], Decimal('75.00'))
 		self.assertEqual(data['discount_percentage'], Decimal('25.00'))
+		self.assertEqual(data['discount']['price'], 75.0)
 
 	def test_ignored_discount_is_not_exposed(self):
 		DiscountRecommendation.objects.create(
@@ -70,10 +74,40 @@ class ProductDiscountSerializerTests(TestCase):
 			status='IGNORED',
 		)
 
-		data = ProductPublicSerializer(self.product).data
+		response = APIClient().get(f'/api/products/{self.product.id}/')
+		self.assertEqual(response.status_code, 200)
+		data = response.data
 
 		self.assertIsNone(data['discounted_price'])
 		self.assertIsNone(data['discount_percentage'])
+
+	def test_public_product_list_query_count_does_not_grow_per_product(self):
+		category = Category.objects.create(category_name='Performance Test')
+		brand = Brand.objects.create(brand_name='Performance Test')
+		self.product.category = category
+		self.product.brand = brand
+		self.product.save(update_fields=['category', 'brand'])
+		client = APIClient()
+
+		with CaptureQueriesContext(connection) as one_product_queries:
+			response = client.get('/api/products/?page_size=100')
+		self.assertEqual(response.status_code, 200)
+
+		Product.objects.bulk_create([
+			Product(
+				product_name=f'Performance Product {index}',
+				unit_price=Decimal('10.00'),
+				cost_price=Decimal('5.00'),
+				category=category,
+				brand=brand,
+			)
+			for index in range(59)
+		])
+
+		with CaptureQueriesContext(connection) as many_product_queries:
+			response = client.get('/api/products/?page_size=100')
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(len(many_product_queries), len(one_product_queries))
 
 
 class ProductAvailabilityRestockTests(TestCase):
@@ -114,10 +148,9 @@ class ProductAvailabilityRestockTests(TestCase):
 		self.assertEqual(response.data['status'], 'AVAILABLE')
 		self.assertEqual(response.data['stock'], 12)
 		self.assertEqual(response.data['earliest_expiry'], expiry_date.isoformat())
-		self.assertEqual(
-			ProductPublicSerializer(product).data['expiry_date'],
-			expiry_date.isoformat(),
-		)
+		product_response = APIClient().get(f'/api/products/{product.id}/')
+		self.assertEqual(product_response.status_code, 200)
+		self.assertEqual(product_response.data['expiry_date'], expiry_date.isoformat())
 
 		client = APIClient()
 		client.force_authenticate(
@@ -164,4 +197,6 @@ class ProductAvailabilityRestockTests(TestCase):
 		self.assertEqual(response.data['status'], 'LIMITED_STOCK')
 		self.assertEqual(response.data['stock'], 9)
 		self.assertIsNone(response.data['earliest_expiry'])
-		self.assertEqual(ProductPublicSerializer(product).data['expiry_date'], None)
+		product_response = APIClient().get(f'/api/products/{product.id}/')
+		self.assertEqual(product_response.status_code, 200)
+		self.assertIsNone(product_response.data['expiry_date'])

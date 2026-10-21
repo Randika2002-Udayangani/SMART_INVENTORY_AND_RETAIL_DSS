@@ -96,7 +96,8 @@ class OnlineReconciliationTests(TestCase):
             format='json',
         )
         force_authenticate(request, user=self.customer)
-        response = OrderListCreateView.as_view()(request)
+        with mock.patch('orders.views.timezone.now', return_value=pickup_on(date.today())):
+            response = OrderListCreateView.as_view()(request)
         assert response.status_code == 201, response.data
         return OnlineOrder.objects.get(order_reference=response.data['order_reference'])
 
