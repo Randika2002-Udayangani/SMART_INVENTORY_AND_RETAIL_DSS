@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Orders | SmartDeals</title>
+    <title>My Orders | Samanala Super Mart</title>
     <link rel="stylesheet" href="{% static 'css/logout-confirm.css' %}">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -12,7 +12,7 @@
 
         /* ── Nav ── */
         nav {
-            background: #2d6a4f; padding: 14px 24px;
+            background: linear-gradient(135deg, #0f3d3e 0%, #2d6a4f 100%); padding: 14px 24px;
             display: flex; justify-content: space-between; align-items: center;
         }
         nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
@@ -258,7 +258,7 @@
             box-shadow: 0 8px 32px rgba(0,0,0,0.2);
         }
         .order-modal-header {
-            background: #2d6a4f; padding: 20px 24px;
+            background: linear-gradient(135deg, #0f3d3e 0%, #2d6a4f 100%); padding: 20px 24px;
             border-radius: 16px 16px 0 0;
             display: flex; justify-content: space-between; align-items: center;
         }
@@ -317,7 +317,7 @@
 
 <!-- Nav -->
 <nav>
-    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <a class="brand" href="/customer/products/">🛒 Samanala Super Mart</a>
     <div class="nav-links"  id="navLinks">
         <a href="/customer/products/">Products</a>
         <a href="/customer/chatbot/">Chat with Us</a>
@@ -431,15 +431,22 @@
 
         // Build items list
         const itemsHTML = o.items && o.items.length > 0
-            ? o.items.map(item => `
-                <div class="order-item-row">
-                    <span class="order-item-name">
-                        ${item.product_name || item.name || item.product} × ${item.quantity}
-                    </span>
-                    <span class="order-item-price">
-                        Rs ${parseFloat((item.unit_price || 0) * item.quantity).toFixed(2)}
-                    </span>
-                </div>`).join('')
+            ? o.items.map(item => {
+                const quantity = Number(item.quantity) || 0;
+                const unitPrice = Number(item.unit_price) || 0;
+                const originalUnitPrice = Number(item.original_unit_price) || unitPrice;
+                const discounted = originalUnitPrice > unitPrice;
+                return `
+                    <div class="order-item-row">
+                        <span class="order-item-name">
+                            ${item.product_name || item.name || item.product} × ${quantity}
+                        </span>
+                        <span class="order-item-price">
+                            ${discounted ? `<span style="color:#888;text-decoration:line-through;font-size:0.85em;margin-right:6px;">Rs ${(originalUnitPrice * quantity).toFixed(2)}</span>` : ''}
+                            Rs ${(unitPrice * quantity).toFixed(2)}
+                        </span>
+                    </div>`;
+            }).join('')
             : `<div class="order-item-row">
                     <span class="order-item-name">${o.product || 'Products'}</span>
                     <span class="order-item-price">${o.total || ''}</span>
@@ -723,19 +730,34 @@
                 const orders = await res.json();
 
                 if (orders.length > 0) {
+                    const savedOrders = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
+                    const savedOrdersByReference = new Map(
+                        savedOrders.map(order => [order.ref || order.order_reference, order])
+                    );
                     const mapped = orders.map(o => {
+                        const savedOrder = savedOrdersByReference.get(o.order_reference);
                         // ── Find rating from items ──
                         // rating is a dict: {rating: 5, feedback_text: ""}
-                        const ratedItem = o.items
-                            ? o.items.find(i => i.rating !== null && i.rating !== undefined)
+                        const items = (o.items || []).map(item => {
+                            const savedItem = savedOrder?.displayItems?.find(saved =>
+                                Number(saved.product_id) === Number(item.product_id ?? item.product)
+                            );
+                            return savedItem ? {
+                                ...item,
+                                original_unit_price: item.unit_price,
+                                unit_price: savedItem.unit_price
+                            } : item;
+                        });
+                        const ratedItem = items.length
+                            ? items.find(i => i.rating !== null && i.rating !== undefined)
                             : null;
                         const ratingValue = ratedItem?.rating?.rating || null;
 
                         // ── Get first product ID ──
-                        const firstItem   = o.items && o.items.length > 0 ? o.items[0] : null;
-                        const productId   = firstItem ? parseInt(firstItem.product_id) : null;
-                        const productName = o.items
-                            ? o.items.map(i => i.product_name).join(', ')
+                        const firstItem   = items.length > 0 ? items[0] : null;
+                        const productId   = firstItem ? parseInt(firstItem.product_id ?? firstItem.product) : null;
+                        const productName = items.length
+                            ? items.map(i => i.product_name).join(', ')
                             : 'Order';
 
                         return {
@@ -743,13 +765,13 @@
                             ref:        o.order_reference,
                             product:    productName,
                             product_id: productId,
-                            items:      o.items || [],
+                            items,
                             rating:     ratingValue,
                             rating_count: o.items ? o.items.filter(i => i.rating).length : 0,
-                            qty:        o.items
-                                ? o.items.reduce((s, i) => s + i.quantity, 0)
+                            qty:        items.length
+                                ? items.reduce((s, i) => s + i.quantity, 0)
                                 : 1,
-                            total:      `Rs ${parseFloat(o.total_amount || 0).toFixed(2)}`,
+                            total:      savedOrder?.total || `Rs ${parseFloat(o.total_amount || 0).toFixed(2)}`,
                             date:       o.pickup_date,
                             slot:       o.pickup_time_slot,
                             status:     o.status,

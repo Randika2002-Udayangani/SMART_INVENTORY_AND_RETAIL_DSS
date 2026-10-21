@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register</title>
+    <title>Register | Samanala Super Mart</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -39,13 +39,14 @@
         .btn:disabled { background: #aaa; cursor: not-allowed; }
         .error-msg { color: #d32f2f; font-size: 0.88rem; margin-bottom: 12px; text-align: center; display: none; }
         .success-msg { color: #2e7d32; font-size: 0.88rem; margin-bottom: 12px; text-align: center; display: none; }
+        .password-hint { display: block; margin: -12px 0 16px; color: #667085; font-size: 0.82rem; }
         .login-link { text-align: center; margin-top: 18px; font-size: 0.9rem; color: #666; }
         .login-link a { color: #2d6a4f; text-decoration: none; }
     </style>
 </head>
 <body>
 <div class="card">
-    <h2>🛒 SmartDeals</h2>
+    <h2>🛒 Samanala Super Mart</h2>
     <p class="subtitle">Create your account</p>
 
     <div class="error-msg" id="errorMsg"></div>
@@ -58,7 +59,8 @@
     <input type="email" id="email" placeholder="you@email.com">
 
     <label>Password</label>
-    <input type="password" id="password" placeholder="Min 6 characters">
+    <input type="password" id="password" placeholder="At least 8 characters" minlength="8">
+    <small class="password-hint">Use a password with at least 8 characters.</small>
 
     <label>Confirm Password</label>
     <input type="password" id="confirmPassword" placeholder="Repeat your password">
@@ -84,8 +86,8 @@
         if (password !== confirmPassword) {
             showError('Passwords do not match.'); return;
         }
-        if (password.length < 6) {
-            showError('Password must be at least 6 characters.'); return;
+        if (password.length < 8) {
+            showError('Password must be at least 8 characters.'); return;
         }
 
         btn.disabled    = true;

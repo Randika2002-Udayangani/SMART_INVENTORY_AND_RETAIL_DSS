@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Cart | SmartDeals</title>
+    <title>My Cart | Samanala Super Mart</title>
     <link rel="stylesheet" href="{% static 'css/logout-confirm.css' %}">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; }
 
         nav {
-            background: #2d6a4f; padding: 14px 24px;
+            background: linear-gradient(135deg, #0f3d3e 0%, #2d6a4f 100%); padding: 14px 24px;
             display: flex; justify-content: space-between; align-items: center;
         }
         nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
@@ -190,7 +190,7 @@
 <body>
 
 <nav>
-    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <a class="brand" href="/customer/products/">🛒 Samanala Super Mart</a>
     <div class="nav-links" id="navLinks"></div>
 </nav>
 
@@ -251,6 +251,42 @@
     function updateClearCartButton(cart) {
         const button = document.getElementById('clearCartBtn');
         if (button) button.style.display = cart.length > 0 ? 'inline-flex' : 'none';
+    }
+
+    async function refreshCartDiscountPrices() {
+        const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
+        if (!cart.length) return;
+
+        try {
+            const response = await fetch('/api/discounts/public/', {
+                headers: token ? { Authorization: 'Bearer ' + token } : {}
+            });
+            if (!response.ok) throw new Error('Discount prices could not be loaded');
+
+            const data = await response.json();
+            const discounts = Array.isArray(data) ? data : (data.results || []);
+            const priceByProduct = new Map();
+            discounts.forEach((discount) => {
+                const productId = Number(discount.product_id ?? discount.product);
+                const recommendedPrice = Number(discount.recommended_price);
+                if (Number.isFinite(productId) && Number.isFinite(recommendedPrice)) {
+                    priceByProduct.set(productId, recommendedPrice);
+                }
+            });
+
+            let changed = false;
+            cart.forEach((item) => {
+                const productId = Number(item.product_id ?? item.id);
+                const recommendedPrice = priceByProduct.get(productId);
+                if (recommendedPrice !== undefined && Number(item.price) !== recommendedPrice) {
+                    item.price = recommendedPrice;
+                    changed = true;
+                }
+            });
+            if (changed) sessionStorage.setItem('cart', JSON.stringify(cart));
+        } catch (error) {
+            console.error('Unable to refresh cart discount prices:', error);
+        }
     }
 
     function clearCart() {
@@ -674,6 +710,12 @@
             product: cart.map(i => i.product_name).join(', '),
             qty:     cart.reduce((s, i) => s + i.qty, 0),
             total:   `Rs ${total.toFixed(2)}`,
+            displayItems: cart.map(item => ({
+                product_id: item.product_id || item.id,
+                product_name: item.product_name,
+                quantity: item.qty,
+                unit_price: parseFloat(item.price)
+            })),
             date:    document.getElementById('pickupDate').value,
             slot:    selectedSlot,
             status:  'PENDING'
@@ -702,7 +744,7 @@
 
     
     buildNav();
-    renderCart();
+    refreshCartDiscountPrices().finally(renderCart);
 </script>
 <script src="{% static 'js/logout-confirm.js' %}"></script>
 

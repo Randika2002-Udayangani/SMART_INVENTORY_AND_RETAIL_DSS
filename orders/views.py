@@ -74,6 +74,11 @@ class CustomerRegisterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if len(password) < 8:
+            return Response(
+                {"error": "Password must be at least 8 characters"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if Customer.objects.filter(email=email).exists():
 
@@ -311,8 +316,8 @@ class CustomerChangePasswordView(APIView):
 
         if not old_password or not new_password:
             return Response({'error': 'old_password and new_password are required'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(new_password) < 6:
-            return Response({'error': 'New password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(new_password) < 8:
+            return Response({'error': 'New password must be at least 8 characters'}, status=status.HTTP_400_BAD_REQUEST)
         if not check_password(old_password, c.password_hash):
             return Response({'error': 'old_password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
 

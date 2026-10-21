@@ -4,6 +4,9 @@ from django.http import HttpResponse
 def customer_home(request):
     return render(request, 'customer/products.html')
 
+def landing_page(request):
+    return render(request, 'customer/landing.html')
+
 def product_list(request):
     return render(request, 'customer/products.html')
 

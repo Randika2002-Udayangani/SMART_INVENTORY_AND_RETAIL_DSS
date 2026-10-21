@@ -22,6 +22,8 @@ from orders.services.gemini import DEFAULT_GEMINI_MODEL, GeminiProvider, GeminiQ
 from orders.views import (
     ChatbotQueryView,
     ChatbotSessionDetailView,
+    CustomerChangePasswordView,
+    CustomerRegisterView,
     OrderListCreateView,
     _is_pickup_slot_available,
 )
@@ -79,6 +81,50 @@ class PickupSlotAvailabilityTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('pickup time has passed', response.data['error'])
+
+
+class CustomerPasswordMinimumTests(TestCase):
+    def test_registration_requires_at_least_eight_characters(self):
+        factory = APIRequestFactory()
+        register = CustomerRegisterView.as_view()
+
+        short_request = factory.post(
+            '/api/customer-auth/register/',
+            {'name': 'Test Customer', 'email': 'short@example.com', 'password': '1234567'},
+            format='json',
+        )
+        short_response = register(short_request)
+        self.assertEqual(short_response.status_code, 400)
+        self.assertIn('8 characters', short_response.data['error'])
+
+        valid_request = factory.post(
+            '/api/customer-auth/register/',
+            {'name': 'Test Customer', 'email': 'valid@example.com', 'password': '12345678'},
+            format='json',
+        )
+        valid_response = register(valid_request)
+        self.assertEqual(valid_response.status_code, 201)
+        self.assertTrue(Customer.objects.filter(email='valid@example.com').exists())
+
+    def test_change_password_rejects_passwords_shorter_than_eight_characters(self):
+        from django.contrib.auth.hashers import make_password
+
+        customer = Customer.objects.create(
+            name='Password Test Customer',
+            email='password-test@example.com',
+            password_hash=make_password('current-password'),
+        )
+        request = APIRequestFactory().post(
+            '/api/customer-auth/change-password/',
+            {'old_password': 'current-password', 'new_password': '1234567'},
+            format='json',
+        )
+        force_authenticate(request, user=customer)
+
+        response = CustomerChangePasswordView.as_view()(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('8 characters', response.data['error'])
 
 
 class ChatbotAgentTests(TestCase):

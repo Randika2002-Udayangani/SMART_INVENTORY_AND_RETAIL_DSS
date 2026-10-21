@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Profile | SmartDeals</title>
+    <title>My Profile | Samanala Super Mart</title>
     <link rel="stylesheet" href="{% static 'css/logout-confirm.css' %}">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; }
 
         nav {
-            background: #2d6a4f; padding: 14px 24px;
+            background: linear-gradient(135deg, #0f3d3e 0%, #2d6a4f 100%); padding: 14px 24px;
             display: flex; justify-content: space-between; align-items: center;
         }
         nav .brand { color: white; font-size: 1.2rem; font-weight: bold; text-decoration: none; }
@@ -29,7 +29,7 @@
         }
 
         .profile-header {
-            background: #2d6a4f; padding: 24px;
+            background: linear-gradient(135deg, #0f3d3e 0%, #2d6a4f 100%); padding: 24px;
             text-align: center; color: white;
         }
         .profile-header .avatar {
@@ -64,6 +64,14 @@
 
         .success-msg { color: #1e7e34; font-size: 0.88rem; margin-bottom: 12px; display: none; text-align: center; }
         .error-msg { color: #c5221f; font-size: 0.88rem; margin-bottom: 12px; display: none; text-align: center; }
+        .password-section { border-top: 1px solid #e5e7eb; margin-top: 24px; padding-top: 22px; }
+        .password-section h3 { color: #0f3d3e; font-size: 1.05rem; margin-bottom: 6px; }
+        .password-section p { color: #667085; font-size: 0.86rem; margin-bottom: 16px; }
+        .password-hint { display: block; margin-top: 6px; margin-bottom: 16px; color: #667085; font-size: 0.82rem; }
+        .password-message { display: none; font-size: 0.88rem; margin-bottom: 12px; text-align: center; }
+        .password-message.success { color: #1e7e34; }
+        .password-message.error { color: #c5221f; }
+        .password-btn:disabled { opacity: 0.65; cursor: wait; }
 
         @media (max-width: 480px) {
             nav .nav-links a { margin-left: 10px; font-size: 0.82rem; }
@@ -73,7 +81,7 @@
 <body>
 
 <nav>
-    <a class="brand" href="/customer/products/">🛒 SmartDeals</a>
+    <a class="brand" href="/customer/products/">🛒 Samanala Super Mart</a>
     <div class="nav-links"  id="navLinks">
         <a href="/customer/products/">Products</a>
         <a href="/customer/chatbot/">Chat with Us</a>
@@ -87,7 +95,6 @@
         <div class="profile-header">
             <div class="avatar">👤</div>
             <h2 id="headerName">My Profile</h2>
-            <p id="headerEmail">Loading...</p>
         </div>
 
         <div class="profile-body">
@@ -111,6 +118,27 @@
                 <button class="edit-btn" id="editBtn" onclick="toggleEdit()">Edit Profile</button>
                 <button class="cancel-btn" id="cancelBtn" onclick="cancelEdit()" style="display:none">Cancel</button>
             </div>
+
+            <section class="password-section" aria-labelledby="changePasswordHeading">
+                <h3 id="changePasswordHeading">Change Password</h3>
+                <p>Choose a new password with at least 8 characters.</p>
+                <div class="password-message success" id="passwordSuccessMsg" role="status"></div>
+                <div class="password-message error" id="passwordErrorMsg" role="alert"></div>
+                <div class="form-group">
+                    <label for="currentPassword">Current Password</label>
+                    <input type="password" id="currentPassword" autocomplete="current-password">
+                </div>
+                <div class="form-group">
+                    <label for="newPassword">New Password</label>
+                    <input type="password" id="newPassword" minlength="8" autocomplete="new-password">
+                    <small class="password-hint">At least 8 characters.</small>
+                </div>
+                <div class="form-group">
+                    <label for="confirmNewPassword">Confirm New Password</label>
+                    <input type="password" id="confirmNewPassword" minlength="8" autocomplete="new-password">
+                </div>
+                <button class="edit-btn password-btn" id="changePasswordBtn" type="button" onclick="changePassword()">Update Password</button>
+            </section>
         </div>
     </div>
 </div>
@@ -123,6 +151,11 @@
 
     if (!token) window.location.href = '/customer/login/';
 
+    function formatCustomerName(name) {
+        return (name || '').trim().split(/\s+/).filter(Boolean)
+            .map(part => part.charAt(0).toLocaleUpperCase() + part.slice(1).toLocaleLowerCase())
+            .join(' ');
+    }
 
     // ── Dynamic nav bar ──────────────────────────────────────────
     function buildNav() {
@@ -161,14 +194,14 @@
 
             if (res.ok) {
                 const data = await res.json();
-                original = data;
+                const displayName = formatCustomerName(data.name);
+                original = { ...data, name: displayName };
 
-                document.getElementById('name').value           = data.name           || '';
+                document.getElementById('name').value           = displayName;
                 document.getElementById('email').value          = data.email          || '';
                 document.getElementById('phone').value          = data.contact_number || '';
 
-                document.getElementById('headerName').textContent  = data.name  || 'Customer';
-                document.getElementById('headerEmail').textContent = data.email || '';
+                document.getElementById('headerName').textContent = displayName || 'Customer';
             }
         } catch (err) {
             console.error('Profile load error:', err);
@@ -224,10 +257,11 @@
                 document.getElementById('email').value = data.email          || email;
                 document.getElementById('phone').value = data.contact_number || contact_number;
 
-                document.getElementById('headerName').textContent  = data.name  || name;
-                document.getElementById('headerEmail').textContent = data.email || email;
+                const displayName = formatCustomerName(data.name || name);
+                document.getElementById('name').value = displayName;
+                document.getElementById('headerName').textContent = displayName;
 
-                sessionStorage.setItem('customerName', data.name || name);
+                sessionStorage.setItem('customerName', displayName);
 
                 showSuccess('Profile updated successfully!');
                 cancelEdit();
@@ -248,6 +282,65 @@
     function showError(msg) {
         const el = document.getElementById('errorMsg');
         el.textContent = msg; el.style.display = 'block';
+    }
+
+    function showPasswordMessage(type, message) {
+        const success = document.getElementById('passwordSuccessMsg');
+        const error = document.getElementById('passwordErrorMsg');
+        success.style.display = 'none';
+        error.style.display = 'none';
+        const target = type === 'success' ? success : error;
+        target.textContent = message;
+        target.style.display = 'block';
+    }
+
+    async function changePassword() {
+        const oldPassword = document.getElementById('currentPassword').value;
+        const newPassword = document.getElementById('newPassword').value;
+        const confirmPassword = document.getElementById('confirmNewPassword').value;
+        const button = document.getElementById('changePasswordBtn');
+
+        document.getElementById('passwordSuccessMsg').style.display = 'none';
+        document.getElementById('passwordErrorMsg').style.display = 'none';
+        if (!oldPassword || !newPassword || !confirmPassword) {
+            showPasswordMessage('error', 'Please complete all password fields.');
+            return;
+        }
+        if (newPassword.length < 8) {
+            showPasswordMessage('error', 'Your new password must be at least 8 characters.');
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            showPasswordMessage('error', 'The new passwords do not match.');
+            return;
+        }
+
+        button.disabled = true;
+        button.textContent = 'Updating...';
+        try {
+            const res = await fetch('/api/customer-auth/change-password/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                showPasswordMessage('error', data.error || data.detail || 'Password update failed. Please try again.');
+                return;
+            }
+            document.getElementById('currentPassword').value = '';
+            document.getElementById('newPassword').value = '';
+            document.getElementById('confirmNewPassword').value = '';
+            showPasswordMessage('success', data.message || 'Password changed successfully.');
+        } catch (err) {
+            showPasswordMessage('error', 'Connection error. Please try again.');
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Update Password';
+        }
     }
 
     function logout() { showLogoutConfirmation(); }

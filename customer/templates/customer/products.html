@@ -984,14 +984,33 @@
             const name = sessionStorage.getItem('customerName');
             const welcome = document.getElementById('welcomeBar');
             if (!welcome) return;
-            welcome.innerHTML = name
-                ? `Hi <strong>${name}</strong>, welcome to <strong>Samanala Super Mart!</strong>`
-                : `Welcome to <strong>Samanala Super Mart!</strong>`;
+            welcome.textContent = '';
+            if (name) {
+                welcome.append('Hi ');
+                const customerName = document.createElement('strong');
+                customerName.textContent = formatCustomerName(name);
+                welcome.append(customerName, ', welcome to ');
+            } else {
+                welcome.append('Welcome to ');
+            }
+            const shopName = document.createElement('strong');
+            shopName.textContent = 'Samanala Super Mart!';
+            welcome.append(shopName);
+        }
+
+        function formatCustomerName(name) {
+            return (name || '').trim().split(/\s+/).filter(Boolean)
+                .map(part => part.charAt(0).toLocaleUpperCase() + part.slice(1).toLocaleLowerCase())
+                .join(' ');
         }
 
         function getProductPrice(product) {
-            const discountedValue = parseFloat(product && product.discounted_price !== undefined ? product.discounted_price : NaN);
             const unitPrice = parseFloat(product && product.unit_price);
+            const recommendedValue = parseFloat(product && product.discount && product.discount.price);
+            if (Number.isFinite(recommendedValue) && recommendedValue < unitPrice) {
+                return recommendedValue;
+            }
+            const discountedValue = parseFloat(product && product.discounted_price !== undefined ? product.discounted_price : NaN);
             if (Number.isFinite(discountedValue) && discountedValue < unitPrice) {
                 return discountedValue;
             }
@@ -1522,6 +1541,7 @@
                 }
                 if (existing) {
                     existing.qty += 1;
+                    existing.price = parseFloat(price);
                 } else {
                     cart.push({ product_id: productId, id: productId, product_name: productName, price: parseFloat(price), qty: 1 });
                 }
@@ -1542,6 +1562,7 @@
                     return;
                 }
                 existing.qty += 1;
+                existing.price = parseFloat(price);
             } else {
                 cart.push({
                     product_id: productId,
