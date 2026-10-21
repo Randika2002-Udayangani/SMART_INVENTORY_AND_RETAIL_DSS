@@ -94,6 +94,9 @@
       height: 100%;
       cursor: default;
     }
+    .sidebar-overlay {
+      display: none;
+    }
     .sb-toggle:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
     .sb-toggle i { font-size: 17px; color: var(--sidebar); }
 
@@ -277,12 +280,17 @@
         padding-right: 16px;
       }
       .sidebar {
-        transform: translateX(-100%);
+        left: -200px;
+        transform: none;
+        transition: left 0.3s ease;
         box-shadow: 4px 0 18px rgba(0,0,0,0.18);
       }
       body:not(.sidebar-collapsed) .sidebar {
-        transform: translateX(0);
+        left: 0;
         z-index: 270;
+      }
+      .sidebar.sidebar-open {
+        left: 0;
       }
       body:not(.sidebar-collapsed) .sidebar .sb-toggle {
         top: 12px;
@@ -295,7 +303,8 @@
       body:not(.sidebar-collapsed) .sidebar .sb-toggle i {
         color: var(--sidebar);
       }
-      body:not(.sidebar-collapsed) .sidebar-backdrop {
+      body:not(.sidebar-collapsed) .sidebar-backdrop,
+      .sidebar-overlay.active {
         display: block;
         position: fixed;
         inset: 0;
@@ -379,7 +388,30 @@
       border-bottom-color: #CBD5E1;
     }
     @media (max-width: 768px) {
-      .sidebar { display: none; }
+      .sidebar {
+        position: fixed;
+        left: -200px;
+        top: 0;
+        height: 100vh;
+        z-index: 999;
+        transition: left 0.3s ease;
+      }
+      .sidebar.sidebar-open {
+        left: 0;
+      }
+      .sidebar-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 998;
+      }
+      .sidebar-overlay.active {
+        display: block;
+      }
       .main, .main-content { width: 100%; margin-left: 0; }
       .kpi-grid, .grid-4, .row.g-3 { grid-template-columns: repeat(2, 1fr); }
       .table-responsive { overflow-x: auto; }
@@ -482,9 +514,9 @@
 </head>
 <body>
 
-<button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation"></button>
+<div class="sidebar-overlay" id="sidebarBackdrop" onclick="this.classList.remove('active'); document.querySelector('.sidebar').classList.remove('sidebar-open');"></div>
 <div class="mobile-header-actions">
-  <button class="sb-toggle sb-toggle-reopen" id="sbToggleReopen" title="Show sidebar" aria-label="Show sidebar">
+  <button class="sb-toggle sb-toggle-reopen menu-btn" id="sbToggleReopen" title="Show sidebar" aria-label="Show sidebar">
     <i class="bi bi-list"></i>
   </button>
   <div class="notification-nav" id="notificationNav">
@@ -693,6 +725,15 @@
     const activeItem = document.querySelector('.nav-item.active, .sidebar .active');
     if (activeItem) {
       activeItem.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+    const menuBtn = document.querySelector('.menu-btn, [onclick*="sidebar"], .navbar-toggler');
+    const sidebar = document.querySelector('.sidebar, #sidebar, .side-nav');
+    const sidebarOverlay = document.querySelector('.sidebar-overlay');
+    if (menuBtn && sidebar) {
+      menuBtn.addEventListener('click', function() {
+        sidebar.classList.toggle('sidebar-open');
+        if (sidebarOverlay) sidebarOverlay.classList.toggle('active', sidebar.classList.contains('sidebar-open'));
+      });
     }
   });
 
