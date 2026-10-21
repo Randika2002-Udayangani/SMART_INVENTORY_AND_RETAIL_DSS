@@ -1,0 +1,222 @@
+diff --git a/templates/dashboard/base.html b/templates/dashboard/base.html
+index 07b9ede3..219c7d84 100644
+--- a/templates/dashboard/base.html
++++ b/templates/dashboard/base.html
+@@ -210,6 +210,13 @@
+       display:flex; align-items:center; justify-content:center; border:2px solid var(--bg);
+     }
+     .notification-count.is-empty { display:none; }
++    .notification-count.is-ping { animation: notification-ping .7s ease-out; }
++    @keyframes notification-ping {
++      0% { transform: scale(1); }
++      35% { transform: scale(1.45); }
++      100% { transform: scale(1); }
++    }
++    @media (prefers-reduced-motion: reduce) { .notification-count.is-ping { animation: none; } }
+     .notification-dropdown {
+       position:absolute; top:44px; right:0; width:min(390px, calc(100vw - 24px));
+       background:var(--card); border:1px solid var(--border); border-radius:10px;
+@@ -746,6 +753,14 @@
+       error.data = data;
+       throw error;
+     }
++    // Any save/update/delete can create a notification as a side effect (placing
++    // a reorder, adding a purchase, changing a product...). Re-check the bell
++    // shortly afterwards so the manager's own actions show up straight away.
++    // Notification calls themselves are handled by the bell, so skip those.
++    const method = String(options.method || 'GET').toUpperCase();
++    if (method !== 'GET' && !String(url).includes('/api/notifications/') && window.refreshNotificationCount) {
++      window.setTimeout(window.refreshNotificationCount, 400);
++    }
+     if (response.status === 204) return null;
+     return response.json();
+   }
+@@ -819,6 +834,26 @@
+       return 'Just now';
+     }
+ 
++    // Last unread total we showed. When it changes (new order, read on another
++    // tab, etc.) we tell every other widget on the page via 'notifications:changed'
++    // so the Dashboard card/list and the Notifications page stay in step with the bell.
++    let lastUnread = null;
++
++    function announceChange(unread) {
++      if (lastUnread !== null && unread !== lastUnread) {
++        const increased = unread > lastUnread;
++        if (increased) {
++          countBadge.classList.remove('is-ping');
++          void countBadge.offsetWidth; // restart the animation
++          countBadge.classList.add('is-ping');
++        }
++        document.dispatchEvent(new CustomEvent('notifications:changed', { detail: { unread: unread, previous: lastUnread, increased: increased } }));
++        // A new alert arrived while the dropdown is open — show it straight away.
++        if (increased && nav.classList.contains('is-open')) loadNotifications();
++      }
++      lastUnread = unread;
++    }
++
+     function updateCounts(unreadOverride) {
+       const unread = unreadOverride ?? notifications.filter(item => !item.is_read).length;
+       countBadge.textContent = unread > 99 ? '99+' : unread;
+@@ -830,6 +865,7 @@
+       const dashBadge = document.getElementById('dashboardNavBadge');
+       if (sidebarBadge) sidebarBadge.textContent = unread;
+       if (dashBadge) dashBadge.textContent = unread;
++      announceChange(unread);
+     }
+ 
+     function renderNotifications() {
+@@ -853,14 +889,24 @@
+       }).join('');
+     }
+ 
+-    async function refreshUnreadCount() {
+-      try {
+-        const data = await notificationFetch('/api/notifications/?status=unread');
+-        updateCounts(getNotificationArray(data).length);
+-      } catch (error) {
+-        console.error('refreshUnreadCount failed:', error);
+-      }
++    // One shared "re-check the unread count" used by the bell, both sidebar
++    // badges and every page. Overlapping calls share a single request.
++    let unreadRequest = null;
++    function refreshUnreadCount() {
++      if (unreadRequest) return unreadRequest;
++      unreadRequest = (async function() {
++        try {
++          const data = await notificationFetch('/api/notifications/?status=unread');
++          updateCounts(getNotificationArray(data).length);
++        } catch (error) {
++          console.error('refreshUnreadCount failed:', error);
++        } finally {
++          unreadRequest = null;
++        }
++      })();
++      return unreadRequest;
+     }
++    window.refreshNotificationCount = refreshUnreadCount;
+ 
+     async function loadNotifications() {
+       try {
+@@ -929,8 +975,14 @@
+       }
+     });
+ 
++    // Check every 15s while the tab is visible (a new online order shows up
++    // within seconds), and straight away when the manager comes back to the tab —
++    // browsers slow background-tab timers to about once a minute.
++    const NOTIFICATION_POLL_MS = 15000;
+     refreshUnreadCount();
+-    window.setInterval(refreshUnreadCount, 60000);
++    window.setInterval(function() { if (!document.hidden) refreshUnreadCount(); }, NOTIFICATION_POLL_MS);
++    document.addEventListener('visibilitychange', function() { if (!document.hidden) refreshUnreadCount(); });
++    window.addEventListener('focus', refreshUnreadCount);
+   })();
+ 
+   // ── SIDEBAR ALERT BADGES — shared across every dashboard page ──
+@@ -943,19 +995,15 @@
+   // page load, regardless of which page-specific script is also loaded.
+   // GET /api/notifications/ returns only unread notifications (API Design
+   // Doc §21.2), so its length is exactly what both badges should show.
+-  async function refreshSidebarAlertBadge() {
+-    try {
+-      const data = await apiFetch('/api/notifications/');
+-      const count = Array.isArray(data) ? data.length : (data.count ?? (data.results ?? []).length);
+-      const sidebarBadge = document.getElementById('sidebarAlertCount');
+-      const dashBadge = document.getElementById('dashboardNavBadge');
+-      if (sidebarBadge) sidebarBadge.innerText = count;
+-      if (dashBadge) dashBadge.innerText = count;
+-    } catch(e) {
+-      console.error('refreshSidebarAlertBadge failed:', e);
+-    }
++  //
++  // This used to run its own separate fetch that updated only the two sidebar
++  // badges, so after reading or dismissing on the Notifications page the bell
++  // kept the old number until its next poll. It now just asks the bell's shared
++  // refresh (see window.refreshNotificationCount above), which updates the bell
++  // AND both sidebar badges in one go. Page scripts keep calling this name.
++  function refreshSidebarAlertBadge() {
++    return window.refreshNotificationCount ? window.refreshNotificationCount() : Promise.resolve();
+   }
+-  refreshSidebarAlertBadge();
+ </script>
+ {% block extra_js %}{% endblock %}
+ {% block page_scripts %}{% endblock %}
+diff --git a/templates/dashboard/home.html b/templates/dashboard/home.html
+index a688c694..e5f723f6 100644
+--- a/templates/dashboard/home.html
++++ b/templates/dashboard/home.html
+@@ -661,6 +661,9 @@
+         `${counts.CRITICAL} ${PRIORITY_LABELS.CRITICAL} · ${counts.HIGH} ${PRIORITY_LABELS.HIGH} · ${counts.MEDIUM} ${PRIORITY_LABELS.MEDIUM}`;
+       document.getElementById('activeAlertsUnread').innerText = data.length + ' unread';
+       updateDashboardBars();
++      // The summary sentence quotes the "Act Now" count, which only exists once
++      // alerts have loaded — recompute it here so it never stays at 0.
++      updateDashboardSummary();
+     } catch(e) {
+       console.error('fetchNotifications failed:', e);
+       document.getElementById('notificationBadge').innerText = 'Unavailable';
+@@ -668,6 +671,14 @@
+     }
+   }
+ 
++  // Keep the alert banner, Active Alerts card, alerts list and Pending Orders
++  // card live: the bell (base.html) fires this whenever the unread count changes
++  // — a new online order, or something read/dismissed from the bell or another page.
++  document.addEventListener('notifications:changed', function() {
++    fetchNotifications();
++    fetchPendingOrders();
++  });
++
+   async function fetchProfitSummary() {
+     try {
+       const data = await apiFetch('/api/analytics/profit-summary/');
+diff --git a/templates/dashboard/notifications.html b/templates/dashboard/notifications.html
+index a26e6c54..ba5fd21d 100644
+--- a/templates/dashboard/notifications.html
++++ b/templates/dashboard/notifications.html
+@@ -274,9 +274,11 @@
+ 
+   function populateTypeSelect() {
+     const select = document.getElementById('typeSelect');
++    const current = select.value; // keep the manager's chosen type across background refreshes
+     const types = [...new Set(allNotifications.map(n => n.type))].sort();
+     select.innerHTML = '<option value="all">All types</option>' +
+       types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
++    if (current && [...select.options].some(option => option.value === current)) select.value = current;
+   }
+ 
+   function updateSummary() {
+@@ -355,14 +357,18 @@
+     renderList();
+   }
+ 
+-  async function loadNotifications() {
+-    document.getElementById('listBody').innerHTML = `<div class="empty-state">Loading notifications...</div>`;
++  // silent = true is used for automatic background refreshes (a new alert arrived):
++  // no "Loading…" flash and the manager stays on the page they were reading.
++  async function loadNotifications(silent) {
++    if (silent !== true) {
++      document.getElementById('listBody').innerHTML = `<div class="empty-state">Loading notifications...</div>`;
++    }
+     try {
+       const data = await apiFetch(`/api/notifications/?status=${statusTab}`);
+       allNotifications = Array.isArray(data) ? data : [];
+       populateTypeSelect();
+       updateSummary();
+-      notifPage = 1; // fresh data — back to page 1
++      if (silent !== true) notifPage = 1; // fresh data — back to page 1
+       renderList();
+       refreshSidebarAlertBadge(); // keep the shared badges in sync with the true unread count
+     } catch (e) {
+@@ -442,6 +448,10 @@
+     await dismiss(id);
+   }
+ 
++  // A new alert arrived (e.g. a customer placed an order), or something was read
++  // from the bell: refresh the list quietly so the page matches the bell.
++  document.addEventListener('notifications:changed', function() { loadNotifications(true); });
++
+   fetchCurrentUser();
+   loadNotifications();
+ </script>
