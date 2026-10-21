@@ -52,13 +52,13 @@
             gap: 12px;
         }
         .bot-avatar {
-            width: 44px; height: 44px;
+            width: auto; min-width: 44px; height: 44px; padding: 0 10px;
             background: rgba(255,255,255,0.2);
-            border-radius: 50%;
+            border-radius: 22px;
             display: flex; align-items: center; justify-content: center;
             font-size: 0;
         }
-        .bot-avatar::after { content: "AI"; font-size: 0.8rem; font-weight: 700; color: white; }
+        .bot-avatar::after { content: "ShopMate"; font-size: 0.72rem; font-weight: 700; color: white; }
         .bot-info h3 { font-size: 1rem; color: white; }
         .bot-info p { font-size: 0.8rem; color: rgba(255,255,255,0.8); }
         .online-dot {
@@ -81,11 +81,11 @@
         .message.user { flex-direction: row-reverse; }
 
         .avatar {
-            width: 32px; height: 32px; border-radius: 50%;
+            min-width: 32px; height: 32px; padding: 0 7px; border-radius: 16px;
             display: flex; align-items: center;
             justify-content: center; font-size: 0; flex-shrink: 0;
         }
-        .message.bot .avatar::after { content: "AI"; font-size: 0.7rem; font-weight: 700; }
+        .message.bot .avatar::after { content: "ShopMate"; font-size: 0.55rem; font-weight: 700; }
         .message.user .avatar::after { content: "You"; font-size: 0.62rem; font-weight: 700; }
         .message.bot .avatar { background: #e8f5eb; }
         .message.user .avatar { background: #e8f5eb; }
@@ -198,7 +198,7 @@
         <div class="chat-header">
             <div class="bot-avatar">🤖</div>
             <div class="bot-info">
-                <h3>SmartDeals Assistant</h3>
+                <h3>ShopMate</h3>
                 <p><span class="online-dot"></span>Online - ready to help!</p>
             </div>
         </div>
@@ -442,7 +442,7 @@
     // Welcome message on load
     window.onload = () => {
         setTimeout(() => {
-            addMessage('Welcome to SmartDeals. Ask about products, prices, or availability.', 'bot');
+            addMessage('Welcome! I’m ShopMate. Ask me about products, prices, or availability.', 'bot');
         }, 400);
     };
 </script>

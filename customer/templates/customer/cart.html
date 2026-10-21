@@ -220,9 +220,23 @@
     <div id="cartContent"></div>
 </div>
 
+<div class="clear-cart-confirm-overlay" id="clearCartConfirmModal" hidden aria-hidden="true">
+    <div class="clear-cart-confirm-dialog" role="dialog" aria-modal="true"
+        aria-labelledby="clearCartConfirmTitle" aria-describedby="clearCartConfirmDescription">
+        <div class="clear-cart-confirm-icon" aria-hidden="true">🛒</div>
+        <h2 id="clearCartConfirmTitle">Clear your cart?</h2>
+        <p id="clearCartConfirmDescription">All items will be removed from your cart. You can add them again later.</p>
+        <div class="clear-cart-confirm-actions">
+            <button class="clear-cart-confirm-cancel" id="keepCartBtn" type="button" onclick="closeClearCartConfirmation()">Keep Items</button>
+            <button class="clear-cart-confirm-submit" type="button" onclick="confirmClearCart()">Clear Cart</button>
+        </div>
+    </div>
+</div>
+
 <script>
     const token = sessionStorage.getItem('jwt');
     let selectedSlot = '';
+    let clearCartReturnFocus = null;
 
     function updateCartBadge() {
         const cart  = JSON.parse(sessionStorage.getItem('cart') || '[]');
@@ -243,8 +257,25 @@
         const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
         if (cart.length === 0) return;
 
-        if (!confirm('Are you sure you want to remove all items from your cart?')) return;
+        const modal = document.getElementById('clearCartConfirmModal');
+        clearCartReturnFocus = document.activeElement;
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        document.getElementById('keepCartBtn').focus();
+    }
 
+    function closeClearCartConfirmation() {
+        const modal = document.getElementById('clearCartConfirmModal');
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        if (clearCartReturnFocus instanceof HTMLElement) clearCartReturnFocus.focus();
+        clearCartReturnFocus = null;
+    }
+
+    function confirmClearCart() {
+        closeClearCartConfirmation();
         sessionStorage.removeItem('cart');
         updateCartBadge();
         renderCart();
@@ -660,6 +691,14 @@
     }
 
     function logout() { showLogoutConfirmation(); }
+
+    document.getElementById('clearCartConfirmModal').addEventListener('click', function(event) {
+        if (event.target === this) closeClearCartConfirmation();
+    });
+    document.addEventListener('keydown', function(event) {
+        const modal = document.getElementById('clearCartConfirmModal');
+        if (event.key === 'Escape' && !modal.hidden) closeClearCartConfirmation();
+    });
 
     
     buildNav();
