@@ -68,6 +68,19 @@ class DiscountRuleSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class PublicDiscountRecommendationSerializer(serializers.ModelSerializer):
+    product_id = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = DiscountRecommendation
+        fields = [
+            'product_id',
+            'recommended_discount_pct',
+            'recommended_price',
+        ]
+        read_only_fields = fields
+
+
 class DiscountRecommendationSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.product_name', read_only=True)
     reviewed_by_username = serializers.CharField(
