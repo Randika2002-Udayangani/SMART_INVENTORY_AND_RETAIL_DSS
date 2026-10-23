@@ -10,9 +10,9 @@
     .kpi-val { font-size:28px; font-weight:700; color: var(--txt); }
     .kpi-lbl { font-size:12px; color:var(--muted); text-transform:uppercase; }
     .btn-primary { background: var(--sidebar); border: none; }
-    .btn-primary:hover { background: #0a2b2c; }
-    .btn-danger-soft { background:#fee2e2; color:#dc2626; border:none; padding:4px 10px; border-radius:6px; font-size:12px; }
-    .btn-success-soft { background:#dcfce7; color:#16a34a; border:none; padding:4px 10px; border-radius:6px; font-size:12px; }
+    .btn-primary:hover { background: #14532d; }
+    .btn-danger-soft { background:#FEF2F2; color:#DC2626; border:none; padding:4px 10px; border-radius:6px; font-size:12px; }
+    .btn-success-soft { background:#F0FDF4; color:#16A34A; border:none; padding:4px 10px; border-radius:6px; font-size:12px; }
     .restricted-panel {
         background: var(--card); border: 1px solid var(--border); border-radius: 12px;
         padding: 48px 24px; text-align: center; color: var(--muted);
@@ -21,7 +21,7 @@
     .loss-table-wrap, .returns-table-wrap { overflow: visible; }
     .loss-table, .returns-table { width:100%; table-layout:fixed; border-collapse:separate; border-spacing:0; }
     .loss-table thead th, .returns-table thead th {
-        position: sticky; top: calc(var(--topbar-height, 58px) + 1px); z-index: 10;
+        position: sticky; top: 0; z-index: 10;
         background: var(--card2) !important; box-shadow: 0 1px 0 var(--border);
     }
     .staff-damage-heading { display:none; }
@@ -31,7 +31,11 @@
         .returns-table { min-width:760px; }
     }
     .loss-table tbody tr { cursor: pointer; }
-    .loss-table tbody tr:hover { background: var(--card2, #f3f4f6); }
+    .loss-table tbody tr:hover { background: var(--card2, #F1F5F9); }
+    .loss-table th:nth-child(3), .loss-table th:nth-child(4),
+    .loss-table td:nth-child(3), .loss-table td:nth-child(4) { text-align: right; }
+    .page-header-breadcrumb { margin-bottom: 0; }
+    .summary-line { color: var(--txt); font-size: 0.9rem; margin: 0 0 16px; }
 
     /* Loss record details modal */
     .loss-modal-backdrop {
@@ -62,16 +66,11 @@
 {% endblock %}
 
 {% block content %}
-<div class="topbar">
-    <div>
-        <h1>Loss Analysis</h1>
-        <div class="sub">Samanala Super Mart — expiry loss, damage, and supplier returns</div>
-    </div>
-    <div>
-        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
-    </div>
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Decision Support</span><span>›</span><span class="current-page">Loss Analysis</span></div>
+  <h1 class="page-title">Loss Analysis</h1>
+  <p class="page-subtitle">Analyze damaged, expired, and returned stock to reduce inventory loss.</p>
 </div>
-
 <div id="pageError" class="alert alert-danger" role="alert" hidden></div>
 
 <!-- Used only for roles that are not allowed to view or record losses. -->
@@ -83,17 +82,19 @@
 
 <div id="pageContent" style="display:none;">
 
+    <p class="summary-line">Your store lost <strong id="summaryNetLoss">—</strong> to expired and damaged stock this period, and recovered <strong id="summaryRecovered">—</strong>.</p>
+
     <!-- KPI Cards -->
     <div id="financialSummary" class="row g-3 mb-4">
         <div class="col-md-4">
             <div class="kpi-card">
-                <div class="kpi-lbl">Gross Expiry Loss</div>
+                <div class="kpi-lbl">Expired stock loss</div>
                 <div class="kpi-val text-danger" id="grossLoss">—</div>
             </div>
         </div>
         <div class="col-md-4">
             <div class="kpi-card">
-                <div class="kpi-lbl">Recovered Amount</div>
+                <div class="kpi-lbl">Recovered Amount <span class="tooltip-icon" title="Money you got back by selling at a discount or returning to the supplier">ⓘ</span></div>
                 <div class="kpi-val text-success" id="recovered">—</div>
             </div>
         </div>
@@ -104,6 +105,7 @@
             </div>
         </div>
     </div>
+    <div class="text-muted small mb-4">Net loss = expired stock loss + damaged stock loss − recovered amount</div>
 
     <!-- Loss Records Table -->
     <div id="lossRecordsCard" class="card p-4 mb-4">
@@ -112,16 +114,17 @@
             <div class="d-flex gap-2">
                 <select id="lossTypeFilter" class="form-select form-select-sm" style="width:160px;" onchange="loadLosses()">
                     <option value="">All Types</option>
-                    <option value="EXPIRY">EXPIRY</option>
-                    <option value="SLOW_MOVING">SLOW_MOVING</option>
-                    <option value="DAMAGE">DAMAGE</option>
-                    <option value="OTHER">OTHER</option>
+                    <option value="EXPIRY">Expired stock</option>
+                    <option value="SLOW_MOVING">Slow Moving</option>
+                    <option value="DAMAGE">Damaged</option>
+                    <option value="OTHER">Other loss</option>
                 </select>
                 <button class="btn btn-primary btn-sm" onclick="showDamageForm()">+ Record Damage</button>
             </div>
         </div>
         <div class="loss-table-wrap">
-        <table class="table table-hover loss-table">
+        <div class="table-scroll-wrap">
+<table class="table table-hover loss-table table-sticky-header">
             <thead class="table-light">
                 <tr><th>Product</th><th>Loss Type</th><th>Quantity</th><th>Loss Value</th><th>Date</th></tr>
             </thead>
@@ -129,6 +132,7 @@
                 <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         </div>
         <div id="lossPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
@@ -150,7 +154,7 @@
     </div>
 
     <!-- Record Damage Form -->
-    <div class="card p-4 mb-4" id="damageForm" style="display:none;">
+    <div class="card p-4 mb-4" id="damageForm" style="display:none; scroll-margin-top:calc(var(--dashboard-header-height, 0px) + 16px);">
         <h6 class="fw-bold mb-3">Record Damage</h6>
         <div class="row g-3">
             <div class="col-md-3">
@@ -164,7 +168,7 @@
                 <select id="dmgType" class="form-select">
                     <option value="DAMAGE">DAMAGE</option>
                     <option value="EXPIRY">EXPIRY</option>
-                    <option value="SLOW_MOVING" data-manager-only> SLOW_MOVING</option>
+                    <option value="SLOW_MOVING" data-manager-only> Slow Moving</option>
                     <option value="OTHER" data-manager-only>OTHER</option>
                 </select>
             </div>
@@ -188,7 +192,8 @@
     <div id="supplierReturnsCard" class="card p-4 mb-4">
         <h6 class="fw-bold mb-3">Supplier Returns</h6>
         <div class="returns-table-wrap">
-        <table class="table table-hover returns-table">
+        <div class="table-scroll-wrap">
+<table class="table table-hover returns-table table-sticky-header">
             <thead class="table-light">
                 <tr><th>Supplier</th><th>Product</th><th>Quantity</th><th>Status</th><th>Actions</th></tr>
             </thead>
@@ -196,6 +201,7 @@
                 <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         </div>
         <div id="returnsPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
@@ -270,9 +276,11 @@ document.getElementById('dmgProductSearch').addEventListener('input', (e) => {
 async function loadSummary() {
     try {
         const data = await apiFetch('/api/losses/summary/');
-        document.getElementById('grossLoss').innerText = 'Rs ' + Number(data.gross_expiry_loss ?? 0).toLocaleString();
-        document.getElementById('recovered').innerText = 'Rs ' + Number(data.recovered_amount ?? 0).toLocaleString();
-        document.getElementById('netLoss').innerText = 'Rs ' + Number(data.total_net_loss ?? 0).toLocaleString();
+        document.getElementById('grossLoss').innerText = formatMoney(data.gross_expiry_loss);
+        document.getElementById('recovered').innerText = formatMoney(data.recovered_amount);
+        document.getElementById('netLoss').innerText = formatMoney(data.total_net_loss);
+        document.getElementById('summaryNetLoss').innerText = formatMoney(data.total_net_loss);
+        document.getElementById('summaryRecovered').innerText = formatMoney(data.recovered_amount);
     } catch(e) {
         console.error('loadSummary failed:', e);
         showPageError('Loss summary could not be loaded.');
@@ -325,10 +333,10 @@ function renderLosses() {
         return `
         <tr onclick="showLossDetails('${key}')">
             <td>${escapeHtml(r.product_name ?? r['product__product_name'] ?? '—')}</td>
-            <td><span class="badge bg-secondary">${escapeHtml(r.loss_type)}</span></td>
-            <td>${escapeHtml(r.loss_quantity ?? r.quantity ?? '—')}</td>
-            <td>Rs ${Number(r.loss_value ?? 0).toLocaleString()}</td>
-            <td>${escapeHtml(r.loss_date ?? r.date ?? r.created_at ?? '—')}</td>
+            <td><span class="badge bg-secondary">${escapeHtml(displayLabel(LOSS_TYPE_LABELS, r.loss_type))}</span></td>
+            <td class="text-end">${escapeHtml(r.loss_quantity ?? r.quantity ?? '—')}</td>
+            <td class="text-end">${formatMoney(r.loss_value)}</td>
+            <td>${escapeHtml(formatDate(r.loss_date ?? r.date ?? r.created_at))}</td>
         </tr>`;
     }).join('');
 
@@ -341,6 +349,7 @@ function renderLosses() {
 function changeLossPage(delta) {
     lossPage += delta;
     renderLosses();
+    document.getElementById('lossTableBody').closest('table').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // Row click -> details modal. Shows every field the API returned for this
@@ -359,10 +368,10 @@ function showLossDetails(key) {
     const html = `
         <div class="loss-detail-grid">
             ${field('Product', record.product_name ?? record['product__product_name'])}
-            ${field('Loss Type', record.loss_type)}
+            ${field('Loss Type', displayLabel(LOSS_TYPE_LABELS, record.loss_type))}
             ${field('Quantity', record.loss_quantity ?? record.quantity)}
-            ${field('Loss Value', record.loss_value != null ? 'Rs ' + Number(record.loss_value).toLocaleString() : null)}
-            ${field('Date', record.loss_date ?? record.date ?? record.created_at)}
+                    ${field('Loss Value', record.loss_value != null ? formatMoney(record.loss_value) : null)}
+            ${field('Date', formatDate(record.loss_date ?? record.date ?? record.created_at))}
             ${field('Recorded By', record.recorded_by__username ?? (record.recorded_by ? 'User #' + record.recorded_by : null))}
             ${field('Batch', record.batch_number ?? record.batch_id ?? record.batch)}
             ${field('Notes', record.notes ?? record.remarks ?? record.description, true)}
@@ -408,11 +417,11 @@ function renderReturns() {
            <td>${escapeHtml(r.supplier_name ?? (typeof r.supplier === 'object' ? r.supplier?.name : r.supplier) ?? '—')}</td>
            <td>${escapeHtml(r.product_name ?? (typeof r.product === 'object' ? r.product?.name : r.product) ?? '—')}</td>
             <td>${escapeHtml(r.quantity_returned ?? '—')}</td>
-            <td><span class="badge ${r.status==='CONFIRMED'?'bg-success':r.status==='REJECTED'?'bg-danger':'bg-warning'}">${escapeHtml(r.status)}</span></td>
-            <td>
-                <button class="btn-success-soft me-1" onclick="updateReturn(${r.id},'CONFIRMED')">Confirm</button>
-                <button class="btn-danger-soft" onclick="updateReturn(${r.id},'REJECTED')">Reject</button>
-            </td>
+            <td><span class="badge ${r.status==='CONFIRMED'?'bg-success':r.status==='REJECTED'?'bg-danger':'bg-warning'}">${escapeHtml(displayLabel(STATUS_LABELS, r.status))}</span></td>
+            <td>${String(r.status ?? '').toUpperCase() === 'PENDING'
+                ? `<button class="btn-success-soft me-1" onclick="updateReturn(${r.id},'CONFIRMED')">Confirm</button>
+                   <button class="btn-danger-soft" onclick="updateReturn(${r.id},'REJECTED')">Reject</button>`
+                : '<span class="text-muted">Done</span>'}</td>
         </tr>
     `).join('');
 
@@ -442,7 +451,12 @@ async function updateReturn(id, status) {
     }
 }
 
-function showDamageForm() { document.getElementById('damageForm').style.display = 'block'; }
+function showDamageForm() {
+    const form = document.getElementById('damageForm');
+    form.style.display = 'block';
+    scrollToForm('damageForm');
+    window.requestAnimationFrame(() => document.getElementById('dmgProductSearch').focus({ preventScroll: true }));
+}
 function hideDamageForm() { document.getElementById('damageForm').style.display = 'none'; }
 
 async function submitDamage() {

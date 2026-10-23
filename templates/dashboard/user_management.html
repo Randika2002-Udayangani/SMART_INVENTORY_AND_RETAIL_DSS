@@ -10,7 +10,7 @@
   .users-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
   .users-table thead th {
     position: sticky;
-    top: calc(var(--topbar-height, 58px) + 1px);
+    top: 0;
     z-index: 10;
     background: var(--card2) !important;
     box-shadow: 0 1px 0 var(--border);
@@ -28,12 +28,17 @@
 {% block nav_users %}active{% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Operations</span><span>›</span><span class="current-page">User Management</span></div>
+  <h1 class="page-title">User Management</h1>
+  <p class="page-subtitle">Manage dashboard users, roles, and access status.</p>
+</div>
   <div class="topbar users-page-header">
     <div>
       <h1>User Management</h1>
-      <div class="sub">Staff accounts, roles, status, and lockout recovery</div>
+      <div class="sub">Staff accounts, roles, status, and unlocking locked accounts</div>
     </div>
-    <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+    <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
       <i class="bi bi-box-arrow-right"></i> Logout
     </button>
   </div>
@@ -52,7 +57,7 @@
       <div class="row g-2">
         <div class="col-md-3"><input id="newUsername" class="form-control" placeholder="Username" autocomplete="off"></div>
         <div class="col-md-3"><input id="newPassword" type="password" class="form-control" placeholder="Password" autocomplete="new-password"></div>
-        <div class="col-md-3"><select id="newRole" class="form-select"><option>STAFF</option><option>MANAGER</option><option>ADMIN</option></select></div>
+        <div class="col-md-3"><select id="newRole" class="form-select"><option value="STAFF">Staff</option><option value="MANAGER">Manager</option><option value="ADMIN">Admin</option></select></div>
         <div class="col-md-3"><button class="btn btn-primary w-100" id="createUserButton" onclick="createUser()">Create user</button></div>
       </div>
     </div>
@@ -63,12 +68,14 @@
         <button class="btn btn-outline-secondary btn-sm" onclick="refreshUsers(this)">Refresh</button>
       </div>
       <div class="users-table-wrap">
-        <table class="table table-hover align-middle users-table">
+        <div class="table-scroll-wrap">
+<table class="table table-hover align-middle users-table table-sticky-header">
           <thead>
             <tr><th>ID</th><th>Username</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr>
           </thead>
           <tbody id="userBody"><tr><td colspan="6" class="text-center muted">Loading...</td></tr></tbody>
         </table>
+</div>
       </div>
     </div>
   </div>
@@ -106,7 +113,7 @@
   }
 
   function roleLabel(user) {
-    return `<span class="badge text-bg-secondary">${escapeHtml(user.role)}</span>`;
+    return `<span class="badge text-bg-secondary">${escapeHtml(displayLabel(ROLE_LABELS, user.role))}</span>`;
   }
 
   function statusLabel(user) {
@@ -130,7 +137,7 @@
           <td>${escapeHtml(user.username)}</td>
           <td>${roleLabel(user)}</td>
           <td>${statusLabel(user)}</td>
-          <td>${user.date_joined ? escapeHtml(new Date(user.date_joined).toLocaleDateString()) : '-'}</td>
+          <td>${escapeHtml(formatDate(user.date_joined))}</td>
           <td><div class="user-actions">
             <button class="btn btn-outline-secondary btn-sm" data-user-action="toggle" data-user-id="${user.id}" data-active="${user.is_active}">${user.is_active ? 'Deactivate' : 'Activate'}</button>
             ${showUnlock ? `<button class="btn btn-outline-warning btn-sm" data-user-action="unlock" data-user-id="${user.id}">Unlock</button>` : ''}
@@ -178,6 +185,7 @@
     document.getElementById('resetPassword').value = '';
     document.getElementById('resetPasswordError').hidden = true;
     bootstrap.Modal.getOrCreateInstance(document.getElementById('passwordModal')).show();
+    scrollToForm('passwordModal');
   }
 
   async function submitPasswordReset() {
@@ -196,7 +204,22 @@
   }
 
   async function toggleUser(id, isActive) {
-    try { await apiFetch(`/api/users/${id}/`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: isActive !== 'true' }) }); showMessage('User status updated.'); await loadUsers(); }
+    const currentlyActive = isActive === 'true';
+    const nextActive = !currentlyActive;
+    const action = currentlyActive ? 'Deactivate' : 'Activate';
+    const message = currentlyActive
+      ? 'This user will no longer be able to sign in. Continue?'
+      : 'This user will be allowed to sign in again. Continue?';
+    if (!(await confirmAction(`${action} user`, message, action, currentlyActive ? 'btn-danger' : 'btn-success'))) return;
+    try {
+      await apiFetch(`/api/users/${id}/`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: nextActive })
+      });
+      showMessage(`User ${currentlyActive ? 'deactivated' : 'activated'}.`);
+      await loadUsers();
+    }
     catch (error) { showMessage(error.message, 'danger'); }
   }
 
