@@ -158,7 +158,7 @@
         </div>
         <div class="card p-4">
             <div class="table-scroll-wrap">
-<table class="table table-hover">
+<table class="table table-hover table-sticky-header">
                 <thead class="table-light">
                   <tr><th>Product</th><th>Category</th><th>Brand</th><th>Current Stock</th><th>Reorder point <span class="tooltip-icon" title="The stock level at which you should reorder">ⓘ</span></th><th>Status</th><th>Detail</th></tr>
                 <tbody id="stockBody">
@@ -172,13 +172,13 @@
 
     <div id="tab-low" style="display:none;">
        <div class="card p-4"><div class="table-scroll-wrap">
-<table class="table table-hover"><thead class="table-light"><tr><th>Product</th><th>Current Stock</th><th>Reorder point <span class="tooltip-icon" title="The stock level at which you should reorder">ⓘ</span></th><th>Shortage</th><th>Urgency</th></tr></thead><tbody id="lowBody"><tr><td colspan="6" class="text-center text-muted">Loading...</td></tr></tbody></table>
+<table class="table table-hover table-sticky-header"><thead class="table-light"><tr><th>Product</th><th>Current Stock</th><th>Reorder point <span class="tooltip-icon" title="The stock level at which you should reorder">ⓘ</span></th><th>Shortage</th><th>Urgency</th></tr></thead><tbody id="lowBody"><tr><td colspan="6" class="text-center text-muted">Loading...</td></tr></tbody></table>
 </div></div>
     </div>
 
     <div id="tab-out" style="display:none;">
         <div class="card p-4"><div class="table-scroll-wrap">
-<table class="table table-hover"><thead class="table-light"><tr><th>Product</th><th class="text-center">Current Stock</th></tr></thead><tbody id="outBody"><tr><td colspan="2" class="text-center text-muted">Loading...</td></tr></tbody></table>
+<table class="table table-hover table-sticky-header"><thead class="table-light"><tr><th>Product</th><th class="text-center">Current Stock</th></tr></thead><tbody id="outBody"><tr><td colspan="2" class="text-center text-muted">Loading...</td></tr></tbody></table>
 </div></div>
     </div>
 
@@ -196,7 +196,7 @@
         </div>
         <div class="card p-4">
             <div class="table-scroll-wrap">
-<table class="table table-hover">
+<table class="table table-hover table-sticky-header">
                 <thead class="table-light">
                     <tr><th>Date</th><th>Product</th><th>Type</th><th>Quantity Change</th><th>Reason / Note</th></tr>
                 </thead>
@@ -478,7 +478,7 @@ async function viewDetail(productId) {
             <h5>${data.product_name ?? '—'}</h5>
             <p>Total stock: <strong>${data.current_stock ?? data.total_remaining ?? data.total_current_stock ?? '—'}</strong></p>
             <div class="table-scroll-wrap">
-<table class="table table-sm">
+<table class="table table-sm table-sticky-header">
                 <thead><tr><th>Batch</th><th>Remaining</th><th>Expiry</th><th>Status</th></tr></thead>
                 <tbody>${batches.map(b => `<tr><td>${b.batch_id ?? b.id ?? '—'}</td><td>${b.remaining_quantity ?? '—'}</td><td>${formatDate(b.expiry_date)}</td><td>${displayLabel(BATCH_STATUS_LABELS, b.status)}</td></tr>`).join('') || '<tr><td colspan="4" class="text-muted">No active batches found.</td></tr>'}</tbody>
             </table>
@@ -486,7 +486,7 @@ async function viewDetail(productId) {
             <hr>
             <h6 class="fw-bold mb-2">Stock Movement History</h6>
             <div class="table-scroll-wrap">
-<table class="table table-sm">
+<table class="table table-sm table-sticky-header">
                 <thead><tr><th>Date</th><th>Type</th><th>Source</th><th>Qty Change</th><th>Balance After</th><th>Reason</th></tr></thead>
                 <tbody id="historyBody"><tr><td colspan="6" class="text-center text-muted">Loading...</td></tr></tbody>
             </table>

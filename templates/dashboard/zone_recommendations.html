@@ -97,7 +97,7 @@
                 </div>
             </div>
             <div class="table-scroll-wrap">
-<table class="table table-hover align-middle">
+<table class="table table-hover align-middle table-sticky-header">
                 <thead class="table-light">
                     <tr>
                         <th>Product</th><th>Category</th><th>Current Zone</th>
@@ -186,7 +186,7 @@
             </div>
             <div class="table-responsive">
                 <div class="table-scroll-wrap">
-<table class="table table-sm table-hover">
+<table class="table table-sm table-hover table-sticky-header">
                     <thead>
                         <tr style="background:var(--card2);"><th>Product</th><th>Zone</th><th>Start</th><th>End</th><th>Reason</th><th>Status</th><th></th></tr>
                     </thead>
@@ -396,7 +396,7 @@ async function loadLastRun() {
 }
 
 async function calculateRecommendations() {
-    if (!confirm('Recalculate zone recommendations now? This evaluates all active products against their latest health scores.')) return;
+    if (!(await confirmAction('Recalculate recommendations', 'Recalculate zone recommendations now? This evaluates all active products against their latest health scores.', 'Recalculate', 'btn-primary'))) return;
     const btn = document.getElementById('calcBtn');
     btn.disabled = true;
     btn.textContent = 'Calculating...';

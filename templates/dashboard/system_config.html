@@ -72,7 +72,7 @@
     const editor = canEditConfig
       ? `<div class="input-group input-group-sm config-value"><input class="form-control" id="${escapeHtml(inputId)}" type="${type}" min="0" value="${escapeHtml(row.value)}"><span class="input-group-text">${escapeHtml(meta.unit || '')}</span></div>`
       : `<div class="config-readonly">${escapeHtml(row.value)} ${escapeHtml(meta.unit || '')}</div>`;
-    const save = canEditConfig ? `<button class="btn btn-primary btn-sm" data-config-key="${escapeHtml(encodedKey)}" onclick="saveConfig(this)">Save</button>` : '';
+    const save = canEditConfig ? `<button class="btn btn-sm" style="background:#14532d;border:none;color:white;" data-config-key="${escapeHtml(encodedKey)}" onclick="saveConfig(this)">Save</button>` : '';
     return `<div class="config-row row g-3 align-items-center py-3"><div class="col-lg-3"><strong>${escapeHtml(meta.label)}</strong><div class="config-key">${escapeHtml(row.key)}</div></div><div class="col-lg-2">${editor}</div><div class="col-lg-3 config-description">${escapeHtml(row.description || '')}</div><div class="col-lg-2 text-muted small">${escapeHtml(updatedText(row))}</div><div class="col-lg-2 text-lg-end">${save}</div></div>`;
   }
 
@@ -85,7 +85,7 @@
     const status = upload.found ? upload.status : '';
     const badgeClass = status === 'SUCCESS' ? 'text-bg-success' : 'text-bg-warning';
     const error = status === 'PARTIAL' && upload.error_message ? upload.error_message.length > 150 ? `${upload.error_message.slice(0, 150)}...` : upload.error_message : '';
-    return `<div class="config-row upload-row py-3 ${isCurrent ? 'current-sync' : ''}"><div class="row g-2 align-items-center"><div class="col-md-3"><strong>${escapeHtml(label)}</strong><div class="config-key">${escapeHtml(upload.upload_type)}</div></div><div class="col-md-4">${escapeHtml(upload.found ? upload.file_name : 'No upload yet')}</div><div class="col-md-2">${upload.found ? `<span class="badge status-badge ${badgeClass}">${escapeHtml(status)}</span>` : '<span class="text-muted small">No status</span>'}</div><div class="col-md-3 text-muted small">${escapeHtml(formatUploadDate(upload.upload_date))}</div></div>${isCurrent ? '<div class="small mt-2"><span class="badge text-bg-primary">Currently determines Dashboard Last Sync</span></div>' : ''}${error ? `<div class="text-muted small mt-2">${escapeHtml(error)}</div>` : ''}</div>`;
+    return `<div class="config-row upload-row py-3 ${isCurrent ? 'current-sync' : ''}"><div class="row g-2 align-items-center"><div class="col-md-3"><strong>${escapeHtml(label)}</strong><div class="config-key">${escapeHtml(upload.upload_type)}</div></div><div class="col-md-4">${escapeHtml(upload.found ? upload.file_name : 'No upload yet')}</div><div class="col-md-2">${upload.found ? `<span class="badge status-badge ${badgeClass}">${escapeHtml(status)}</span>` : '<span class="text-muted small">No status</span>'}</div><div class="col-md-3 text-muted small">${escapeHtml(formatUploadDate(upload.upload_date))}</div></div>${isCurrent ? '<div class="small mt-2"><span class="badge text-bg-success">Currently determines Dashboard Last Sync</span></div>' : ''}${error ? `<div class="text-muted small mt-2">${escapeHtml(error)}</div>` : ''}</div>`;
   }
 
   function groupedRows(rows, section) { return rows.reduce((groups, row) => { if (row.key === 'last_item_ledger_sync') return groups; const meta = configMeta(row.key, row.value); if (meta.section !== section) return groups; (groups[meta.group] ||= []).push({ row, meta }); return groups; }, {}); }
@@ -113,11 +113,12 @@
     if (!newValue) { showMessage('Configuration value cannot be blank.', 'danger'); return; }
     if (input.type === 'number' && (!Number.isFinite(Number(newValue)) || Number(newValue) < 0)) { showMessage('Configuration value must be a non-negative number.', 'danger'); return; }
     const meta = configMeta(key, input.defaultValue);
-    if (!confirm(`Change "${meta.label}" from ${input.defaultValue} to ${newValue}? This affects live decision-support rules.`)) return;
-    button.disabled = true;
-    try { await apiFetch(`/api/config/${encodeURIComponent(key)}/`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: newValue }) }); showMessage('Configuration saved.'); await loadConfig(); }
-    catch (error) { showMessage(error.message, 'danger'); }
-    finally { button.disabled = false; }
+    showConfirm('Save configuration', `Change "${meta.label}" from ${input.defaultValue} to ${newValue}? This affects live decision-support rules.`, async function() {
+      button.disabled = true;
+      try { await apiFetch(`/api/config/${encodeURIComponent(key)}/`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: newValue }) }); showMessage('Configuration saved.'); await loadConfig(); }
+      catch (error) { showMessage(error.message, 'danger'); }
+      finally { button.disabled = false; }
+    }, 'Save', 'btn-success');
   }
 
   async function initializeConfig() {

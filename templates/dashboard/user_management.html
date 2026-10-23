@@ -69,7 +69,7 @@
       </div>
       <div class="users-table-wrap">
         <div class="table-scroll-wrap">
-<table class="table table-hover align-middle users-table">
+<table class="table table-hover align-middle users-table table-sticky-header">
           <thead>
             <tr><th>ID</th><th>Username</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr>
           </thead>
@@ -185,6 +185,7 @@
     document.getElementById('resetPassword').value = '';
     document.getElementById('resetPasswordError').hidden = true;
     bootstrap.Modal.getOrCreateInstance(document.getElementById('passwordModal')).show();
+    scrollToForm('passwordModal');
   }
 
   async function submitPasswordReset() {
@@ -203,7 +204,22 @@
   }
 
   async function toggleUser(id, isActive) {
-    try { await apiFetch(`/api/users/${id}/`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: isActive !== 'true' }) }); showMessage('User status updated.'); await loadUsers(); }
+    const currentlyActive = isActive === 'true';
+    const nextActive = !currentlyActive;
+    const action = currentlyActive ? 'Deactivate' : 'Activate';
+    const message = currentlyActive
+      ? 'This user will no longer be able to sign in. Continue?'
+      : 'This user will be allowed to sign in again. Continue?';
+    if (!(await confirmAction(`${action} user`, message, action, currentlyActive ? 'btn-danger' : 'btn-success'))) return;
+    try {
+      await apiFetch(`/api/users/${id}/`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: nextActive })
+      });
+      showMessage(`User ${currentlyActive ? 'deactivated' : 'activated'}.`);
+      await loadUsers();
+    }
     catch (error) { showMessage(error.message, 'danger'); }
   }
 

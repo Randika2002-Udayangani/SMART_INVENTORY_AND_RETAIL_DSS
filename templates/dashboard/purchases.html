@@ -58,7 +58,7 @@
     </div>
     <div class="card p-4">
         <div class="table-scroll-wrap">
-<table class="table table-hover">
+<table class="table table-hover table-sticky-header">
             <thead class="table-light">
                 <tr><th>Invoice #</th><th>Supplier</th><th>Purchase Date</th><th id="totalAmountHeader">Total Amount</th><th>Batches</th></tr>
             </thead>
@@ -87,7 +87,7 @@
     </div>
     <div class="card p-4">
         <div class="table-scroll-wrap">
-<table class="table table-hover">
+<table class="table table-hover table-sticky-header">
             <thead class="table-light">
                 <tr>
                     <th style="width:36px;"><input type="checkbox" id="selectAllBatches" onchange="toggleSelectAllBatches(this)" aria-label="Select all pending batches on this page"></th>
@@ -112,7 +112,7 @@
     </div>
     <div class="card p-4">
         <div class="table-scroll-wrap">
-<table class="table table-hover">
+<table class="table table-hover table-sticky-header">
             <thead class="table-light">
                 <tr><th>Product</th><th>Batch</th><th>Remaining Qty</th><th>Expiry Date</th><th>Days Left</th></tr>
             </thead>
@@ -506,8 +506,8 @@ function toggleSelectAllBatches(checkbox) {
 
 async function updateSelectedBatchStatuses(status) {
     const ids = [...document.querySelectorAll('.batch-select:checked')].map(input => input.dataset.batchId);
-    if (!ids.length) { alert('Select at least one batch first.'); return; }
-    if (!confirm(`Update ${ids.length} selected batch(es) to ${status}?`)) return;
+    if (!ids.length) { showConfirm('No batches selected', 'Select at least one batch first.', function() {}, 'OK', 'btn-secondary'); return; }
+    if (!(await confirmAction('Update batch status', `Update ${ids.length} selected batch(es) to ${status}?`, 'Update', 'btn-primary'))) return;
     try {
         await Promise.all(ids.map(id => apiFetch(`/api/batches/${id}/status/`, {
             method: 'PATCH',
@@ -516,7 +516,7 @@ async function updateSelectedBatchStatuses(status) {
         })));
         await loadBatches();
     } catch (e) {
-        alert('Could not update one or more batch statuses.');
+        showConfirm('Update failed', 'Could not update one or more batch statuses.', function() {}, 'OK', 'btn-secondary');
     }
 }
 
@@ -532,8 +532,8 @@ async function bulkConfirmExpiry() {
         batch_id: Number(input.dataset.batchId),
         expiry_date: document.getElementById(`expiryInput_${input.dataset.batchId}`)?.value
     }));
-    if (!batches.length) { alert('Select at least one PENDING_EXPIRY batch first.'); return; }
-    if (batches.some(batch => !batch.expiry_date)) { alert('Enter an expiry date for every selected batch.'); return; }
+    if (!batches.length) { showConfirm('No batches selected', 'Select at least one PENDING_EXPIRY batch first.', function() {}, 'OK', 'btn-secondary'); return; }
+    if (batches.some(batch => !batch.expiry_date)) { showConfirm('Expiry date required', 'Enter an expiry date for every selected batch.', function() {}, 'OK', 'btn-secondary'); return; }
     try {
         await apiFetch('/api/batches/confirm-expiry/bulk/', {
             method: 'POST',
@@ -542,7 +542,7 @@ async function bulkConfirmExpiry() {
         });
         await loadBatches();
     } catch (e) {
-        alert('Could not confirm the selected expiry dates.');
+        showConfirm('Confirmation failed', 'Could not confirm the selected expiry dates.', function() {}, 'OK', 'btn-secondary');
     }
 }
 

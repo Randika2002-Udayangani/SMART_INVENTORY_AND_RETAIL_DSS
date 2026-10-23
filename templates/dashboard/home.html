@@ -406,9 +406,9 @@
           <button class="hf-btn hf-c on" onclick="fhs('CRITICAL',this)">Act Now</button>
         </div>
       </div>
-      <div style="overflow-x:auto;">
+      <div style="overflow-x:clip;overflow-y:visible;">
         <div class="table-scroll-wrap">
-<table class="hs-tbl">
+<table class="hs-tbl table-sticky-header">
           <thead>
             <tr>
               <th>Product</th>
@@ -832,7 +832,7 @@
       await fetchHealthScores();
     } catch(e) {
       console.error('runHealthCalculation failed:', e);
-      alert('Health calculation could not be completed.');
+      showConfirm('Health calculation failed', 'Health calculation could not be completed.', function() {}, 'OK', 'btn-secondary');
     }
     btn.innerHTML = 'Update health scores';
     btn.disabled = false;

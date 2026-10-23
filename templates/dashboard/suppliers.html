@@ -15,7 +15,7 @@
         /* The page's supplier table uses sticky headings.  A short return
            history table must remain in normal document flow; otherwise its
            heading can detach below the first row while the page scrolls. */
-        .returns-history-table thead th { position:static !important; top:auto; z-index:auto; white-space:nowrap; background:var(--card2); }
+        .returns-history-table thead th { position:sticky; top:calc(var(--dashboard-header-height, 0px)) !important; z-index:5; white-space:nowrap; background:var(--card2); }
         .returns-history-table th:nth-child(1) { min-width:95px; }
         .returns-history-table th:nth-child(2), .returns-history-table th:nth-child(4) { min-width:105px; }
         .returns-history-table th:nth-child(5), .returns-history-table th:nth-child(6) { min-width:90px; }
@@ -87,7 +87,7 @@
 
     <div class="card p-4">
         <div class="table-scroll-wrap">
-<table class="table table-hover">
+<table class="table table-hover table-sticky-header">
             <thead class="table-light">
                 <tr><th>Name</th><th>Email</th><th>Contact</th><th>Lead Time</th><th>Return Policy</th><th>Actions</th></tr>
             </thead>
@@ -113,7 +113,7 @@
         <div class="card p-4">
             <div class="d-flex justify-content-between align-items-center mb-2"><h6 class="fw-bold mb-0">Uploaded Returns</h6><button class="btn btn-outline-secondary btn-sm" onclick="loadSupplierReturns()">Refresh</button></div>
             <div class="table-responsive"><div class="table-scroll-wrap">
-<table class="table table-hover table-sm returns-history-table"><thead class="table-light"><tr><th>Return ID</th><th>Supplier ID</th><th>Product Name</th><th>Batch ID</th><th>Quantity</th><th>Status</th></tr></thead><tbody id="returnsBody"><tr><td colspan="6" class="text-center text-muted">Open this tab to load returns.</td></tr></tbody></table>
+<table class="table table-hover table-sm returns-history-table table-sticky-header"><thead class="table-light"><tr><th>Return ID</th><th>Supplier ID</th><th>Product Name</th><th>Batch ID</th><th>Quantity</th><th>Status</th></tr></thead><tbody id="returnsBody"><tr><td colspan="6" class="text-center text-muted">Open this tab to load returns.</td></tr></tbody></table>
 </div></div>
         </div>
     </div>
@@ -303,6 +303,7 @@ function editSupplier(s) {
     document.getElementById('supReturnPolicy').value = s.return_policy ?? '';
     document.getElementById('supMsg').innerHTML = '';
     document.getElementById('supForm').style.display = 'block';
+    scrollToForm('supForm');
 }
 
 function hideForm() {
@@ -332,20 +333,22 @@ function hideSupplierModal() {
 }
 
 async function deleteSupplier(id) {
-    if (!id || !confirm('Permanently delete this supplier?')) return;
-    try {
-        const res = await fetch(`/api/suppliers/${id}/`, {
-            method: 'DELETE',
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        if (!res.ok) {
-            const error = await res.json().catch(() => ({}));
-            throw new Error(error.detail ?? error.error ?? `Delete failed (${res.status})`);
+    if (!id) return;
+    showConfirm('Delete supplier', 'Permanently delete this supplier?', async function() {
+        try {
+            const res = await fetch(`/api/suppliers/${id}/`, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (!res.ok) {
+                const error = await res.json().catch(() => ({}));
+                throw new Error(error.detail ?? error.error ?? `Delete failed (${res.status})`);
+            }
+            loadSuppliers();
+        } catch (e) {
+            showConfirm('Delete failed', e.message || 'Could not delete supplier.', function() {}, 'OK', 'btn-secondary');
         }
-        loadSuppliers();
-    } catch (e) {
-        alert(e.message || 'Could not delete supplier.');
-    }
+    }, 'Delete', 'btn-danger');
 }
 
 async function showScorecard(id) {
@@ -361,7 +364,7 @@ async function showScorecard(id) {
             <h6>${score.supplier_name ?? 'Supplier'}</h6>
             <p class="fs-4 fw-bold mb-3">Overall score: ${score.overall_score ?? '—'}</p>
             <div class="table-scroll-wrap">
-<table class="table table-sm">
+<table class="table table-sm table-sticky-header">
                 <tbody>${Object.entries(components).map(([name, value]) => `<tr><td>${name.replaceAll('_', ' ')}</td><td>${value}</td></tr>`).join('') || '<tr><td class="text-muted">Insufficient data</td></tr>'}</tbody>
             </table>
 </div>`);
@@ -382,7 +385,7 @@ async function showCostTrend(id) {
         showSupplierModal('Supplier Cost Trend', groups.map(group => `
             <h6>${group.product_name ?? 'Product'}</h6>
             <div class="table-scroll-wrap">
-<table class="table table-sm"><thead><tr><th>Purchase date</th><th>Cost</th><th>Change</th></tr></thead><tbody>
+<table class="table table-sm table-sticky-header"><thead><tr><th>Purchase date</th><th>Cost</th><th>Change</th></tr></thead><tbody>
                 ${(group.history ?? []).map(item => `<tr><td>${item.purchase_date ?? '—'}</td><td>${item.cost_price ?? '—'}</td><td>${item.increase_pct ?? 0}%</td></tr>`).join('')}
             </tbody></table>
 </div>`).join('') || '<div class="text-muted">No cost history found.</div>');
@@ -401,7 +404,7 @@ async function showPurchaseHistory(id) {
         const data = await res.json();
         const purchases = extractArray(data).filter(p => String(p.supplier ?? p.supplier_id) === String(id));
         showSupplierModal('Supplier Purchase History', purchases.length ? `<div class="table-scroll-wrap">
-<table class="table table-sm"><thead><tr><th>Invoice</th><th>Date</th><th>Total</th></tr></thead><tbody>${purchases.map(p => `<tr><td>${p.invoice_number ?? '—'}</td><td>${formatDate(p.purchase_date)}</td><td>${p.total_amount ?? '—'}</td></tr>`).join('')}</tbody></table>
+<table class="table table-sm table-sticky-header"><thead><tr><th>Invoice</th><th>Date</th><th>Total</th></tr></thead><tbody>${purchases.map(p => `<tr><td>${p.invoice_number ?? '—'}</td><td>${formatDate(p.purchase_date)}</td><td>${p.total_amount ?? '—'}</td></tr>`).join('')}</tbody></table>
 </div>` : '<div class="text-muted">No purchases found.</div>');
     } catch (e) {
         showSupplierModal('Supplier Purchase History', '<div class="text-danger">Could not load purchase history.</div>');

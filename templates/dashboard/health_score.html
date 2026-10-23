@@ -125,7 +125,7 @@
             </div>
             <div class="table-responsive">
                 <div class="table-scroll-wrap">
-<table class="table table-sm table-hover mb-0">
+<table class="table table-sm table-hover mb-0 table-sticky-header">
                     <thead class="table-light">
                         <tr><th>Product</th><th>Score</th><th>Recommended Action</th></tr>
                     </thead>
@@ -146,7 +146,7 @@
             </div>
             <div class="table-responsive">
                 <div class="table-scroll-wrap">
-<table class="table table-sm table-hover mb-0">
+<table class="table table-sm table-hover mb-0 table-sticky-header">
                     <thead class="table-light">
                         <tr><th>Category</th><th>Avg Score</th><th>Status</th></tr>
                     </thead>
@@ -174,7 +174,7 @@
 <!-- Table -->
 <div class="card p-4">
     <div class="table-scroll-wrap">
-<table class="table table-hover" id="hsMainTable">
+<table class="table table-hover table-sticky-header" id="hsMainTable">
             <thead class="table-light">
                 <tr>
                     <th>Product</th>
@@ -382,7 +382,7 @@ async function showProductDetails(productId) {
                 : '';
             historyHtml = `
                 <div class="table-scroll-wrap">
-<table class="table table-sm mb-0">
+<table class="table table-sm mb-0 table-sticky-header">
                     <thead><tr><th>Calculated At</th><th>Score</th><th>Status</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>

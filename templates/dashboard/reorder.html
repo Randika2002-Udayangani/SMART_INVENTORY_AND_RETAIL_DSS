@@ -6,13 +6,23 @@
 <style>
   .reorder-page-header { margin-bottom: 24px; }
   .reorder-actions { display: flex; align-items: center; gap: 8px; }
+  #calcBtn[hidden] { display: none !important; }
   .reorder-table-wrap { overflow: visible; }
+  .reorder-table-wrap > .table-scroll-wrap {
+    overflow: visible !important;
+  }
   .reorder-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
-  .reorder-table thead th {
+  .reorder-table > thead {
     position: sticky;
-    top: 0;
-    z-index: 10;
+    top: var(--dashboard-header-height, 0px);
+    z-index: 120;
+  }
+  .reorder-table > thead > tr > th {
+    position: sticky;
+    top: var(--dashboard-header-height, 0px);
+    z-index: 121;
     background: var(--card2) !important;
+    border-bottom: 2px solid #e2e8f0;
     box-shadow: 0 1px 0 var(--border);
   }
   .reorder-error { color: #DC2626; }
@@ -22,7 +32,10 @@
   .badge-low { background: #F1F5F9; color: #64748B; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
 
   @media (max-width: 960px) {
-    .reorder-table-wrap { overflow-x: auto; }
+    .reorder-table-wrap {
+      overflow-x: auto !important;
+      overflow-y: visible !important;
+    }
     .reorder-table { min-width: 900px; }
     .reorder-actions { flex-wrap: wrap; }
   }
@@ -72,7 +85,7 @@
   <div class="card p-4">
     <div class="reorder-table-wrap">
       <div class="table-scroll-wrap">
-<table class="table table-hover reorder-table">
+<table class="table table-hover reorder-table table-sticky-header">
         <thead class="table-light">
           <tr><th>Product</th><th>Current Stock</th><th>Reorder Point</th><th>Suggested Qty</th><th>Urgency</th><th>Status</th><th id="actionHeader">Action</th></tr>
         </thead>
@@ -254,6 +267,9 @@
     canManageReorders = role === 'ADMIN' || role === 'MANAGER';
     document.getElementById('calcBtn').hidden = !canManageReorders;
     document.getElementById('actionHeader').hidden = !canManageReorders;
+    if (typeof setTopbarHeightVar === 'function') {
+      setTopbarHeightVar();
+    }
     await loadRecommendations();
   }
 

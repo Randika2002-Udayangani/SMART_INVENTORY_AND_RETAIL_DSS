@@ -60,7 +60,7 @@
     <div id="tab-recommendations" class="card p-4">
         <h6 class="fw-bold mb-3">Discount Recommendations</h6>
         <div class="table-scroll-wrap">
-<table class="table table-hover discount-table">
+<table class="table table-hover discount-table table-sticky-header">
             <thead class="table-light">
                 <tr><th>Product</th><th>Batch</th><th>Days to Expiry</th><th>Suggested Discount</th><th>Status</th><th>Details</th><th id="recommendationActionHeader" style="display:none;">Action</th></tr>
             </thead>
@@ -111,7 +111,7 @@
             </div>
             <div class="table-responsive">
                 <div class="table-scroll-wrap">
-<table class="table table-hover rules-table">
+<table class="table table-hover rules-table table-sticky-header">
                     <thead class="table-light">
                         <tr><th>ID</th><th>Days to Expiry</th><th>Discount</th><th>Lowest profit to keep</th><th>Status</th><th>Created</th><th id="rulesActionsHeader" style="display:none;">Actions</th></tr>
                     </thead>
@@ -287,7 +287,7 @@ function showRecommendationDetails(r) {
         `Reviewed by: ${r.reviewed_by_username ?? '—'}`,
         `Reviewed at: ${formatDate(r.reviewed_at)}`
     ];
-    alert(lines.join('\n'));
+    showConfirm('Discount recommendation details', lines.join('\n'), function() {}, 'Close', 'btn-secondary');
 }
 
 async function updateStatus(id, status) {
@@ -435,7 +435,7 @@ function editRule(rule) {
     document.getElementById('saveRuleBtn').innerText = 'Save Changes';
     document.getElementById('cancelRuleBtn').style.display = 'inline-block';
     document.getElementById('ruleMsg').innerHTML = '';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToForm('ruleForm');
 }
 
 function resetRuleForm() {
@@ -491,7 +491,7 @@ async function saveRule() {
 }
 
 async function deactivateRule(id) {
-    if (!confirm('Deactivate this discount rule? Existing recommendations will be retained.')) return;
+    showConfirm('Deactivate discount rule', 'Deactivate this discount rule? Existing recommendations will be retained.', async function() {
     try {
         const res = await fetch(`/api/discount-rules/${id}/`, {
             method: 'PATCH',
@@ -507,6 +507,7 @@ async function deactivateRule(id) {
     } catch (error) {
         document.getElementById('ruleMsg').innerHTML = '<div class="alert alert-danger py-2">Could not deactivate rule.</div>';
     }
+    }, 'Deactivate', 'btn-danger');
 }
 
 fetchCurrentUser();

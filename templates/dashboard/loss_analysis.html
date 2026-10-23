@@ -124,7 +124,7 @@
         </div>
         <div class="loss-table-wrap">
         <div class="table-scroll-wrap">
-<table class="table table-hover loss-table">
+<table class="table table-hover loss-table table-sticky-header">
             <thead class="table-light">
                 <tr><th>Product</th><th>Loss Type</th><th>Quantity</th><th>Loss Value</th><th>Date</th></tr>
             </thead>
@@ -154,7 +154,7 @@
     </div>
 
     <!-- Record Damage Form -->
-    <div class="card p-4 mb-4" id="damageForm" style="display:none;">
+    <div class="card p-4 mb-4" id="damageForm" style="display:none; scroll-margin-top:calc(var(--dashboard-header-height, 0px) + 16px);">
         <h6 class="fw-bold mb-3">Record Damage</h6>
         <div class="row g-3">
             <div class="col-md-3">
@@ -193,7 +193,7 @@
         <h6 class="fw-bold mb-3">Supplier Returns</h6>
         <div class="returns-table-wrap">
         <div class="table-scroll-wrap">
-<table class="table table-hover returns-table">
+<table class="table table-hover returns-table table-sticky-header">
             <thead class="table-light">
                 <tr><th>Supplier</th><th>Product</th><th>Quantity</th><th>Status</th><th>Actions</th></tr>
             </thead>
@@ -349,6 +349,7 @@ function renderLosses() {
 function changeLossPage(delta) {
     lossPage += delta;
     renderLosses();
+    document.getElementById('lossTableBody').closest('table').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // Row click -> details modal. Shows every field the API returned for this
@@ -450,7 +451,12 @@ async function updateReturn(id, status) {
     }
 }
 
-function showDamageForm() { document.getElementById('damageForm').style.display = 'block'; }
+function showDamageForm() {
+    const form = document.getElementById('damageForm');
+    form.style.display = 'block';
+    scrollToForm('damageForm');
+    window.requestAnimationFrame(() => document.getElementById('dmgProductSearch').focus({ preventScroll: true }));
+}
 function hideDamageForm() { document.getElementById('damageForm').style.display = 'none'; }
 
 async function submitDamage() {

@@ -9,7 +9,7 @@
         .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
         .table thead.table-light th { position:sticky; top:0; z-index:120; background:var(--card2); }
         .crud-form { max-width: 520px; }
-        #tab-list .table-scroll-wrap { overflow-x:auto; }
+        #tab-list .table-scroll-wrap { overflow-x:clip; overflow-y:visible; }
         #tab-list table { min-width:900px; }
         #tab-list table th:first-child, #tab-list table td:first-child { min-width:260px; white-space:normal; }
     </style>
@@ -94,7 +94,7 @@
         </div>
         <div class="card p-4">
             <div class="table-scroll-wrap">
-<table class="table table-hover">
+<table class="table table-hover table-sticky-header">
                 <thead class="table-light">
                     <tr><th>Product</th><th>Category</th><th>Brand</th><th>Product code <span class="tooltip-icon" title="Stock Keeping Unit — a unique code for each product">ⓘ</span></th><th>Unit Price</th><th>Actions</th></tr>
                 </thead>
@@ -122,7 +122,7 @@
 
     <!-- Brands Tab -->
     <div id="tab-brands" style="display:none;">
-        <div class="card p-4 mb-3 crud-form">
+        <div class="card p-4 mb-3 crud-form" id="brandForm">
             <h6 class="fw-bold mb-3" id="brandFormTitle">Add Brand</h6>
             <input type="hidden" id="brandId">
             <div class="mb-3">
@@ -138,7 +138,7 @@
 
         <div class="card p-4">
             <div class="table-scroll-wrap">
-<table class="table table-hover">
+<table class="table table-hover table-sticky-header">
                 <thead class="table-light">
                     <tr><th>Brand Name</th><th>Actions</th></tr>
                 </thead>
@@ -152,7 +152,7 @@
 
     <!-- Categories Tab -->
     <div id="tab-categories" style="display:none;">
-        <div class="card p-4 mb-3 crud-form">
+        <div class="card p-4 mb-3 crud-form" id="categoryForm">
             <h6 class="fw-bold mb-3" id="categoryFormTitle">Add Category</h6>
             <input type="hidden" id="categoryId">
             <div class="mb-3">
@@ -168,7 +168,7 @@
 
         <div class="card p-4">
             <div class="table-scroll-wrap">
-<table class="table table-hover">
+<table class="table table-hover table-sticky-header">
                 <thead class="table-light">
                     <tr><th>Category Name</th><th>Actions</th></tr>
                 </thead>
@@ -182,7 +182,7 @@
 
     <!-- Store Zones Tab -->
     <div id="tab-zones-crud" style="display:none;">
-        <div class="card p-4 mb-3 crud-form">
+        <div class="card p-4 mb-3 crud-form" id="zoneForm">
             <h6 class="fw-bold mb-3" id="zoneFormTitle">Add Store Zone</h6>
             <input type="hidden" id="zoneId">
             <div class="mb-3">
@@ -211,7 +211,7 @@
 
         <div class="card p-4">
             <div class="table-scroll-wrap">
-<table class="table table-hover">
+<table class="table table-hover table-sticky-header">
                 <thead class="table-light">
                     <tr><th>Zone Name</th><th>Traffic</th><th>Description</th><th>Actions</th></tr>
                 </thead>
@@ -510,7 +510,7 @@ function changeProdPage(delta) {
 }
 
 async function reclassify() {
-    if (!confirm('Run product reclassification now?')) return;
+    if (!(await confirmAction('Reclassify products', 'Run product reclassification now?', 'Reclassify', 'btn-primary'))) return;
     try {
         const res = await request('/api/products/reclassify/', {
             method: 'POST',
@@ -598,6 +598,7 @@ function openEditForm(p) {
     // Show delete button only for ADMIN or MANAGER roles
     document.getElementById('prodDeleteBtn').style.display = isUserManagerOrAdmin() ? 'inline-block' : 'none';
     document.getElementById('prodForm').style.display = 'block';
+    scrollToForm('prodForm');
 }
 
 function hideEditForm() {
@@ -718,7 +719,7 @@ async function viewProductAvailability(id) {
 }
 
 async function recalculateWAC(id) {
-    if (!confirm('Recalculate average cost for this product?')) return;
+    if (!(await confirmAction('Recalculate average cost', 'Recalculate average cost for this product?', 'Recalculate', 'btn-primary'))) return;
     try {
         const res = await request(`/api/products/${id}/recalculate-wac/`, {
             method: 'POST',
@@ -738,7 +739,8 @@ async function recalculateWAC(id) {
 }
 
 async function updateBuyingPrices() {
-    if (!allProducts.length || !confirm('Update buying prices for the products on this page?')) return;
+    if (!allProducts.length) return;
+    if (!(await confirmAction('Update buying prices', 'Update buying prices for the products on this page?', 'Update', 'btn-primary'))) return;
     try {
         const results = await Promise.all(allProducts.map(async product => {
             const res = await request(`/api/products/${product.id}/recalculate-wac/`, { method: 'POST' });
@@ -798,7 +800,7 @@ async function saveProduct() {
 async function deleteProduct() {
     const id = document.getElementById('prodId').value;
     if (!id) return;
-    if (!confirm('Deactivate this product? This cannot be undone easily.')) return;
+    if (!(await confirmAction('Deactivate product', 'Deactivate this product? This cannot be undone easily.', 'Deactivate', 'btn-danger'))) return;
 
     try {
         const res = await request(`/api/products/${id}/`, {
@@ -850,6 +852,7 @@ function editBrand(brand) {
     document.getElementById('brandId').value = brand.id ?? '';
     document.getElementById('brandName').value = brand.brand_name ?? '';
     document.getElementById('brandMsg').innerHTML = '';
+    scrollToForm('brandForm');
 }
 
 function resetBrandForm() {
@@ -892,7 +895,7 @@ async function saveBrand() {
 }
 
 async function confirmDeleteBrand(id) {
-    if (!confirm('Delete this brand?')) return;
+    if (!(await confirmAction('Delete brand', 'Delete this brand?', 'Delete', 'btn-danger'))) return;
     try {
         const res = await request(`/api/brands/${id}/`, {
             method: 'DELETE',
@@ -942,6 +945,7 @@ function editCategory(cat) {
     document.getElementById('categoryId').value = cat.id ?? '';
     document.getElementById('categoryName').value = cat.category_name ?? '';
     document.getElementById('categoryMsg').innerHTML = '';
+    scrollToForm('categoryForm');
 }
 
 function resetCategoryForm() {
@@ -985,7 +989,7 @@ async function saveCategory() {
 }
 
 async function confirmDeleteCategory(id) {
-    if (!confirm('Delete this category?')) return;
+    if (!(await confirmAction('Delete category', 'Delete this category?', 'Delete', 'btn-danger'))) return;
     try {
         const res = await request(`/api/categories/${id}/`, {
             method: 'DELETE',
@@ -1039,6 +1043,7 @@ function editZone(zone) {
     document.getElementById('zoneTrafficLevel').value = zone.traffic_level ?? '';
     document.getElementById('zoneDescription').value = zone.description ?? '';
     document.getElementById('zoneMsg').innerHTML = '';
+    scrollToForm('zoneForm');
 }
 
 function resetZoneForm() {
@@ -1096,7 +1101,7 @@ async function saveZone() {
 }
 
 async function confirmDeleteZone(id) {
-    if (!confirm('Delete this zone?')) return;
+    if (!(await confirmAction('Delete zone', 'Delete this zone?', 'Delete', 'btn-danger'))) return;
     try {
         const res = await request(`/api/zones/${id}/`, {
             method: 'DELETE',

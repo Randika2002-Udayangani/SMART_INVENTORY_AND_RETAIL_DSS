@@ -390,7 +390,7 @@
       await loadNotifications();
     } catch (e) {
       console.error('markRead failed:', e);
-      alert('Could not mark notification as read.');
+      showConfirm('Notification update failed', 'Could not mark notification as read.', function() {}, 'OK', 'btn-secondary');
     }
 
     async function markAllAsRead() {
@@ -401,13 +401,13 @@
         await loadNotifications();
       } catch (e) {
         console.error('markAllAsRead failed:', e);
-        alert('Could not mark all notifications as read.');
+        showConfirm('Notification update failed', 'Could not mark all notifications as read.', function() {}, 'OK', 'btn-secondary');
       }
     }
   }
 
   async function dismiss(id) {
-    if (!confirm('Dismiss this notification? This cannot be undone.')) return;
+    if (!(await confirmAction('Dismiss notification', 'Dismiss this notification? This cannot be undone.', 'Dismiss', 'btn-danger'))) return;
     try {
       await apiFetch(`/api/notifications/${id}/`, { method: 'DELETE' });
       allNotifications = allNotifications.filter(n => n.id !== id);
@@ -416,7 +416,7 @@
       refreshSidebarAlertBadge(); // keep the shared badges in sync with the true unread count
     } catch (e) {
       console.error('dismiss failed:', e);
-      alert('Could not dismiss notification.');
+      showConfirm('Dismiss failed', 'Could not dismiss notification.', function() {}, 'OK', 'btn-secondary');
     }
   }
 
