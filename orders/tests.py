@@ -20,7 +20,14 @@ from orders.services.agent import (
     get_best_selling_products, get_expiring_products, run_agent,
 )
 from orders.services.gemini import DEFAULT_GEMINI_MODEL, GeminiProvider, GeminiQuotaExceeded, GeminiUnavailable
-from orders.views import ChatbotQueryView, ChatbotSessionDetailView
+from orders.views import (
+    ChatbotQueryView,
+    ChatbotSessionDetailView,
+    CustomerChangePasswordView,
+    CustomerRegisterView,
+    OrderListCreateView,
+    _is_pickup_slot_available,
+)
 from inventory.models import DiscountRecommendation
 from products.models import Category, Product
 from purchases.models import Purchase, PurchaseBatch
@@ -32,6 +39,95 @@ from zoneinfo import ZoneInfo
 def local_today():
     """The app counts days in Sri Lanka time, so the tests must too."""
     return datetime.now(ZoneInfo('Asia/Colombo')).date()
+
+
+class PickupSlotAvailabilityTests(TestCase):
+    def test_same_day_slot_is_available_until_its_end_time(self):
+        now = datetime(2026, 10, 20, 11, 59, tzinfo=ZoneInfo('Asia/Colombo'))
+        self.assertTrue(_is_pickup_slot_available(date(2026, 10, 20), 'MORNING', now))
+
+        now = datetime(2026, 10, 20, 12, 0, tzinfo=ZoneInfo('Asia/Colombo'))
+        self.assertFalse(_is_pickup_slot_available(date(2026, 10, 20), 'MORNING', now))
+
+    def test_past_slots_and_dates_are_unavailable_but_future_slots_are_available(self):
+        now = datetime(2026, 10, 20, 21, 0, tzinfo=ZoneInfo('Asia/Colombo'))
+        self.assertFalse(_is_pickup_slot_available(date(2026, 10, 20), 'EVENING', now))
+        self.assertFalse(_is_pickup_slot_available(date(2026, 10, 19), 'MORNING', now))
+        self.assertTrue(_is_pickup_slot_available(date(2026, 10, 21), 'MORNING', now))
+
+    @patch('orders.views.timezone.now')
+    def test_order_endpoint_rejects_a_pickup_slot_that_has_passed(self, mocked_now):
+        from django.urls import reverse
+
+        from orders.models import Customer
+
+        local_now = datetime(2026, 10, 20, 20, 30, tzinfo=ZoneInfo('Asia/Colombo'))
+        mocked_now.return_value = local_now
+        customer = Customer.objects.create(
+            name='Pickup Test Customer',
+            email='pickup-test@example.com',
+            password_hash='unused',
+        )
+        request = APIRequestFactory().post(
+            reverse('order-list-create'),
+            {
+                'pickup_date': '2026-10-20',
+                'time_slot': 'MORNING',
+                'items': [{'product_id': 1, 'quantity': 1}],
+            },
+            format='json',
+        )
+        force_authenticate(request, user=customer)
+
+        response = OrderListCreateView.as_view()(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('pickup time has passed', response.data['error'])
+
+
+class CustomerPasswordMinimumTests(TestCase):
+    def test_registration_requires_at_least_eight_characters(self):
+        factory = APIRequestFactory()
+        register = CustomerRegisterView.as_view()
+
+        short_request = factory.post(
+            '/api/customer-auth/register/',
+            {'name': 'Test Customer', 'email': 'short@example.com', 'password': '1234567'},
+            format='json',
+        )
+        short_response = register(short_request)
+        self.assertEqual(short_response.status_code, 400)
+        self.assertIn('8 characters', short_response.data['error'])
+
+        valid_request = factory.post(
+            '/api/customer-auth/register/',
+            {'name': 'Test Customer', 'email': 'valid@example.com', 'password': '12345678'},
+            format='json',
+        )
+        valid_response = register(valid_request)
+        self.assertEqual(valid_response.status_code, 201)
+        self.assertTrue(Customer.objects.filter(email='valid@example.com').exists())
+
+    def test_change_password_rejects_passwords_shorter_than_eight_characters(self):
+        from django.contrib.auth.hashers import make_password
+
+        customer = Customer.objects.create(
+            name='Password Test Customer',
+            email='password-test@example.com',
+            password_hash=make_password('current-password'),
+        )
+        request = APIRequestFactory().post(
+            '/api/customer-auth/change-password/',
+            {'old_password': 'current-password', 'new_password': '1234567'},
+            format='json',
+        )
+        force_authenticate(request, user=customer)
+
+        response = CustomerChangePasswordView.as_view()(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('8 characters', response.data['error'])
+
 
 class ChatbotAgentTests(TestCase):
     def setUp(self):

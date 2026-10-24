@@ -35,6 +35,23 @@ from .services.rate_limit import consume_chatbot_request, get_client_ip
 
 LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
+
+PICKUP_SLOT_END_MINUTES = {
+    "MORNING": 12 * 60,
+    "AFTERNOON": 17 * 60,
+    "EVENING": 20 * 60,
+}
+
+
+def _is_pickup_slot_available(pickup_date, time_slot, now=None):
+    local_now = (now or timezone.now()).astimezone(LOCAL_TZ)
+    if pickup_date < local_now.date():
+        return False
+    if pickup_date > local_now.date():
+        return True
+    return PICKUP_SLOT_END_MINUTES[time_slot] > local_now.hour * 60 + local_now.minute
+
+
 class CustomerRegisterView(APIView):
 
     authentication_classes = []
@@ -57,6 +74,11 @@ class CustomerRegisterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if len(password) < 8:
+            return Response(
+                {"error": "Password must be at least 8 characters"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if Customer.objects.filter(email=email).exists():
 
@@ -294,8 +316,8 @@ class CustomerChangePasswordView(APIView):
 
         if not old_password or not new_password:
             return Response({'error': 'old_password and new_password are required'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(new_password) < 6:
-            return Response({'error': 'New password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(new_password) < 8:
+            return Response({'error': 'New password must be at least 8 characters'}, status=status.HTTP_400_BAD_REQUEST)
         if not check_password(old_password, c.password_hash):
             return Response({'error': 'old_password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -392,6 +414,12 @@ class OrderListCreateView(APIView):
         except (ValueError, TypeError):
             return Response(
                 {"error": "pickup_date must be in YYYY-MM-DD format"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not _is_pickup_slot_available(pickup_date, time_slot):
+            return Response(
+                {"error": "That pickup time has passed. Choose a future pickup date or time slot."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
