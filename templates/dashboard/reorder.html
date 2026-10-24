@@ -6,23 +6,36 @@
 <style>
   .reorder-page-header { margin-bottom: 24px; }
   .reorder-actions { display: flex; align-items: center; gap: 8px; }
+  #calcBtn[hidden] { display: none !important; }
   .reorder-table-wrap { overflow: visible; }
+  .reorder-table-wrap > .table-scroll-wrap {
+    overflow: visible !important;
+  }
   .reorder-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
-  .reorder-table thead th {
+  .reorder-table > thead {
     position: sticky;
-    top: calc(var(--topbar-height, 58px) + 1px);
-    z-index: 10;
+    top: var(--dashboard-header-height, 0px);
+    z-index: 120;
+  }
+  .reorder-table > thead > tr > th {
+    position: sticky;
+    top: var(--dashboard-header-height, 0px);
+    z-index: 121;
     background: var(--card2) !important;
+    border-bottom: 2px solid #e2e8f0;
     box-shadow: 0 1px 0 var(--border);
   }
-  .reorder-error { color: #b91c1c; }
-  .badge-critical { background: #fee2e2; color: #dc2626; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-  .badge-high { background: #fed7aa; color: #c2410c; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-  .badge-medium { background: #fef9c3; color: #854d0e; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-  .badge-low { background: #dcfce7; color: #16a34a; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .reorder-error { color: #DC2626; }
+  .badge-critical { background: #FEF2F2; color: #DC2626; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-high { background: #FFF7ED; color: #EA580C; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-medium { background: #FEFCE8; color: #CA8A04; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-low { background: #F1F5F9; color: #64748B; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
 
   @media (max-width: 960px) {
-    .reorder-table-wrap { overflow-x: auto; }
+    .reorder-table-wrap {
+      overflow-x: auto !important;
+      overflow-y: visible !important;
+    }
     .reorder-table { min-width: 900px; }
     .reorder-actions { flex-wrap: wrap; }
   }
@@ -32,6 +45,11 @@
 {% block nav_reorder %}active{% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Decision Support</span><span>›</span><span class="current-page">Reorder Recommendations</span></div>
+  <h1 class="page-title">Reorder Recommendations</h1>
+  <p class="page-subtitle">Prioritize products that need replenishment based on current stock and demand.</p>
+</div>
   <div class="topbar reorder-page-header">
     <div>
       <h1>Reorder Recommendations</h1>
@@ -39,7 +57,7 @@
     </div>
     <div class="reorder-actions">
       <button class="btn btn-primary btn-sm" id="calcBtn" onclick="runCalculate()" hidden>&#9654; Calculate Reorder</button>
-      <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+      <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
         <i class="bi bi-box-arrow-right"></i> Logout
       </button>
     </div>
@@ -50,23 +68,24 @@
   <div class="mb-3 d-flex gap-2 flex-wrap">
     <select id="urgencyFilter" class="form-select form-select-sm" style="width:160px;" onchange="handleReorderFilterChange()">
       <option value="">All Urgency</option>
-      <option value="CRITICAL">CRITICAL</option>
-      <option value="HIGH">HIGH</option>
-      <option value="MEDIUM">MEDIUM</option>
-      <option value="LOW">LOW</option>
+      <option value="CRITICAL" data-reorder-label="CRITICAL"></option>
+      <option value="HIGH" data-reorder-label="HIGH"></option>
+      <option value="MEDIUM" data-reorder-label="MEDIUM"></option>
+      <option value="LOW" data-reorder-label="LOW"></option>
     </select>
     <select id="statusFilter" class="form-select form-select-sm" style="width:160px;" onchange="handleReorderFilterChange()">
       <option value="">All Status</option>
-      <option value="PENDING">PENDING</option>
-      <option value="ORDERED">ORDERED</option>
-      <option value="IGNORED">IGNORED</option>
-      <option value="AUTO_RESOLVED">AUTO_RESOLVED</option>
+      <option value="PENDING">Pending</option>
+      <option value="ORDERED">Marked as ordered</option>
+      <option value="IGNORED">Ignored</option>
+      <option value="AUTO_RESOLVED">Auto resolved</option>
     </select>
   </div>
 
   <div class="card p-4">
     <div class="reorder-table-wrap">
-      <table class="table table-hover reorder-table">
+      <div class="table-scroll-wrap">
+<table class="table table-hover reorder-table table-sticky-header">
         <thead class="table-light">
           <tr><th>Product</th><th>Current Stock</th><th>Reorder Point</th><th>Suggested Qty</th><th>Urgency</th><th>Status</th><th id="actionHeader">Action</th></tr>
         </thead>
@@ -74,6 +93,7 @@
           <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
         </tbody>
       </table>
+</div>
     </div>
     <div id="reorderPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
   </div>
@@ -87,6 +107,10 @@
   let reorderTotalPages = 1;
   const reorderPageSize = 25;
 
+  document.querySelectorAll('[data-reorder-label]').forEach(option => {
+    option.textContent = REORDER_LABELS[option.dataset.reorderLabel];
+  });
+
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>'"]/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
@@ -96,7 +120,7 @@
   function urgencyBadge(urgency) {
     const map = { CRITICAL: 'badge-critical', HIGH: 'badge-high', MEDIUM: 'badge-medium', LOW: 'badge-low' };
     const safeUrgency = String(urgency ?? '—');
-    return `<span class="${map[safeUrgency] || 'badge-low'}">${escapeHtml(safeUrgency)}</span>`;
+    return `<span class="${map[safeUrgency] || 'badge-low'}">${escapeHtml(displayLabel(REORDER_LABELS, safeUrgency))}</span>`;
   }
 
   function showError(message) {
@@ -180,7 +204,7 @@
         <td>${escapeHtml(recommendation.safety_stock)}</td>
         <td>${escapeHtml(recommendation.suggested_quantity)}</td>
         <td>${urgencyBadge(recommendation.urgency)}</td>
-        <td><span class="badge bg-secondary">${escapeHtml(recommendation.status)}</span></td>
+        <td><span class="badge bg-secondary">${escapeHtml(displayLabel(REORDER_STATUS_LABELS, recommendation.status))}</span></td>
         <td class="action-cell">${renderActionCell(recommendation)}</td>
       </tr>
     `).join('');
@@ -243,6 +267,9 @@
     canManageReorders = role === 'ADMIN' || role === 'MANAGER';
     document.getElementById('calcBtn').hidden = !canManageReorders;
     document.getElementById('actionHeader').hidden = !canManageReorders;
+    if (typeof setTopbarHeightVar === 'function') {
+      setTopbarHeightVar();
+    }
     await loadRecommendations();
   }
 

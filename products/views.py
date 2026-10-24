@@ -76,15 +76,58 @@ class ProductPickerOptionsView(APIView):
         return Response({'products': list(products)})
 
 
+class AuditedWriteMixin:
+    """
+    Adds audit logging to DRF generic create / update / delete views.
+    Set `audit_table` on the view. Put this mixin BEFORE the generic view in
+    the class bases, e.g. class BrandDetailView(AuditedWriteMixin, generics...).
+    """
+    audit_table = ''
+
+    def _audit_snapshot(self, instance):
+        import json
+        data = self.get_serializer(instance).data
+        return json.loads(json.dumps(data, default=str))
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        log_action(
+            user=self.request.user, action='CREATE', table_name=self.audit_table,
+            record_id=instance.pk, old_value=None,
+            new_value=self._audit_snapshot(instance), request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        old_value = self._audit_snapshot(serializer.instance)
+        instance = serializer.save()
+        log_action(
+            user=self.request.user, action='UPDATE', table_name=self.audit_table,
+            record_id=instance.pk, old_value=old_value,
+            new_value=self._audit_snapshot(instance), request=self.request,
+        )
+
+    def perform_destroy(self, instance):
+        old_value = self._audit_snapshot(instance)
+        record_id = instance.pk
+        instance.delete()
+        log_action(
+            user=self.request.user, action='DELETE', table_name=self.audit_table,
+            record_id=record_id, old_value=old_value, new_value=None,
+            request=self.request,
+        )
+
+
 # ─────────────────────────────────────────────
 # Brand
 # ─────────────────────────────────────────────
-class BrandListCreateView(generics.ListCreateAPIView):
+class BrandListCreateView(AuditedWriteMixin, generics.ListCreateAPIView):
+    audit_table = 'brand'
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
 
 
-class BrandDetailView(generics.RetrieveUpdateDestroyAPIView):
+class BrandDetailView(AuditedWriteMixin, generics.RetrieveUpdateDestroyAPIView):
+    audit_table = 'brand'
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
 
@@ -92,12 +135,14 @@ class BrandDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ─────────────────────────────────────────────
 # Category
 # ─────────────────────────────────────────────
-class CategoryListCreateView(generics.ListCreateAPIView):
+class CategoryListCreateView(AuditedWriteMixin, generics.ListCreateAPIView):
+    audit_table = 'category'
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
 
-class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+class CategoryDetailView(AuditedWriteMixin, generics.RetrieveUpdateDestroyAPIView):
+    audit_table = 'category'
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
@@ -105,12 +150,14 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ─────────────────────────────────────────────
 # StoreZone — staff-only, no customer traffic, default auth is fine
 # ─────────────────────────────────────────────
-class StoreZoneListCreateView(generics.ListCreateAPIView):
+class StoreZoneListCreateView(AuditedWriteMixin, generics.ListCreateAPIView):
+    audit_table = 'store_zone'
     queryset = StoreZone.objects.all()
     serializer_class = StoreZoneSerializer
 
 
-class StoreZoneDetailView(generics.RetrieveUpdateDestroyAPIView):
+class StoreZoneDetailView(AuditedWriteMixin, generics.RetrieveUpdateDestroyAPIView):
+    audit_table = 'store_zone'
     queryset = StoreZone.objects.all()
     serializer_class = StoreZoneSerializer
 
@@ -896,7 +943,8 @@ class ProductZoneOverrideListCreateView(generics.ListCreateAPIView):
         )
 
 
-class ProductZoneOverrideDetailView(generics.RetrieveUpdateDestroyAPIView):
+class ProductZoneOverrideDetailView(AuditedWriteMixin, generics.RetrieveUpdateDestroyAPIView):
+    audit_table = 'product_zone_override'
     queryset = ProductZoneOverride.objects.select_related('product', 'zone')
     serializer_class = ProductZoneOverrideSerializer
 

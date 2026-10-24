@@ -6,20 +6,22 @@
 <style>
   .sales-upload-header { margin-bottom: 24px; }
   .upload-card h5 { color: var(--sidebar); }
+  .btn-primary { background:#14532d; border-color:#14532d; }
+  .btn-primary:hover { background:#14532d; border-color:#14532d; }
   .muted { color: var(--muted); }
   .message { min-height: 24px; }
   .upload-table-wrap { overflow: visible; }
   .upload-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
   .upload-table thead th {
     position: sticky;
-    top: calc(var(--topbar-height, 58px) + 1px);
+    top: 0;
     z-index: 10;
     background: var(--card2) !important;
     box-shadow: 0 1px 0 var(--border);
   }
-  .badge-success { background: #dcfce7; color: #166534; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-  .badge-failed { background: #fee2e2; color: #b91c1c; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-  .badge-partial { background: #fef9c3; color: #854d0e; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-success { background: #F0FDF4; color: #16A34A; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-failed { background: #FEF2F2; color: #DC2626; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-partial { background: #FEFCE8; color: #CA8A04; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
 
   @media (max-width: 960px) {
     .upload-table-wrap { overflow-x: auto; }
@@ -53,12 +55,17 @@
 {% block nav_sales_upload %}active{% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Inventory</span><span>›</span><span class="current-page">Sales Upload</span></div>
+  <h1 class="page-title">Sales Upload</h1>
+  <p class="page-subtitle">Upload sales data and review the latest import results.</p>
+</div>
   <div class="topbar sales-upload-header">
     <div>
       <h1>Sales Upload</h1>
       <div class="sub">Import daily bills and item sales ledger files</div>
     </div>
-    <button onclick="doLogout()" style="background:#ef4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
+    <button onclick="doLogout()" style="background:#EF4444;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;">
       <i class="bi bi-box-arrow-right"></i> Logout
     </button>
   </div>
@@ -77,10 +84,10 @@
     </div>
     <div class="col-lg-6">
       <div class="card p-4 upload-card h-100">
-        <h5 class="mb-1">Upload Item Sales Ledger</h5>
+        <h5 class="mb-1">Upload item-wise sales <span class="tooltip-icon" title="Two files are needed because the billing system cannot link a bill to its items: daily bills give store totals; item-wise sales give units per product.">ⓘ</span></h5>
         <p class="muted mb-3">Upload a PDF item sales ledger.</p>
         <input id="itemLedgerFile" type="file" class="form-control mb-3" accept=".pdf">
-        <button id="itemLedgerButton" class="btn btn-primary" onclick="uploadItemLedger()">Upload Item Sales Ledger</button>
+        <button id="itemLedgerButton" class="btn btn-primary" onclick="uploadItemLedger()">Upload item-wise sales</button>
         <div id="itemLedgerMessage" class="message mt-3" aria-live="polite"></div>
       </div>
     </div>
@@ -92,7 +99,8 @@
       <button class="btn btn-outline-secondary btn-sm" onclick="refreshLogs(this)">Refresh</button>
     </div>
     <div class="upload-table-wrap">
-      <table class="table table-hover align-middle upload-table">
+      <div class="table-scroll-wrap">
+<table class="table table-hover align-middle upload-table table-sticky-header">
         <thead>
           <tr><th>Date</th><th>Filename</th><th>Type</th><th>Status</th><th>Uploaded By</th><th>Details</th></tr>
         </thead>
@@ -100,6 +108,7 @@
           <tr><td colspan="6" class="text-center muted">Loading...</td></tr>
         </tbody>
       </table>
+</div>
     </div>
     <div id="uploadPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
   </div>
@@ -241,9 +250,9 @@
 
     body.innerHTML = rows.map(log => `
         <tr>
-          <td>${log.upload_date ? escapeHtml(new Date(log.upload_date).toLocaleString()) : '-'}</td>
+          <td>${escapeHtml(formatDate(log.upload_date))}</td>
           <td>${escapeHtml(log.file_name)}</td>
-          <td>${escapeHtml(log.upload_type)}</td>
+          <td>${escapeHtml(displayLabel(UPLOAD_TYPE_LABELS, log.upload_type))}</td>
           <td>${statusBadge(log.status)}</td>
           <td>${escapeHtml(log.uploaded_by_username ?? '-')}</td>
           <td><button class="btn btn-outline-secondary btn-sm" onclick="showDetails(${log.id})">Details</button></td>
@@ -286,7 +295,7 @@
 
       document.getElementById('uploadDetailsBody').innerHTML =
         field('File', data.file_name) +
-        field('Type', data.upload_type) +
+        field('Type', displayLabel(UPLOAD_TYPE_LABELS, data.upload_type)) +
         field('Status', data.status) +
         field('Details', errorMessage);
 

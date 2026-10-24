@@ -528,6 +528,28 @@ class OrderListCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         
+        # Audit: an online order deducts stock, so it must leave a trace.
+        # Customers are not staff users, so user=None; the customer is
+        # identified inside new_value.
+        log_action(
+            user=None, action='CREATE', table_name='online_order',
+            record_id=order.id, old_value=None,
+            new_value={
+                'order_reference': order.order_reference,
+                'customer_id': customer.id,
+                'total_amount': str(order.total_amount),
+                'items': [
+                    {
+                        'product_id': product.id,
+                        'quantity': quantity,
+                        'unit_price': str(product.unit_price),
+                    }
+                    for product, quantity in validated_items
+                ],
+            },
+            request=request,
+        )
+
         from inventory.services.notifications import create_notification
         create_notification(
             type='NEW_ORDER', priority='MEDIUM',
@@ -1047,6 +1069,13 @@ class RatingSummaryCalculateView(APIView):
                 },
             )
             updated.append(product_id)
+
+        log_action(
+            user=request.user, action='CALCULATE', table_name='product_rating_summary',
+            record_id=None, old_value=None,
+            new_value={'period': period, 'products_updated': len(updated)},
+            request=request,
+        )
 
         return Response({
             "message": f"Rating summaries recalculated for {len(updated)} product(s).",

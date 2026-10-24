@@ -1,29 +1,53 @@
-{% extends "dashboard/base.html" %}
+﻿{% extends "dashboard/base.html" %}
 
 {% block title %}Discount Engine — Smart Inventory DSS{% endblock %}
 {% block nav_discount %}active{% endblock %}
 
 {% block extra_css %}
     <style>
-        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #e2e8f0; margin-bottom:24px; }
-        .btn-primary { background:#2d6a4f; border:none; }
-        .badge-pending { background:#fef9c3; color:#854d0e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-applied { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .badge-ignored { background:#f3f4f6; color:#374151; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-        .rule-form { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; }
+        .page-header { background:white; padding:20px 30px; border-bottom:1px solid #CBD5E1; margin-bottom:24px; }
+        .btn-primary { background:#14532d; border:none; }
+        .badge-pending { background:#FEFCE8; color:#CA8A04; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .badge-applied { background:#F0FDF4; color:#16A34A; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .badge-ignored { background:#F1F5F9; color:#64748B; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+        .rule-form { background:#F1F5F9; border:1px solid #CBD5E1; border-radius:8px; }
+        .discount-actions { display:flex; flex-wrap:wrap; gap:8px; }
+        .discount-actions .btn { margin-right:0 !important; }
+        .discount-table { min-width:760px; }
+        .rules-table { min-width:720px; }
+        @media (max-width: 560px) {
+            .page-header {
+                padding:16px 12px;
+                align-items:flex-start !important;
+                gap:12px;
+                flex-direction:column;
+            }
+            .page-header > div:last-child { width:100%; }
+            .discount-actions .btn { flex:1 1 auto; }
+            .container-fluid { padding-left:0.5rem !important; padding-right:0.5rem !important; }
+            #tab-recommendations.card,
+            #tab-rules .card,
+            .rule-form { padding:1rem !important; }
+            #discountPagination,
+            #rulesPagination { gap:8px; flex-wrap:wrap; }
+        }
     </style>
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Decision Support</span><span>›</span><span class="current-page">Discount Engine</span></div>
+  <h1 class="page-title">Discount Engine</h1>
+  <p class="page-subtitle">Manage near-expiry discount recommendations and pricing rules.</p>
+</div>
 <div class="page-header d-flex justify-content-between align-items-center">
     <div>
         <h4 class="mb-0 fw-bold">Discount Engine</h4>
         <small class="text-muted">Near-expiry discount recommendations · Samanala Super Mart</small>
     </div>
-    <div>
+    <div class="discount-actions">
         <button class="btn btn-primary btn-sm me-2" id="calcBtn" onclick="runCalculate()">▶ Calculate Discounts</button>
-        <a href="/dashboard/" class="btn btn-outline-secondary btn-sm me-2">← Dashboard</a>
-        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#EF4444;color:white;">Logout</button>
     </div>
 </div>
 
@@ -35,7 +59,8 @@
 
     <div id="tab-recommendations" class="card p-4">
         <h6 class="fw-bold mb-3">Discount Recommendations</h6>
-        <table class="table table-hover">
+        <div class="table-scroll-wrap">
+<table class="table table-hover discount-table table-sticky-header">
             <thead class="table-light">
                 <tr><th>Product</th><th>Batch</th><th>Days to Expiry</th><th>Suggested Discount</th><th>Status</th><th>Details</th><th id="recommendationActionHeader" style="display:none;">Action</th></tr>
             </thead>
@@ -43,6 +68,7 @@
                 <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         <div id="discountPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         <div id="discountMsg" class="mt-2" aria-live="polite"></div>
     </div>
@@ -68,7 +94,7 @@
                     <input type="number" min="0" max="100" step="0.01" id="ruleDiscount" class="form-control" required>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">Minimum margin (%)</label>
+                    <label class="form-label">Lowest profit to keep (%) <span class="tooltip-icon" title="The discount will never go below this profit">ⓘ</span></label>
                     <input type="number" min="0" max="100" step="0.01" id="ruleMargin" class="form-control" required>
                 </div>
                 <div class="col-md-2">
@@ -84,12 +110,14 @@
                 <button class="btn btn-sm btn-outline-secondary" onclick="refreshRules()">Refresh</button>
             </div>
             <div class="table-responsive">
-                <table class="table table-hover">
+                <div class="table-scroll-wrap">
+<table class="table table-hover rules-table table-sticky-header">
                     <thead class="table-light">
-                        <tr><th>ID</th><th>Days to Expiry</th><th>Discount</th><th>Minimum Margin</th><th>Status</th><th>Created</th><th id="rulesActionsHeader" style="display:none;">Actions</th></tr>
+                        <tr><th>ID</th><th>Days to Expiry</th><th>Discount</th><th>Lowest profit to keep</th><th>Status</th><th>Created</th><th id="rulesActionsHeader" style="display:none;">Actions</th></tr>
                     </thead>
                     <tbody id="rulesBody"><tr><td colspan="7" class="text-center text-muted">Loading...</td></tr></tbody>
                 </table>
+</div>
             </div>
             <div id="rulesPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         </div>
@@ -152,7 +180,7 @@ function setRecommendationActionsVisibility() {
 
 function statusBadge(s) {
     const map = { 'PENDING':'badge-pending', 'APPLIED':'badge-applied', 'IGNORED':'badge-ignored' };
-    return `<span class="${map[s] || 'badge-pending'}">${s}</span>`;
+    return `<span class="${map[s] || 'badge-pending'}">${displayLabel({PENDING:'Pending', IGNORED:'Ignored', APPLIED:'Applied'}, s)}</span>`;
 }
 
 let allDiscounts = [];
@@ -194,14 +222,16 @@ function renderDiscounts() {
     tbody.innerHTML = pageRows.map(r => `
         <tr>
             <td>${r.product_name ?? '—'}</td>
-            <td>${r.batch != null ? `Batch #${r.batch}` : '—'}</td>
+            <td>${formatBatchExpiry(r)}</td>
             <td>${r.days_until_expiry ?? '—'}</td>
-            <td><strong>${r.recommended_discount_pct ?? '—'}%</strong></td>
+            <td><strong>${formatPercent(r.recommended_discount_pct)}</strong></td>
             <td>${statusBadge(r.status)}</td>
             <td><button class="btn btn-sm btn-outline-secondary" onclick='showRecommendationDetails(${JSON.stringify(r)})'>Details</button></td>
             <td class="recommendation-actions-cell">
-                ${canManageRules() ? `<button class="btn btn-sm btn-success me-1" onclick="updateStatus(${r.id},'APPLIED')">Apply</button>
-                <button class="btn btn-sm btn-outline-secondary" onclick="updateStatus(${r.id},'IGNORED')">Ignore</button>` : ''}
+                ${canManageRules() ? (String(r.status).toUpperCase() === 'IGNORED'
+                    ? `<button class="btn btn-sm btn-outline-secondary" onclick="updateStatus(${r.id},'PENDING')">Undo</button>`
+                    : `<button class="btn btn-sm btn-success me-1" onclick="updateStatus(${r.id},'APPLIED')">Apply</button>
+                       <button class="btn btn-sm btn-outline-secondary" onclick="updateStatus(${r.id},'IGNORED')">Ignore</button>`) : ''}
             </td>
         </tr>
     `).join('');
@@ -211,6 +241,22 @@ function renderDiscounts() {
         <button class="btn btn-sm btn-outline-secondary" onclick="changeDiscountPage(-1)" ${discountPage === 1 ? 'disabled' : ''}>Previous</button>
         <span class="text-muted small">Page ${discountPage} of ${totalPages}</span>
         <button class="btn btn-sm btn-outline-secondary" onclick="changeDiscountPage(1)" ${discountPage === totalPages ? 'disabled' : ''}>Next</button>` : '';
+}
+
+function formatPercent(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? `${number}%` : '—';
+}
+
+function formatBatchExpiry(row) {
+    const expiry = row.expiry_date ?? row.batch_expiry_date ?? row.batch_expiry ??
+        (row.batch && typeof row.batch === 'object' ? row.batch.expiry_date : null);
+    if (!expiry) return '—';
+    const date = new Date(expiry);
+    if (Number.isNaN(date.getTime())) return '—';
+    const label = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const days = row.days_until_expiry;
+    return `Expires ${label} (${days ?? '—'} days)`;
 }
 
 function changeDiscountPage(delta) {
@@ -224,13 +270,13 @@ function showDiscountMessage(text, type) {
 }
 
 function showRecommendationDetails(r) {
-    const money = v => (v !== null && v !== undefined) ? `Rs ${Number(v).toFixed(2)}` : '—';
+    const money = v => (v !== null && v !== undefined) ? formatMoney(v) : '—';
     const lines = [
         `Product: ${r.product_name ?? '—'}`,
-        `Batch: ${r.batch != null ? '#' + r.batch : '—'}`,
+        `Batch: ${formatBatchExpiry(r)}`,
         `Days to expiry: ${r.days_until_expiry ?? '—'}`,
         `Current price: ${money(r.current_price)}`,
-        `Recommended discount: ${r.recommended_discount_pct ?? '—'}%`,
+        `Recommended discount: ${formatPercent(r.recommended_discount_pct)}`,
         `Recommended price: ${money(r.recommended_price)}`,
         `Profit protected: ${r.profit_protected ? 'Yes' : 'No'}`,
         `Recovery — sell at discount: ${money(r.recovery_sell)}`,
@@ -239,9 +285,9 @@ function showRecommendationDetails(r) {
         `System-suggested best action: ${r.best_action ?? '—'}`,
         `Status: ${r.status ?? '—'}`,
         `Reviewed by: ${r.reviewed_by_username ?? '—'}`,
-        `Reviewed at: ${r.reviewed_at ? new Date(r.reviewed_at).toLocaleString() : '—'}`
+        `Reviewed at: ${formatDate(r.reviewed_at)}`
     ];
-    alert(lines.join('\n'));
+    showConfirm('Discount recommendation details', lines.join('\n'), function() {}, 'Close', 'btn-secondary');
 }
 
 async function updateStatus(id, status) {
@@ -337,13 +383,10 @@ function renderRules() {
         <tr>
             <td>${rule.id}</td>
             <td>${rule.days_from_expiry_min} to ${rule.days_from_expiry_max} days</td>
-            <td>${rule.discount_percentage}%</td>
-            <td>${rule.minimum_margin_pct}%</td>
+            <td>${formatPercent(rule.discount_percentage)}</td>
+            <td>${formatPercent(rule.minimum_margin_pct)}</td>
             <td>${ruleStatusBadge(rule.is_active)}</td>
-            <td>${rule.created_at ? new Date(rule.created_at).toLocaleString('en-GB', {
-                day: '2-digit', month: 'short', year: 'numeric',
-                hour: '2-digit', minute: '2-digit'
-            }) : '—'}</td>
+            <td>${formatDate(rule.created_at)}</td>
             <td class="rule-actions-cell">
                 ${canManageRules() ? `<button class="btn btn-sm btn-outline-primary me-1" onclick='editRule(${JSON.stringify(rule)})'>Edit</button>
                 ${rule.is_active ? `<button class="btn btn-sm btn-outline-danger" onclick="deactivateRule(${rule.id})">Deactivate</button>` : ''}` : ''}
@@ -392,7 +435,7 @@ function editRule(rule) {
     document.getElementById('saveRuleBtn').innerText = 'Save Changes';
     document.getElementById('cancelRuleBtn').style.display = 'inline-block';
     document.getElementById('ruleMsg').innerHTML = '';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scrollToForm('ruleForm');
 }
 
 function resetRuleForm() {
@@ -448,7 +491,7 @@ async function saveRule() {
 }
 
 async function deactivateRule(id) {
-    if (!confirm('Deactivate this discount rule? Existing recommendations will be retained.')) return;
+    showConfirm('Deactivate discount rule', 'Deactivate this discount rule? Existing recommendations will be retained.', async function() {
     try {
         const res = await fetch(`/api/discount-rules/${id}/`, {
             method: 'PATCH',
@@ -464,6 +507,7 @@ async function deactivateRule(id) {
     } catch (error) {
         document.getElementById('ruleMsg').innerHTML = '<div class="alert alert-danger py-2">Could not deactivate rule.</div>';
     }
+    }, 'Deactivate', 'btn-danger');
 }
 
 fetchCurrentUser();
