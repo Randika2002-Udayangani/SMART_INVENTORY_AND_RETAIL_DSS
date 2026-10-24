@@ -19,13 +19,36 @@ from inventory.services.discount_engine import get_customer_visible_discounts
 from products.models import Category, Product
 from sales.models import ItemSalesRecord
 from .gemini import GeminiQuotaExceeded, GeminiUnavailable
-from .matching import normalize_text, score_tokens, tokens_cover, tokenize
+from .matching import (
+    _QueryResolution,
+    classify_product_by_name,
+    normalize_text,
+    product_type_matches,
+    resolve_query_type,
+    score_tokens,
+    set_brand_prefixes,
+    tokens_cover,
+    tokenize,
+)
 from .provider import get_provider
 
 LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 logger = logging.getLogger(__name__)
+
+# Register known brand names so prefix-based brand detection works even when
+# the database brand field is NULL (1230 products in the current catalogue
+# have brand=None).  This is a best-effort, read-only lookup at import time;
+# if the table is not yet ready (e.g. during migrations), detection simply
+# stays disabled until the next import.
+try:
+    from products.models import Brand as _BrandModel
+
+    _known_brands = [b.brand_name for b in _BrandModel.objects.all()]
+    set_brand_prefixes(_known_brands)
+except Exception:  # pragma: no cover - defensive; table may not exist yet
+    pass
 
 
 SYSTEM_INSTRUCTIONS = """You are the SMART INVENTORY & RETAIL DSS assistant.
@@ -159,7 +182,18 @@ def _product_match_tokens(product):
     return name_tokens, aux_tokens
 
 
-def _search_ranked(query="", category="", max_price=None, limit=20):
+def _product_type_matches(product, product_type):
+    """True when *product* is classified as *product_type* by name/category."""
+    if not product_type:
+        return True
+    return product_type_matches(
+        product.product_name,
+        product.category.category_name if product.category else None,
+        product_type,
+    )
+
+
+def _search_ranked(query="", category="", max_price=None, limit=None, product_type=None):
     """Active products matching *query* and/or *category*, best matches first.
 
     Matching uses the shared normalised token strategy (orders.services.
@@ -170,8 +204,11 @@ def _search_ranked(query="", category="", max_price=None, limit=20):
     matches last, so "milk powder" can never return a chocolate malt drink
     that merely sits near powders in the catalogue.  Relevance ties are
     broken deterministically by price then name — never by database order.
-    The catalogue is small enough to score in Python; the SQL side still
-    applies the active/price constraints.
+    When *product_type* is given, only products whose name/category evidence
+    supports that type are returned — this keeps coconut milk, chocolate milk
+    and liquid milk from leaking into a "milk powder" search.  The catalogue
+    is small enough to score in Python; the SQL side still applies the
+    active/price constraints.
     """
     query_tokens = tokenize(query)
     category_tokens = tokenize(category)
@@ -184,6 +221,8 @@ def _search_ranked(query="", category="", max_price=None, limit=20):
         products = products.filter(unit_price__lte=max_price_value)
     scored = []
     for product in products:
+        if not _product_type_matches(product, product_type):
+            continue
         name_tokens, aux_tokens = _product_match_tokens(product)
         if category_tokens and not tokens_cover(category_tokens, aux_tokens):
             continue
@@ -193,7 +232,7 @@ def _search_ranked(query="", category="", max_price=None, limit=20):
         scored.append((score, product))
     scored.sort(key=lambda item: (tuple(-value for value in item[0]),
                                   item[1].unit_price, str(item[1].product_name)))
-    return [product for _, product in scored[:limit]]
+    return [product for _, product in (scored if limit is None else scored[:limit])]
 
 
 def _unresolved_product_reply(candidates=()):
@@ -217,14 +256,29 @@ def _unresolved_product_reply(candidates=()):
 def search_products(arguments, user):
     query = arguments.get("query") or ""
     category = arguments.get("category") or ""
-    products = _search_ranked(query, category, arguments.get("max_price"))
+    resolution = resolve_query_type(query or category)
+    products = _search_ranked(
+        query,
+        category,
+        arguments.get("max_price"),
+        product_type=resolution.product_type,
+    )
     if not products and category:
         # The category row may be missing, or the model may have passed the
         # product type only as "category". Retry using the user's words as
         # plain search text (query first, else the category phrase) rather
         # than reporting nothing when the catalogue does contain matches.
-        products = _search_ranked(query or category, "", arguments.get("max_price"))
-    payload = {"products": [_public_product(p) for p in products], "count": len(products)}
+        products = _search_ranked(
+            query or category, "", arguments.get("max_price"),
+            product_type=resolution.product_type,
+        )
+    payload = {
+        "products": [_public_product(p) for p in products],
+        "count": len(products),
+    }
+    if resolution.product_type:
+        payload["product_type"] = resolution.product_type
+        payload["product_type_confidence"] = resolution.confidence
     if not products:
         payload["message"] = "No active products matched that search. Try different or fewer keywords."
     return payload
@@ -251,11 +305,18 @@ def get_product_details(arguments, user):
 def find_cheapest_product(arguments, user):
     query = arguments.get("query", "")
     category = arguments.get("category", "")
-    products = _search_ranked(query, category)
+    resolution = resolve_query_type(query or category)
+    products = _search_ranked(
+        query, category,
+        product_type=resolution.product_type,
+    )
     if not products and category:
         # Same fallback as search_products: a missing/misnamed category row
         # must not hide products that the user's own words clearly match.
-        products = _search_ranked(query or category)
+        products = _search_ranked(
+            query or category, "",
+            product_type=resolution.product_type,
+        )
     available_only = arguments.get("available_only", False)
     result = []
     for product in products:
@@ -272,14 +333,33 @@ def compare_products(arguments, user):
     names = arguments.get("product_names") or []
     if not isinstance(names, (list, tuple)):
         raise ValueError("product_names must be a list of product names.")
-    products, missing = [], []
+    requested_type = arguments.get("product_type")
+    if requested_type and requested_type not in {"milk_family", *_PRODUCT_TYPE_NAMES}:
+        raise ValueError("product_type must be a supported product type.")
+    products, missing, unresolved_candidates, resolved_rows = [], [], {}, []
+    unverified_type = False
     for name in names[:5]:
-        resolved, _candidates = _resolve_product_with_candidates(name)
+        resolved, candidates, uncertain = _resolve_comparison_candidate(name, requested_type)
+        unverified_type = unverified_type or uncertain
         if resolved:
             products.append(_public_product(resolved, include_stock=is_manager(user)))
+            resolved_rows.append(resolved)
         else:
             missing.append(str(name))
-    return {"products": products, "missing": missing}
+            if candidates:
+                unresolved_candidates[str(name)] = candidates
+    comparison_error = _comparison_compatibility_error(resolved_rows)
+    result = {"products": products, "missing": missing}
+    if unresolved_candidates:
+        result["candidates"] = unresolved_candidates
+    if comparison_error:
+        result["message"] = comparison_error
+    elif unverified_type:
+        result["message"] = (
+            "The matched catalogue records do not contain enough type information to verify the requested "
+            "product type. Their names and pack sizes are shown for confirmation."
+        )
+    return result
 
 
 def get_current_stock_tool(arguments, user):
@@ -368,7 +448,7 @@ def _sales_period(arguments):
     return start, end
 
 
-def _resolve_product_with_candidates(name, limit=5):
+def _resolve_product_with_candidates(name, limit=5, product_type=None):
     """Resolve a single active product from a (possibly natural) name.
 
     Matching is deterministic and never relies on database row order:
@@ -396,17 +476,23 @@ def _resolve_product_with_candidates(name, limit=5):
     if not name:
         return None, []
     products = Product.objects.filter(is_active=True).select_related("category", "brand")
+    if product_type:
+        products = [p for p in products if _product_type_matches(p, product_type)]
 
     # 1. Exact match — highest priority (deterministic order for duplicates).
-    exact = list(products.filter(product_name__iexact=name).order_by("id"))
-    if exact:
+    exact = sorted((p for p in products if p.product_name.lower() == name.lower()), key=lambda p: p.id)
+    if len(exact) == 1:
         return exact[0], [exact[0].product_name]
+    if len(exact) > 1:
+        return None, [p.product_name for p in exact[:limit]]
 
     # 2. Normalised whole-name match ("MILO's" ~ "Milo", "Nestlé" ~ "Nestle").
     normalized = normalize_text(name)
     normalised_matches = [p for p in products if normalize_text(p.product_name) == normalized]
     if normalised_matches:
-        return normalised_matches[0], [normalised_matches[0].product_name]
+        if len(normalised_matches) == 1:
+            return normalised_matches[0], [normalised_matches[0].product_name]
+        return None, [p.product_name for p in normalised_matches[:limit]]
 
     # 3. Token-aware scoring with conservative typo tolerance.
     query_tokens = tokenize(name)
@@ -440,6 +526,58 @@ def _resolve_product(name):
     """
     product, _candidates = _resolve_product_with_candidates(name)
     return product
+
+
+def _resolve_comparison_candidate(name, expected_type=None):
+    """Resolve with a strict type filter, exposing exact untyped rows as uncertain.
+
+    This narrow fallback preserves comparisons such as legacy brand/size rows
+    whose catalogue type is absent, while making the missing evidence visible.
+    It never relaxes a row that has a conflicting known type or guesses among
+    multiple names.
+    """
+    product, candidates = _resolve_product_with_candidates(name, product_type=expected_type)
+    if product or not expected_type:
+        return product, candidates, False
+    exact, exact_candidates = _resolve_product_with_candidates(name)
+    if not exact:
+        return None, candidates or exact_candidates, False
+    detected, _confidence = classify_product_by_name(
+        exact.product_name, exact.category.category_name if exact.category else None)
+    requested = resolve_query_type(name).product_type
+    size = _product_size(exact)
+    # Only an exact, unique record with no contradictory type and a known pack
+    # size can be offered as an uncertain candidate for confirmation.
+    if detected is None and size and (requested is None or requested == expected_type):
+        return exact, [exact.product_name], True
+    return None, candidates or exact_candidates, False
+
+
+_PRODUCT_TYPE_NAMES = frozenset({
+    "milk_powder", "liquid_milk", "yoghurt", "coconut_milk", "chocolate_milk",
+    "milk_chocolate", "drinking_yoghurt", "tea", "cooking_oil", "rice", "rice_pasta",
+})
+
+
+def _product_size(product):
+    return resolve_query_type(product.product_name).size
+
+
+def _comparison_compatibility_error(products):
+    """Return a safe explanation when known type/size attributes conflict."""
+    typed = []
+    for product in products:
+        kind, _confidence = classify_product_by_name(
+            product.product_name, product.category.category_name if product.category else None)
+        typed.append((product, kind, _product_size(product)))
+    known_types = {kind for _product, kind, _size in typed if kind}
+    if len(known_types) > 1:
+        return "These products are different product types. Please choose products of the same type."
+    sizes = {size for _product, _kind, size in typed if size}
+    if len(sizes) > 1:
+        labels = ", ".join(f"{p.product_name} ({size or 'pack size unknown'})" for p, _kind, size in typed)
+        return "The matched products have different pack sizes: " + labels + ". Please choose equivalent sizes or confirm this comparison."
+    return None
 
 
 def _matching_category_ids(text):
@@ -477,13 +615,68 @@ def compare_product_sales(arguments, user):
     if not name_a or not name_b:
         raise ValueError("Both product_a and product_b are required.")
     start, end = _sales_period(arguments)
-    product_a = _resolve_product(name_a)
-    product_b = _resolve_product(name_b)
+    requested_type = arguments.get("product_type")
+    if requested_type and requested_type not in {"milk_family", *_PRODUCT_TYPE_NAMES}:
+        raise ValueError("product_type must be a supported product type.")
+    resolution_a = resolve_query_type(name_a)
+    resolution_b = resolve_query_type(name_b)
+    type_a_requested = requested_type or resolution_a.product_type
+    type_b_requested = requested_type or resolution_b.product_type
+    product_a, candidates_a, uncertain_a = _resolve_comparison_candidate(name_a, type_a_requested)
+    product_b, candidates_b, uncertain_b = _resolve_comparison_candidate(name_b, type_b_requested)
     missing = [n for n, p in ((name_a, product_a), (name_b, product_b)) if p is None]
     if missing:
         return {"period": {"date_from": str(start), "date_to": str(end)},
                 "not_found": missing,
-                "message": "No matching active product was found for: " + ", ".join(missing) + "."}
+                "candidates": {name_a: candidates_a, name_b: candidates_b},
+                "message": "A unique product could not be confirmed for: " + ", ".join(missing) + ". Please clarify the product name or size."}
+
+    # Only compare products of the same type.  Classify both by name/category
+    # evidence and refuse cross-type comparisons (e.g. milk powder vs yoghurt)
+    # with a structured response instead of claiming one is "better selling"
+    # on incomparable products.
+    type_a, _conf_a = classify_product_by_name(
+        product_a.product_name,
+        product_a.category.category_name if product_a.category else None,
+    )
+    type_b, _conf_b = classify_product_by_name(
+        product_b.product_name,
+        product_b.category.category_name if product_b.category else None,
+    )
+    if type_a and type_b and type_a != type_b:
+        return {
+            "period": {"date_from": str(start), "date_to": str(end)},
+            "product_a": {"name": product_a.product_name, "type": type_a},
+            "product_b": {"name": product_b.product_name, "type": type_b},
+            "better_selling": None,
+            "difference_units": None,
+            "message": (
+                f"Cannot compare {type_a.replace('_', ' ')} '{product_a.product_name}' "
+                f"with {type_b.replace('_', ' ')} '{product_b.product_name}' — "
+                "they are different product types. Please specify products of the same type."
+            ),
+        }
+
+    size_a, size_b = _product_size(product_a), _product_size(product_b)
+    if size_a and size_b and size_a != size_b:
+        return {
+            "period": {"date_from": str(start), "date_to": str(end)},
+            "product_a": {"name": product_a.product_name, "pack_size": size_a},
+            "product_b": {"name": product_b.product_name, "pack_size": size_b},
+            "better_selling": None,
+            "difference_units": None,
+            "message": "The products have different pack sizes. Please specify equivalent sizes or confirm that you want this comparison.",
+        }
+    if (uncertain_a or uncertain_b) and not (uncertain_a and uncertain_b and size_a and size_b and size_a == size_b):
+        return {
+            "period": {"date_from": str(start), "date_to": str(end)},
+            "product_a": {"name": product_a.product_name, "type": type_a, "pack_size": size_a},
+            "product_b": {"name": product_b.product_name, "type": type_b, "pack_size": size_b},
+            "better_selling": None,
+            "difference_units": None,
+            "message": "The catalogue does not verify that these products share the requested type. Please confirm the products before comparing sales.",
+        }
+
     units_a = _units_sold(product_a.id, start, end)
     units_b = _units_sold(product_b.id, start, end)
     if units_a > units_b:
@@ -498,6 +691,8 @@ def compare_product_sales(arguments, user):
         "product_b": {"name": product_b.product_name, "units_sold": units_b},
         "better_selling": better,
         "difference_units": abs(units_a - units_b),
+        **({"message": "The catalogue does not record product type for both exact records; sales are compared at the same recorded pack size."}
+           if uncertain_a and uncertain_b else {}),
     }
 
 
@@ -671,11 +866,11 @@ TOOLS = [
     _tool("search_products", "Search active products by free text (product type, key words, brand, size) and/or by category, with optional max price. Use for any question about a whole product type or category (e.g. available milk powders) and for price lookups where several products could match; tolerates plurals, word order, and minor misspellings.", {"query": {"type": "string"}, "category": {"type": "string"}, "max_price": {"type": "number"}}),
     _tool("get_product_details", "Get current details for one specific product by product_id or product_name. If the result includes candidates, the name was ambiguous: ask the user which product they mean.", {"product_id": {"type": "integer"}, "product_name": {"type": "string"}}),
     _tool("find_cheapest_product", "Find the lowest priced matching active product within search words or a category.", {"query": {"type": "string"}, "category": {"type": "string"}, "available_only": {"type": "boolean"}}),
-    _tool("compare_products", "Compare named products using current database data.", {"product_names": {"type": "array", "items": {"type": "string"}}}, ("product_names",)),
+    _tool("compare_products", "Compare named products using current database data. Preserve product type and equivalent pack size; pass product_type when the customer specified one.", {"product_names": {"type": "array", "items": {"type": "string"}}, "product_type": {"type": "string"}}, ("product_names",)),
     _tool("get_current_stock", "Get current product availability; exact stock is manager-only.", {"product_name": {"type": "string"}}, ("product_name",)),
     _tool("get_expiring_products", "List active products with in-stock batches expiring within a number of days (default 30, max 90).", {"product_name": {"type": "string"}, "days": {"type": "integer"}}),
     _tool("get_active_discounts", "List current customer-visible active discounts (today's deals): manager-approved discounted products with original price, discounted price, and discount percentage. Use for ANY question about discounts, discounted products, what is on sale, deals, offers, or promotions — never treat the word 'discount' as a product search term.", {}),
-    _tool("compare_product_sales", "Compare units sold for two named products over the standard sales period (last 30 days unless dates given).", {"product_a": {"type": "string"}, "product_b": {"type": "string"}, "date_from": {"type": "string"}, "date_to": {"type": "string"}}, ("product_a", "product_b")),
+    _tool("compare_product_sales", "Compare units sold for two named products over the standard sales period (last 30 days unless dates given). Preserve product type and equivalent pack sizes; pass product_type when the customer specified one.", {"product_a": {"type": "string"}, "product_b": {"type": "string"}, "product_type": {"type": "string"}, "date_from": {"type": "string"}, "date_to": {"type": "string"}}, ("product_a", "product_b")),
     _tool("get_best_selling_products", "List the best-selling products by units sold over the standard sales period (last 30 days unless dates given). Pass an optional category name to rank only products in that category.", {"limit": {"type": "integer"}, "category": {"type": "string"}, "date_from": {"type": "string"}, "date_to": {"type": "string"}}),
     _tool("check_purchase_quantity", "Check whether a requested quantity of a product can be fulfilled from current sellable stock; read-only, does not place an order.", {"product_name": {"type": "string"}, "quantity": {"type": "integer"}}, ("product_name", "quantity")),
     *[_tool(name, description, props) for name, description, props in [

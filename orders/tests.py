@@ -15,7 +15,7 @@ from django.utils import timezone
 
 from orders.models import ChatbotLog, ChatbotRateLimit, Customer
 from orders.services.agent import (
-    AgentUnavailable, PUBLIC_TOOLS, _resolve_product, check_purchase_quantity,
+    AgentUnavailable, PUBLIC_TOOLS, _resolve_product, _resolve_product_with_candidates, check_purchase_quantity,
     compare_product_sales, execute_tool, find_cheapest_product,
     get_best_selling_products, get_expiring_products, run_agent,
 )
@@ -1178,4 +1178,412 @@ class ChatbotMatchingUnitTests(TestCase):
         self.assertFalse(tokens_match('milk', 'milo'))     # no cross-type bleed
         self.assertFalse(tokens_match('sugar', 'salt'))
 
-# Create your tests here.
+
+class ChatbotProductTypeTests(TestCase):
+    """Product-type resolution and cross-type distinction checks."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(
+            name='Type Customer', email='type@example.com', password_hash='unused')
+        self.powder_category = Category.objects.create(category_name='Milk Powder')
+        self.dairy_category = Category.objects.create(category_name='Dairy')
+        self.malt_category = Category.objects.create(category_name='Malt Drinks')
+        self.general_category = Category.objects.create(category_name='General')
+
+        self.nido_powder = Product.objects.create(
+            product_name='Nido Milk Powder 400g', category=self.powder_category,
+            unit_price=1200, cost_price=1000, is_active=True)
+        self.anchor_powder = Product.objects.create(
+            product_name='Anchor Full Cream Milk Powder 1kg', category=self.powder_category,
+            unit_price=1500, cost_price=1250, is_active=True)
+        self.uht_milk = Product.objects.create(
+            product_name='Ambewela UHT Milk 1L', category=self.dairy_category,
+            unit_price=520, cost_price=430, is_active=True)
+        self.coconut_milk = Product.objects.create(
+            product_name='Colo Coconut Milk 400ml', category=self.general_category,
+            unit_price=220, cost_price=180, is_active=True)
+        self.milk_chocolate = Product.objects.create(
+            product_name='Ritzbury Milk Chocolate 93g', category=self.malt_category,
+            unit_price=270, cost_price=200, is_active=True)
+        self.yoghurt = Product.objects.create(
+            product_name='Pelwatte Yoghurt 80g', category=self.general_category,
+            unit_price=65, cost_price=50, is_active=True)
+        self.drinking_yoghurt = Product.objects.create(
+            product_name='Anchor Drinking Yoghurt 200ml', category=self.general_category,
+            unit_price=140, cost_price=110, is_active=True)
+
+    def test_milk_products_distinguishes_types(self):
+        """Broad 'milk products' search should not filter to one type only."""
+        result, status = execute_tool('search_products', {'query': 'milk products'}, self.customer)
+        self.assertEqual(status, 'completed')
+        names = [p['product_name'] for p in result['products']]
+        self.assertIn('Nido Milk Powder 400g', names)
+        self.assertIn('Ambewela UHT Milk 1L', names)
+        self.assertIn('Colo Coconut Milk 400ml', names)
+        self.assertNotIn('Ritzbury Milk Chocolate 93g', names)
+
+    def test_milk_family_search_excludes_confectionery_and_bakery_keyword_hits(self):
+        chocolate_bar = Product.objects.create(
+            product_name='Ritzbury Milk Bar 50g', category=Category.objects.create(category_name='Chocolate'),
+            unit_price=150, cost_price=100, is_active=True)
+        shortcake = Product.objects.create(
+            product_name='Munchee Milk Shortcake', category=Category.objects.create(category_name='Bakery'),
+            unit_price=250, cost_price=180, is_active=True)
+        result, status = execute_tool('search_products', {'query': 'milk products'}, self.customer)
+        self.assertEqual(status, 'completed')
+        names = [p['product_name'] for p in result['products']]
+        self.assertNotIn(chocolate_bar.product_name, names)
+        self.assertNotIn(shortcake.product_name, names)
+
+    def test_milk_powder_excludes_coconut_and_chocolate(self):
+        """Milk powder search must not return coconut milk or milk chocolate."""
+        result, _ = execute_tool('search_products', {'query': 'milk powder'}, self.customer)
+        names = [p['product_name'] for p in result['products']]
+        self.assertIn('Nido Milk Powder 400g', names)
+        self.assertIn('Anchor Full Cream Milk Powder 1kg', names)
+        self.assertNotIn('Colo Coconut Milk 400ml', names)
+        self.assertNotIn('Ritzbury Milk Chocolate 93g', names)
+        self.assertNotIn('Ambewela UHT Milk 1L', names)
+
+    def test_coconut_milk_distinguished_from_dairy_milk(self):
+        """'coconut milk' returns coconut milk products, not dairy milk."""
+        result, _ = execute_tool('search_products', {'query': 'coconut milk'}, self.customer)
+        names = [p['product_name'] for p in result['products']]
+        self.assertIn('Colo Coconut Milk 400ml', names)
+        self.assertNotIn('Ambewela UHT Milk 1L', names)
+        self.assertNotIn('Nido Milk Powder 400g', names)
+
+    def test_milk_chocolate_distinguished_from_milk_powder(self):
+        """'milk chocolate' returns chocolate, not milk powder."""
+        result, _ = execute_tool('search_products', {'query': 'milk chocolate'}, self.customer)
+        names = [p['product_name'] for p in result['products']]
+        self.assertIn('Ritzbury Milk Chocolate 93g', names)
+        self.assertNotIn('Nido Milk Powder 400g', names)
+
+    def test_liquid_milk_distinguished_from_milk_powder(self):
+        """'uht milk' returns liquid milk, not milk powder or yoghurt."""
+        result, _ = execute_tool('search_products', {'query': 'uht milk'}, self.customer)
+        names = [p['product_name'] for p in result['products']]
+        self.assertIn('Ambewela UHT Milk 1L', names)
+        self.assertNotIn('Nido Milk Powder 400g', names)
+        self.assertNotIn('Pelwatte Yoghurt 80g', names)
+
+    def test_yoghurt_distinguished_from_milk_powder(self):
+        """'yoghurt' returns yoghurt products, not milk powder."""
+        result, _ = execute_tool('search_products', {'query': 'yoghurt'}, self.customer)
+        names = [p['product_name'] for p in result['products']]
+        self.assertIn('Pelwatte Yoghurt 80g', names)
+        self.assertNotIn('Nido Milk Powder 400g', names)
+
+    def test_drinking_yoghurt_not_confused_with_milk_powder(self):
+        """'drinking yoghurt' returns drinking yoghurt, not milk powder."""
+        result, _ = execute_tool('search_products', {'query': 'drinking yoghurt'}, self.customer)
+        names = [p['product_name'] for p in result['products']]
+        self.assertIn('Anchor Drinking Yoghurt 200ml', names)
+        self.assertNotIn('Anchor Full Cream Milk Powder 1kg', names)
+
+    def test_brand_specific_milk_powder_search(self):
+        """Brand-specific milk powder search returns only that brand's powders."""
+        result, _ = execute_tool('search_products', {'query': 'nido milk powder'}, self.customer)
+        names = [p['product_name'] for p in result['products']]
+        self.assertEqual(names, ['Nido Milk Powder 400g'])
+
+    def test_missing_category_uses_name_evidence_conservative_fallback(self):
+        """Products without a helpful category are still classified by name."""
+        Product.objects.create(
+            product_name='Anchor Milk Powder 250g', category=None,
+            unit_price=400, cost_price=320, is_active=True)
+        result, _ = execute_tool('search_products', {'query': 'anchor milk powder'}, self.customer)
+        names = [p['product_name'] for p in result['products']]
+        self.assertIn('Anchor Milk Powder 250g', names)
+
+    def test_category_name_variations_do_not_weaken_type_filter(self):
+        """'milk powders' plural and spacing variants still filter to powders."""
+        expected = ['Anchor Full Cream Milk Powder 1kg', 'Nido Milk Powder 400g']
+        for query in ('milk powders', 'milk  powders', 'powdered milk'):
+            with self.subTest(query=query):
+                result, status = execute_tool('search_products', {'query': query}, self.customer)
+                self.assertEqual(status, 'completed')
+                self.assertEqual(sorted([p['product_name'] for p in result['products']]),
+                                 sorted(expected))
+
+    def test_cheapest_milk_powder_compares_only_powders(self):
+        """Cheapest milk powder must not be a chocolate malt drink."""
+        result, status = execute_tool('find_cheapest_product', {'query': 'milk powder'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(result['product']['product_name'], 'Nido Milk Powder 400g')
+        self.assertEqual(result['product']['selling_price'], 1200.0)
+        self.assertNotIn('Ambewela UHT Milk 1L',
+                         [alt['product_name'] for alt in result['alternatives']])
+
+
+    def test_pack_size_and_unit_in_resolution(self):
+        """Size tokens are preserved and used to distinguish products."""
+        Product.objects.create(
+            product_name='Nido Milk Powder 900g', category=self.powder_category,
+            unit_price=2400, cost_price=2000, is_active=True)
+        result, status = execute_tool(
+            'search_products', {'query': 'nido milk powder 400g'}, self.customer)
+        self.assertEqual(status, 'completed')
+        names = [p['product_name'] for p in result['products']]
+        self.assertEqual(names, ['Nido Milk Powder 400g'])
+
+    def test_cross_type_comparison_refused(self):
+        """Comparing milk powder with yoghurt returns structured refusal."""
+        result, status = execute_tool(
+            'compare_product_sales',
+            {'product_a': 'nido milk powder', 'product_b': 'pelwatte yoghurt'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertIsNone(result['better_selling'])
+        self.assertIsNone(result['difference_units'])
+        self.assertIn('different product types', result['message'])
+
+    def test_same_type_comparison_works(self):
+        """Different-size powders are disclosed rather than compared silently."""
+        ItemSalesRecord.objects.create(
+            product=self.nido_powder, sale_date=local_today() - timedelta(days=1),
+            quantity_sold=30, unit_price='1200.00', total_amount='36000.00')
+        ItemSalesRecord.objects.create(
+            product=self.anchor_powder, sale_date=local_today() - timedelta(days=1),
+            quantity_sold=50, unit_price='1500.00', total_amount='75000.00')
+        result, status = execute_tool(
+            'compare_product_sales',
+            {'product_a': 'nido milk powder', 'product_b': 'anchor milk powder'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertIsNone(result['better_selling'])
+        self.assertIn('different pack sizes', result['message'])
+
+    def test_equivalent_size_same_type_sales_comparison_works(self):
+        anchor_400 = Product.objects.create(
+            product_name='Anchor Milk Powder 400g', category=self.powder_category,
+            unit_price=1200, cost_price=1000, is_active=True)
+        ItemSalesRecord.objects.create(
+            product=self.nido_powder, sale_date=local_today() - timedelta(days=1),
+            quantity_sold=30, unit_price='1200.00', total_amount='36000.00')
+        ItemSalesRecord.objects.create(
+            product=anchor_400, sale_date=local_today() - timedelta(days=1),
+            quantity_sold=50, unit_price='1200.00', total_amount='60000.00')
+        result, status = execute_tool(
+            'compare_product_sales',
+            {'product_a': 'nido milk powder 400g', 'product_b': 'anchor milk powder 400g'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(result['better_selling'], anchor_400.product_name)
+        self.assertEqual(result['difference_units'], 20)
+
+    def test_rice_products_generalize(self):
+        """Rice search works as an unrelated product family."""
+        rice_category = Category.objects.create(category_name='Rice & Grains')
+        Product.objects.create(
+            product_name='Samba Rice 5kg', category=rice_category,
+            unit_price=550, cost_price=450, is_active=True)
+        Product.objects.create(
+            product_name='Nadu Rice 1kg', category=rice_category,
+            unit_price=120, cost_price=95, is_active=True)
+        result, status = execute_tool('search_products', {'query': 'rice'}, self.customer)
+        self.assertEqual(status, 'completed')
+        names = [p['product_name'] for p in result['products']]
+        self.assertIn('Samba Rice 5kg', names)
+        self.assertIn('Nadu Rice 1kg', names)
+
+    def test_ordinary_rice_excludes_rice_pasta(self):
+        rice_category = Category.objects.create(category_name='Dry Groceries')
+        ordinary = Product.objects.create(
+            product_name='Samba Rice 5kg', category=rice_category,
+            unit_price=550, cost_price=450, is_active=True)
+        pasta = Product.objects.create(
+            product_name='Raigam Rice Pasta Penne', category=rice_category,
+            unit_price=190, cost_price=150, is_active=True)
+        result, status = execute_tool('search_products', {'query': 'rice products'}, self.customer)
+        self.assertEqual(status, 'completed')
+        names = [p['product_name'] for p in result['products']]
+        self.assertIn(ordinary.product_name, names)
+        self.assertNotIn(pasta.product_name, names)
+
+    def test_comparison_rejects_mixed_types_and_discloses_pack_size(self):
+        result, status = execute_tool('compare_products', {
+            'product_names': ['Nido Milk Powder 400g', 'Pelwatte Yoghurt 80g']}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertIn('different product types', result['message'])
+
+        result, status = execute_tool('compare_products', {
+            'product_names': ['Nido Milk Powder 400g', 'Anchor Full Cream Milk Powder 1kg']}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertIn('different pack sizes', result['message'])
+
+    def test_existing_ratthi_anchor_400g_records_remain_comparable(self):
+        Product.objects.create(product_name='RATTHI 400g', category=self.general_category,
+                               unit_price=1200, cost_price=1000, is_active=True)
+        Product.objects.create(product_name='ANCHOR 400G', category=self.general_category,
+                               unit_price=1150, cost_price=950, is_active=True)
+        result, status = execute_tool('compare_products', {
+            'product_names': ['RATTHI 400g', 'ANCHOR 400G'], 'product_type': 'milk_powder'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual([p['product_name'] for p in result['products']], ['RATTHI 400g', 'ANCHOR 400G'])
+        self.assertIn('enough type information', result['message'])
+
+    def test_cooking_oil_products_generalize(self):
+        """Cooking oil search works as another unrelated product family."""
+        oil_category = Category.objects.create(category_name='Cooking Oils')
+        Product.objects.create(
+            product_name='Fortune Vegetable Oil 1L', category=oil_category,
+            unit_price=400, cost_price=300, is_active=True)
+        Product.objects.create(
+            product_name='Sunflower Oil 1L', category=oil_category,
+            unit_price=350, cost_price=250, is_active=True)
+        result, status = execute_tool('search_products', {'query': 'cooking oil'}, self.customer)
+        self.assertEqual(status, 'completed')
+        names = [p['product_name'] for p in result['products']]
+        self.assertIn('Fortune Vegetable Oil 1L', names)
+        self.assertIn('Sunflower Oil 1L', names)
+
+
+
+class ChatbotProductResolutionTests(TestCase):
+    """Resolution, ranking and ambiguity checks using controlled fixtures."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(
+            name='Resolution Customer', email='resolution@example.com', password_hash='unused')
+        self.category = Category.objects.create(category_name='Milk Powder')
+
+    def test_exact_match_outranks_fuzzy(self):
+        Product.objects.create(
+            product_name='Anchor Full Cream Milk Powder 1kg', category=self.category,
+            unit_price=1500, cost_price=1250, is_active=True)
+        Product.objects.create(
+            product_name='Anchor Milk Powder Drink 500g', category=self.category,
+            unit_price=900, cost_price=700, is_active=True)
+        product = _resolve_product('anchor full cream milk powder 1kg')
+        self.assertIsNotNone(product)
+        self.assertEqual(product.product_name, 'Anchor Full Cream Milk Powder 1kg')
+
+    def test_ambiguous_resolution_returns_none_not_guess(self):
+        Product.objects.create(
+            product_name='Anchor Milk Powder 1kg', category=self.category,
+            unit_price=1500, cost_price=1250, is_active=True)
+        Product.objects.create(
+            product_name='Anchor Milk Powder 500g', category=self.category,
+            unit_price=900, cost_price=700, is_active=True)
+        product = _resolve_product('anchor milk powder')
+        self.assertIsNone(product)  # must not guess
+
+    def test_ambiguous_details_returns_candidates_for_clarification(self):
+        Product.objects.create(
+            product_name='Anchor Milk Powder 1kg', category=self.category,
+            unit_price=1500, cost_price=1250, is_active=True)
+        Product.objects.create(
+            product_name='Anchor Milk Powder 500g', category=self.category,
+            unit_price=900, cost_price=700, is_active=True)
+        result, status = execute_tool(
+            'get_product_details', {'product_name': 'anchor milk powder'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertIsNone(result['product'])
+        self.assertEqual(len(result['candidates']), 2)
+
+    def test_duplicate_exact_names_are_ambiguous(self):
+        Product.objects.create(product_name='Anchor Milk Powder 1kg', category=self.category,
+                               unit_price=1500, cost_price=1250, is_active=True)
+        Product.objects.create(product_name='Anchor Milk Powder 1kg', category=self.category,
+                               unit_price=1510, cost_price=1260, is_active=True)
+        product, candidates = _resolve_product_with_candidates('Anchor Milk Powder 1kg')
+        self.assertIsNone(product)
+        self.assertEqual(len(candidates), 2)
+
+    def test_search_does_not_drop_relevant_matches_at_fixed_twenty_limit(self):
+        for idx in range(25):
+            Product.objects.create(product_name=f'Samba Rice {idx + 1}kg', category=self.category,
+                                   unit_price=100 + idx, cost_price=80, is_active=True)
+        result, status = execute_tool('search_products', {'query': 'rice'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(result['count'], 25)
+
+    def test_strict_resolution_for_price_lookup(self):
+        """get_product_details uses strict resolution, not fuzzy guessing."""
+        Product.objects.create(
+            product_name='Anchor Milk Powder 1kg', category=self.category,
+            unit_price=1500, cost_price=1250, is_active=True)
+        result, status = execute_tool(
+            'get_product_details', {'product_name': 'anchor milk powder 1kg'}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(result['product']['product_name'], 'Anchor Milk Powder 1kg')
+
+    def test_stock_tool_resolves_typo(self):
+        Product.objects.create(
+            product_name='Nido Milk Powder 400g', category=self.category,
+            unit_price=1200, cost_price=1000, is_active=True)
+        with patch('orders.services.agent.get_available_stock', return_value=5):
+            result, status = execute_tool(
+                'check_purchase_quantity', {'product_name': 'nidoo', 'quantity': 2}, self.customer)
+        self.assertEqual(status, 'completed')
+        self.assertEqual(result['product'], 'Nido Milk Powder 400g')
+
+    def test_invalid_arguments_return_clear_errors(self):
+        result, status = execute_tool(
+            'search_products', {'query': 'milk', 'max_price': 'cheap'}, self.customer)
+        self.assertEqual(status, 'failed')
+        self.assertIn('max_price', result['error'])
+
+        result, status = execute_tool('compare_products', {'product_names': 'Nido'}, self.customer)
+        self.assertEqual(status, 'failed')
+        self.assertIn('product_names', result['error'])
+
+        result, status = execute_tool('find_cheapest_product', {'query': ''}, self.customer)
+        self.assertEqual(status, 'completed')  # empty query is neutral -> lists
+
+
+
+
+class ChatbotAgentToolSelectionTests(TestCase):
+    """Agent tool-selection and conversational behaviour tests."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(
+            name='Agent Customer', email='agent@example.com', password_hash='unused')
+        self.factory = APIRequestFactory()
+
+    @patch('orders.services.agent.get_provider')
+    def test_agent_selects_search_for_product_type(self, get_provider):
+        call = SimpleNamespace(name='search_products', args={'query': 'milk powder'}, id='call-1')
+        first = SimpleNamespace(function_calls=[call], candidates=[SimpleNamespace(content='tool-request')])
+        second = SimpleNamespace(function_calls=[], text='Here are the milk powders.')
+        provider = get_provider.return_value
+        provider.make_contents.return_value = []
+        provider.generate.side_effect = [first, second]
+        provider.function_calls.side_effect = lambda response: response.function_calls
+        provider.response_text.side_effect = lambda response: response.text
+        result = run_agent('what milk powders are available', self.customer)
+        self.assertEqual(result['tool_calls'], [{'name': 'search_products', 'status': 'completed'}])
+
+    @patch('orders.services.agent.get_provider')
+    def test_agent_selects_cheapest_for_product_type(self, get_provider):
+        call = SimpleNamespace(name='find_cheapest_product', args={'query': 'milk powder'}, id='call-1')
+        first = SimpleNamespace(function_calls=[call], candidates=[SimpleNamespace(content='tool-request')])
+        second = SimpleNamespace(function_calls=[], text='The cheapest is Nido.')
+        provider = get_provider.return_value
+        provider.make_contents.return_value = []
+        provider.generate.side_effect = [first, second]
+        provider.function_calls.side_effect = lambda response: response.function_calls
+        provider.response_text.side_effect = lambda response: response.text
+        result = run_agent('cheapest milk powder', self.customer)
+        self.assertEqual(result['tool_calls'], [{'name': 'find_cheapest_product', 'status': 'completed'}])
+
+    @patch('orders.services.agent.get_provider')
+    def test_agent_refuses_cross_type_comparison(self, get_provider):
+        call = SimpleNamespace(name='compare_product_sales',
+                               args={'product_a': 'nido milk powder', 'product_b': 'pelwatte yoghurt'}, id='call-1')
+        first = SimpleNamespace(function_calls=[call], candidates=[SimpleNamespace(content='tool-request')])
+        second = SimpleNamespace(function_calls=[], text='Cannot compare different product types.')
+        provider = get_provider.return_value
+        provider.make_contents.return_value = []
+        provider.generate.side_effect = [first, second]
+        provider.function_calls.side_effect = lambda response: response.function_calls
+        provider.response_text.side_effect = lambda response: response.text
+        result = run_agent('compare nido milk powder and pelwatte yoghurt', self.customer)
+        self.assertEqual(result['tool_calls'], [{'name': 'compare_product_sales', 'status': 'completed'}])
+        self.assertIn('different product types', result['bot_response'])
+
+    @patch('orders.services.agent.get_provider')
+    def test_anonymous_cannot_access_manager_tool(self, get_provider):
+        from orders.services.agent import is_anonymous, PUBLIC_TOOLS, MANAGER_TOOLS
+        self.assertTrue(is_anonymous(None))
+        self.assertTrue(MANAGER_TOOLS.isdisjoint(PUBLIC_TOOLS))
