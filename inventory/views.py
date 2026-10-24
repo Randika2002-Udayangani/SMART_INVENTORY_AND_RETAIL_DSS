@@ -4,6 +4,7 @@ import io
 import re
 from zoneinfo import ZoneInfo
 from users.permissions import IsManagerOrAdmin  
+from core.authentication import LenientJWTAuthentication
 from decimal import Decimal
 from users.audit import log_action
 
@@ -11,7 +12,7 @@ from django.db import transaction
 from django.db.models import F, Sum
 from rest_framework import generics, status,permissions
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -30,6 +31,7 @@ from .models import (
 from .serializers import (
     StockLedgerSerializer, StockAdjustmentSerializer, CurrentStockSerializer, 
     DiscountRuleSerializer, DiscountRecommendationSerializer, 
+    ActiveDiscountSerializer,
     ReorderRecommendationSerializer,
 )
 from sales.models import ItemSalesRecord
@@ -38,6 +40,7 @@ from inventory.services.reorder_logic import get_urgency
 from inventory.services.fefo import deduct_stock_fefo
 from inventory.services.stock import get_sellable_batches
 from inventory.services.reorder_logic import check_reorder_needs
+from inventory.services.discount_engine import get_customer_visible_discounts
 
 from orders.models import Notification
 
@@ -2252,6 +2255,27 @@ class DiscountRecommendationDetailView(APIView):
  
         return Response(DiscountRecommendationSerializer(rec).data)
     
+
+
+class ActiveDiscountListView(APIView):
+    """
+    GET /api/discounts/active/
+    Customer-facing active discounts (the Products page's "Today's Deals").
+
+    Public: anonymous visitors and logged-in customers receive the same
+    customer-safe payload. Delegates to get_customer_visible_discounts() —
+    the ONE shared definition also used by the chatbot's
+    get_active_discounts tool — so the page, API and chatbot can never
+    disagree. The manager-only recommendation endpoints above are unchanged.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = [LenientJWTAuthentication]
+
+    def get(self, request):
+        serializer = ActiveDiscountSerializer(
+            get_customer_visible_discounts(), many=True
+        )
+        return Response(serializer.data)
 
 
 class DiscountCalculateView(APIView):
