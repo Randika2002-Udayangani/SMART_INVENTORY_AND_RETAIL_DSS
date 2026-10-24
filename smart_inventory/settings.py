@@ -26,6 +26,11 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 CHATBOT_RATE_LIMIT = int(os.getenv('CHATBOT_RATE_LIMIT', '20'))
 CHATBOT_RATE_WINDOW_SECONDS = int(os.getenv('CHATBOT_RATE_WINDOW_SECONDS', '300'))
 
+# Audit log client IP. Number of trusted proxies in front of Django that add
+# to X-Forwarded-For (0 = ignore the header, use REMOTE_ADDR). Set this on the
+# hosting site only after checking the IP shown in the Audit Log is correct.
+AUDIT_PROXY_COUNT = int(os.getenv('AUDIT_PROXY_COUNT', '0'))
+
 # ─────────────────────────────────────────────────────────────────
 # ALLOWED_HOSTS
 # Local dev hosts are always included. Add your hosted domain(s)

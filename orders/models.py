@@ -14,11 +14,43 @@ class Customer(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     last_login = models.DateTimeField(null=True, blank=True)
 
+    # Login lockout (same idea as users.UserLoginSecurity for staff).
+    # failed_login_count is reset to 0 on a successful login;
+    # while locked_until is in the future the account cannot log in.
+    failed_login_count = models.IntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         db_table = 'customer'
 
     def __str__(self):
         return self.name
+
+
+class PasswordResetToken(models.Model):
+    """
+    One-time password reset token for a customer.
+
+    Only the SHA-256 hash of the token is stored, never the token itself
+    (the plain token exists only in the email link). A token is valid
+    while used_at is NULL and expires_at is in the future.
+    """
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name='password_reset_tokens',
+        db_column='customer_id',
+    )
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'customer_password_reset_token'
+
+    def __str__(self):
+        return f"Reset token for customer {self.customer_id}"
 
 
 class OnlineOrder(models.Model):
