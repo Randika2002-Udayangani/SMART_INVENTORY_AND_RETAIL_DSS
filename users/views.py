@@ -109,6 +109,19 @@ class RegisterView(APIView):
         group, _ = Group.objects.get_or_create(name=role_name)
         user.groups.add(group)
 
+        # Audit: who created which account with which role (never the password).
+        log_action(
+            user=request.user, action='CREATE', table_name='auth_user',
+            record_id=user.id, old_value=None,
+            new_value={
+                'username': user.username,
+                'role': role_name,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
+            },
+            request=request,
+        )
+
         return Response({
             'message' : f'User "{username}" registered successfully',
             'user_id' : user.id,
@@ -511,15 +524,31 @@ class LockoutTokenObtainPairSerializer(TokenObtainPairSerializer):
         try:
             data = super().validate(attrs)
         except AuthenticationFailed:
+            failed_count = None
+            just_locked = False
             if user:
                 security, _ = UserLoginSecurity.objects.get_or_create(user=user)
                 security.failed_login_count += 1
-                just_locked = False
                 if security.failed_login_count >= self.LOCKOUT_MAX_ATTEMPTS:
                     security.locked_until = timezone.now() + timedelta(minutes=self.LOCKOUT_DURATION_MINUTES)
                     just_locked = True
                 security.save()
+                failed_count = security.failed_login_count
 
+            # Audit every wrong password, including unknown usernames
+            # (user=None then). Never log the password itself.
+            log_action(
+                user=user, action='LOGIN_FAILED', table_name='auth_user',
+                record_id=user.id if user else None,
+                old_value=None,
+                new_value={
+                    'username': str(username)[:150],
+                    'failed_login_count': failed_count,
+                },
+                request=self.context.get('request'),
+            )
+
+            if user:
                 if just_locked:
                     log_action(
                         user=user, action='LOGIN_LOCKOUT', table_name='user_login_security',

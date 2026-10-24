@@ -1,4 +1,45 @@
+import ipaddress
+
+from django.conf import settings
+
 from .models import AuditLog
+
+
+def get_client_ip(request):
+    """
+    Best-effort real client IP for the audit log.
+
+    Behind a hosting proxy (Render, Cloudflare ...) REMOTE_ADDR is the proxy's
+    address, so every audit row would show the same IP. The proxy adds the
+    real client address to the X-Forwarded-For header, but a client can also
+    send a fake X-Forwarded-For, so the header is only trusted when
+    settings.AUDIT_PROXY_COUNT says how many trusted proxies sit in front of
+    Django (0 = trust nothing, use REMOTE_ADDR; this is the safe default for
+    local development). With N trusted proxies the real client is the N-th
+    entry counted from the RIGHT, because each trusted proxy appends the
+    address it received the request from; entries further left may be forged.
+    """
+    meta = request.META
+    remote = meta.get('REMOTE_ADDR', '') or ''
+    try:
+        proxies = int(getattr(settings, 'AUDIT_PROXY_COUNT', 0))
+    except (TypeError, ValueError):
+        proxies = 0
+
+    if proxies > 0:
+        forwarded = [
+            part.strip()
+            for part in meta.get('HTTP_X_FORWARDED_FOR', '').split(',')
+            if part.strip()
+        ]
+        if len(forwarded) >= proxies:
+            candidate = forwarded[-proxies]
+            try:
+                ipaddress.ip_address(candidate)
+                return candidate
+            except ValueError:
+                pass
+    return remote
 
 
 def log_action(user, action, table_name, record_id=None,
@@ -15,7 +56,7 @@ def log_action(user, action, table_name, record_id=None,
     new_value   — dict of the post-change state (None for DELETE)
     request     — pass the view's request object to capture IP address
     """
-    ip = request.META.get('REMOTE_ADDR', '') if request is not None else ''
+    ip = get_client_ip(request) if request is not None else ''
 
     AuditLog.objects.create(
         user=user if (user and user.is_authenticated) else None,
