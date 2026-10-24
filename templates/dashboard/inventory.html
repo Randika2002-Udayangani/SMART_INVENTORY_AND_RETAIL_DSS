@@ -213,8 +213,8 @@
         <div class="card p-4" style="max-width:600px;">
             <h6 class="fw-bold mb-3">Manual Stock Adjustment</h6>
             <div class="mb-3">
-                <label class="form-label">Product ID</label>
-                <input type="number" id="adjProductId" class="form-control" list="inventoryProductOptions" placeholder="e.g. 15">
+                <label class="form-label">Product name</label>
+                <input type="text" id="adjProductName" class="form-control" list="inventoryAdjustmentProductOptions" placeholder="Search product name..." autocomplete="off">
             </div>
             <div class="mb-3">
                 <label class="form-label">Quantity Change</label>
@@ -232,6 +232,7 @@
 </div>
 
 <datalist id="inventoryProductOptions"></datalist>
+<datalist id="inventoryAdjustmentProductOptions"></datalist>
 
 <div id="inventoryDetailModal" class="detail-modal" role="dialog" aria-modal="true" aria-labelledby="inventoryDetailTitle">
     <div class="modal-dialog modal-lg mx-auto"><div class="modal-content">
@@ -359,15 +360,30 @@ async function loadStock(page = stockPage) {
     }
 }
 
+let inventoryProducts = [];
+
 async function populateInventoryProductOptions() {
     try {
         const data = await apiFetch('/api/inventory/products/picker/');
-        const products = Array.isArray(data.products) ? data.products : [];
-        const datalist = document.getElementById('inventoryProductOptions');
-        datalist.innerHTML = products.map(p => `<option value="${p.id}">${p.product_name ?? ''}</option>`).join('');
+        inventoryProducts = Array.isArray(data.products) ? data.products : [];
+        document.getElementById('inventoryProductOptions').innerHTML =
+            inventoryProducts.map(p => `<option value="${p.id}">${p.product_name ?? ''}</option>`).join('');
+        updateAdjustmentProductOptions();
     } catch (e) {
         document.getElementById('inventoryProductOptions').innerHTML = '';
+        document.getElementById('inventoryAdjustmentProductOptions').innerHTML = '';
     }
+}
+
+document.getElementById('adjProductName').addEventListener('input', updateAdjustmentProductOptions);
+
+function updateAdjustmentProductOptions() {
+    const searchValue = document.getElementById('adjProductName').value.trim().toLowerCase();
+    const products = inventoryProducts.filter(p =>
+        (p.product_name || '').toLowerCase().includes(searchValue)
+    );
+    document.getElementById('inventoryAdjustmentProductOptions').innerHTML =
+        products.map(p => `<option value="${p.product_name ?? ''}"></option>`).join('');
 }
 
 async function loadUploadSummary() {
@@ -591,13 +607,17 @@ async function loadLedger() {
 }
 
 async function submitAdjustment() {
-    const product_id = document.getElementById('adjProductId').value;
+    const productName = document.getElementById('adjProductName').value.trim();
+    const selectedProduct = inventoryProducts.find(p =>
+        (p.product_name || '').toLowerCase() === productName.toLowerCase()
+    );
+    const product_id = selectedProduct && selectedProduct.id;
     const quantity = document.getElementById('adjQuantity').value;
     const reason = document.getElementById('adjReason').value;
     const msgBox = document.getElementById('adjMsg');
 
     if (!product_id || !quantity || !reason) {
-        msgBox.innerHTML = '<div class="alert alert-warning py-2">Please fill in all fields.</div>';
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">Please select a valid product name and fill in all fields.</div>';
         return;
     }
 
@@ -609,7 +629,7 @@ async function submitAdjustment() {
         });
         if (res.ok) {
             msgBox.innerHTML = '<div class="alert alert-success py-2">Adjustment recorded successfully.</div>';
-            document.getElementById('adjProductId').value = '';
+            document.getElementById('adjProductName').value = '';
             document.getElementById('adjQuantity').value = '';
             document.getElementById('adjReason').value = '';
             loadStock();
