@@ -545,6 +545,54 @@
         .add-btn { width: 100%; padding: 10px 12px; font-size: 0.86rem; }
         .add-btn:disabled, .modal-add-btn:disabled { opacity: 0.7; cursor: not-allowed; background: #9ca3af; }
 
+        /* ── Today's Deals (F09 active discounts) ── */
+        .deals-section { display: none; margin-bottom: 20px; }
+        .deals-section.visible { display: block; }
+        .deals-header {
+            font-size: 1.05rem; font-weight: 700; color: #222;
+            margin-bottom: 12px;
+        }
+        .deals-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        .deal-card {
+            position: relative; background: white; border-radius: 14px;
+            padding: 16px; border: 1.5px solid #ffe082;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;
+        }
+        .deal-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.14);
+            border-color: #ffb300;
+        }
+        .deal-badge {
+            position: absolute; top: -10px; right: 10px;
+            background: #e53935; color: white; font-size: 0.7rem;
+            font-weight: 700; padding: 3px 9px; border-radius: 999px;
+        }
+        .deal-card .pname {
+            font-weight: 700; color: #222; font-size: 0.92rem;
+            margin: 6px 0 8px; line-height: 1.3;
+        }
+        .deal-card .old-price {
+            color: #999; font-size: 0.85rem; text-decoration: line-through;
+            margin-bottom: 2px;
+        }
+        .deal-card .deal-price {
+            color: #e53935; font-weight: 700; font-size: 1.05rem;
+            margin-bottom: 10px;
+        }
+        .deal-card .add-btn {
+            width: 100%; padding: 8px; background: #1a73e8;
+            color: white; border: none; border-radius: 8px;
+            cursor: pointer; font-size: 0.88rem; font-weight: 600;
+        }
+        .deal-card .add-btn:hover { background: #1558b0; }
+
+        /* ── Pagination ── */
         .pagination {
             display: flex;
             align-items: center;
@@ -793,74 +841,82 @@
 
     <section id="searchResultsPanel" class="search-results-panel" aria-live="polite"></section>
 
+<!-- Main content -->
+<div class="page-shell">
+    <!-- ══ F09 Today's Deals — hidden by default; only shown when
+         GET /api/discounts/active/ returns at least one row ══ -->
+    <div class="deals-section" id="dealsSection">
+        <div class="deals-header">🔥 Today's Deals</div>
+        <div class="deals-grid" id="dealsGrid"></div>
+    </div>
     <div class="welcome-bar" id="welcomeBar">Welcome to <strong>Samanala Super Mart!</strong></div>
 
-    <div class="page-shell">
-        <div class="hero-slider" id="heroSlider" aria-label="Promotional hero banner">
-            <div class="hero-track">
-                <div class="hero-slide brand active">
-                    <div class="hero-slide-inner">
-                        <div class="hero-copy">
-                            <span class="hero-kicker">Your neighborhood supermarket</span>
-                            <h2 class="hero-title">Samanala Super Mart</h2>
-                            <div class="hero-subtitle">Everyday groceries and household essentials, all in one place.</div>
-                        </div>
-                        <div class="hero-art">🛒</div>
+    <div class="hero-slider" id="heroSlider" aria-label="Promotional hero banner">
+        <div class="hero-track">
+            <div class="hero-slide brand active">
+                <div class="hero-slide-inner">
+                    <div class="hero-copy">
+                        <span class="hero-kicker">Your neighborhood supermarket</span>
+                        <h2 class="hero-title">Samanala Super Mart</h2>
+                        <div class="hero-subtitle">Everyday groceries and household essentials, all in one place.</div>
                     </div>
-                </div>
-                <div class="hero-slide red">
-                    <div class="hero-slide-inner">
-                        <div class="hero-copy">
-                            <span class="hero-kicker">Today only</span>
-                            <h2 class="hero-title">Today's Special Deals</h2>
-                            <div class="hero-subtitle">Big savings on family essentials and pantry favorites.</div>
-                        </div>
-                        <div class="hero-art">🏷️</div>
-                    </div>
-                </div>
-                <div class="hero-slide blue">
-                    <div class="hero-slide-inner">
-                        <div class="hero-copy">
-                            <span class="hero-kicker">Browse smarter</span>
-                            <h2 class="hero-title">Shop by Category</h2>
-                            <div class="hero-subtitle">Fresh groceries, kitchen staples, household care, and more.</div>
-                        </div>
-                        <div class="hero-art">🛍️</div>
-                    </div>
-                </div>
-                <div class="hero-slide green">
-                    <div class="hero-slide-inner">
-                        <div class="hero-copy">
-                            <span class="hero-kicker">Fresh picks</span>
-                            <h2 class="hero-title">Fresh Arrivals</h2>
-                            <div class="hero-subtitle">Discover new products and everyday essentials at great value.</div>
-                        </div>
-                        <div class="hero-art">🥬</div>
-                    </div>
+                    <div class="hero-art">🛒</div>
                 </div>
             </div>
-            <button class="hero-nav prev" type="button" aria-label="Previous slide" onclick="changeSlide(-1)">&#10094;</button>
-            <button class="hero-nav next" type="button" aria-label="Next slide" onclick="changeSlide(1)">&#10095;</button>
-            <div class="hero-dots" aria-label="Slide indicators"></div>
-        </div>
-
-        <div id="discountsSection" class="deal-section" style="display:none;"></div>
-
-        <div class="category-section">
-            <div class="section-header">
-                <div class="section-title">🛍️ Shop by Category</div>
+            <div class="hero-slide red">
+                <div class="hero-slide-inner">
+                    <div class="hero-copy">
+                        <span class="hero-kicker">Today only</span>
+                        <h2 class="hero-title">Today's Special Deals</h2>
+                        <div class="hero-subtitle">Big savings on family essentials and pantry favorites.</div>
+                    </div>
+                    <div class="hero-art">🏷️</div>
+                </div>
+            </div>
+            <div class="hero-slide blue">
+                <div class="hero-slide-inner">
+                    <div class="hero-copy">
+                        <span class="hero-kicker">Browse smarter</span>
+                        <h2 class="hero-title">Shop by Category</h2>
+                        <div class="hero-subtitle">Fresh groceries, kitchen staples, household care, and more.</div>
+                    </div>
+                    <div class="hero-art">🛍️</div>
+                </div>
+            </div>
+            <div class="hero-slide green">
+                <div class="hero-slide-inner">
+                    <div class="hero-copy">
+                        <span class="hero-kicker">Fresh picks</span>
+                        <h2 class="hero-title">Fresh Arrivals</h2>
+                        <div class="hero-subtitle">Discover new products and everyday essentials at great value.</div>
+                    </div>
+                    <div class="hero-art">🥬</div>
+                </div>
             </div>
         </div>
+        <button class="hero-nav prev" type="button" aria-label="Previous slide" onclick="changeSlide(-1)">&#10094;</button>
+        <button class="hero-nav next" type="button" aria-label="Next slide" onclick="changeSlide(1)">&#10095;</button>
+        <div class="hero-dots" aria-label="Slide indicators"></div>
+    </div>
 
-        <div class="breadcrumb" id="breadcrumb"></div>
-        <div class="page-title" id="pageTitle">🛍️ All Categories</div>
-        <div id="mainContent">
-            <div class="state-box">
-                <div class="icon">⏳</div>
-                <p>Loading products...</p>
-            </div>
+    <div id="discountsSection" class="deal-section" style="display:none;"></div>
+
+    <div class="category-section">
+        <div class="section-header">
+            <div class="section-title">🛍️ Shop by Category</div>
         </div>
-        <div class="pagination" id="pagination"></div>
+    </div>
+
+    <div class="breadcrumb" id="breadcrumb"></div>
+    <div class="page-title" id="pageTitle">🛍️ All Categories</div>
+    <div id="mainContent">
+        <div class="state-box">
+            <div class="icon">⏳</div>
+            <p>Loading products...</p>
+        </div>
+    </div>
+    <div class="pagination" id="pagination"></div>
+</div>
     </div>
 
     <div class="product-modal-overlay" id="productModal" style="display:none;">
@@ -980,23 +1036,57 @@
             updateCartBadge();
         }
 
-        function updateWelcome() {
-            const name = sessionStorage.getItem('customerName');
-            const welcome = document.getElementById('welcomeBar');
-            if (!welcome) return;
-            welcome.textContent = '';
-            if (name) {
-                welcome.append('Hi ');
-                const customerName = document.createElement('strong');
-                customerName.textContent = formatCustomerName(name);
-                welcome.append(customerName, ', welcome to ');
-            } else {
-                welcome.append('Welcome to ');
-            }
-            const shopName = document.createElement('strong');
-            shopName.textContent = 'Samanala Super Mart!';
-            welcome.append(shopName);
+    // ── Today's Deals (F09: public active discounts) ─────────────
+    async function loadActiveDeals() {
+        // Single fetch from GET /api/discounts/active/ — the same shared
+        // definition used by the chatbot's get_active_discounts tool.
+        // The section stays hidden unless real deals come back, so an empty
+        // list or an API error renders nothing extra on the page.
+        try {
+            const res = await fetch('/api/discounts/active/');
+            if (!res.ok) return;
+            const deals = await res.json();
+            if (!Array.isArray(deals) || deals.length === 0) return;
+
+            document.getElementById('dealsGrid').innerHTML = deals.map(d => {
+                const original  = parseFloat(d.original_price);
+                const discounted = parseFloat(d.discounted_price);
+                const pct       = parseFloat(d.discount_percentage);
+                return `
+                    <div class="deal-card" onclick="openProductModal(${d.product_id})">
+                        <span class="deal-badge">${pct.toFixed(2)}% OFF</span>
+                        <div class="pname">${d.product_name}</div>
+                        <div class="old-price">Rs ${original.toFixed(2)}</div>
+                        <div class="deal-price">Rs ${discounted.toFixed(2)}</div>
+                        <button class="add-btn"
+                            onclick="event.stopPropagation(); addToCart(${d.product_id}, '${d.product_name.replace(/'/g, '')}', ${original})">
+                            Add to Cart 🛒
+                        </button>
+                    </div>`;
+            }).join('');
+            document.getElementById('dealsSection').classList.add('visible');
+        } catch (err) {
+            console.error('Deals load error:', err);   // section stays hidden
         }
+    }
+
+    function updateWelcome() {
+        const name = sessionStorage.getItem('customerName');
+        const welcome = document.getElementById('welcomeBar');
+        if (!welcome) return;
+        welcome.textContent = '';
+        if (name) {
+            welcome.append('Hi ');
+            const customerName = document.createElement('strong');
+            customerName.textContent = formatCustomerName(name);
+            welcome.append(customerName, ', welcome to ');
+        } else {
+            welcome.append('Welcome to ');
+        }
+        const shopName = document.createElement('strong');
+        shopName.textContent = 'Samanala Super Mart!';
+        welcome.append(shopName);
+    }
 
         function formatCustomerName(name) {
             return (name || '').trim().split(/\s+/).filter(Boolean)
@@ -1457,18 +1547,18 @@
             if (button) button.style.display = value.trim() ? 'flex' : 'none';
         }
 
-        function clearSearch() {
-            const input = document.getElementById('searchInput');
-            input.value = '';
-            document.getElementById('suggestionsDropdown').style.display = 'none';
-            updateClearSearchButton('');
-            document.getElementById('searchResultsPanel').style.display = 'none';
-            document.getElementById('searchResultsPanel').innerHTML = '';
-            document.querySelector('.page-shell').style.display = '';
-            document.getElementById('welcomeBar').style.display = '';
-            showCategories();
-            input.focus();
-        }
+    function clearSearch() {
+        const input = document.getElementById('searchInput');
+        input.value = '';
+        document.getElementById('suggestionsDropdown').style.display = 'none';
+        updateClearSearchButton('');
+        document.getElementById('searchResultsPanel').style.display = 'none';
+        document.getElementById('searchResultsPanel').innerHTML = '';
+        document.querySelector('.page-shell').style.display = '';
+        document.getElementById('welcomeBar').style.display = '';
+        showCategories();
+        input.focus();
+    }
 
         function searchProducts() {
             const input = document.getElementById('searchInput');
@@ -1633,6 +1723,7 @@
         updateWelcome();
         initHero();
         loadAllProducts();
+        loadActiveDeals();
     </script>
     {% include "customer/footer.html" %}
 </body>
