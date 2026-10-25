@@ -92,7 +92,9 @@ class GeminiProvider:
     def append_tool_results(self, contents, response, results):
         candidate = getattr(response, "candidates", None) or []
         if not candidate:
-            raise GeminiUnavailable("The chatbot could not complete this request. Please try a simpler question.")
+            # Provider returned no candidate content to continue the loop —
+            # a provider-level failure, not a problem with the user's wording.
+            raise GeminiUnavailable("The chatbot AI service returned an unexpected response. Please try again.")
         contents.append(candidate[0].content)
         parts = [
             self.types.Part.from_function_response(

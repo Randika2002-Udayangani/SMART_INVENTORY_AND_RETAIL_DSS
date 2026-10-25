@@ -279,3 +279,47 @@ def calculate_discounts():
         'recommendations_updated': updated,
         'skipped_no_tier':         skipped,
     }
+
+
+# ── Customer-visible active discounts ────────────────────────────────────────
+
+def get_customer_visible_discounts():
+    """Single source of truth for a customer-visible active discount.
+
+    A manager-approved recommendation is only a real customer deal when the
+    underlying stock is still sellable, so a row qualifies only when ALL of
+    the following hold:
+
+      * manager-approved            status == 'APPLIED'
+      * product still active        product.is_active
+      * batch still sellable        batch.status == 'ACTIVE'
+      * batch still has stock       batch.remaining_quantity > 0
+      * batch not past expiry       batch.expiry_date >= today
+
+    (a NULL batch expiry_date fails the ``>= today`` comparison, so batches
+    without an expiry date never qualify either — same strict rule the
+    customer-facing consumers need).
+
+    This matters in practice: a recommendation calculated and approved on a
+    batch that has since been depleted or expired must NOT surface to
+    customers even though its status is APPLIED.
+
+    Consumers — ALL sharing this one filtering implementation:
+      * GET /api/discounts/active/           (customer Products page / Today's Deals)
+      * chatbot tool ``get_active_discounts`` (orders/services/agent.py)
+
+    Returns a queryset of DiscountRecommendation with product, category,
+    brand and batch joined so callers can serialize without extra queries.
+    """
+    today = datetime.now(LOCAL_TZ).date()
+    return (
+        DiscountRecommendation.objects.filter(
+            status='APPLIED',
+            product__is_active=True,
+            batch__status='ACTIVE',
+            batch__remaining_quantity__gt=0,
+            batch__expiry_date__gte=today,
+        )
+        .select_related('product', 'product__category', 'product__brand', 'batch')
+        .order_by('product__product_name', 'id')
+    )
