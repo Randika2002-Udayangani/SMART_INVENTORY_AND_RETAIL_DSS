@@ -593,6 +593,16 @@
         document.getElementById('orderCount').textContent = '0 orders';
     }
 
+    function showLoadError() {
+        document.getElementById('ordersList').innerHTML = `
+            <div class="empty-state">
+                <h3>Could not load your orders</h3>
+                <p>Please check your connection and try again.</p>
+                <button onclick="loadOrders()">Retry</button>
+            </div>`;
+        document.getElementById('orderCount').textContent = '';
+    }
+
     // ── Render order cards ────────────────────────────────────────
     function renderOrders(orders) {
         ordersData = orders; 
@@ -651,12 +661,11 @@
                         <div style="font-size:0.72rem; color:#2d6a4f; margin-top:2px;">
                             Tap for details →
                         </div>
-                        ${o.rating_count ? ` 
-                        <div style="color:#f4b400; font-size:0.82rem; margin-top:4px;">
-                            ${'★'.repeat(parseInt(o.rating))}${'☆'.repeat(5-parseInt(o.rating))}
-                            (${o.rating}/5)
-                        </div>` : `<div style="font-size:0.76rem; color:#888; margin-top:4px;">Not rated</div>`}
-                    </div>
+                            ${o.rating ? `
+                            <div style="color:#f4b400; font-size:0.82rem; margin-top:4px;">
+                                ${'★'.repeat(parseInt(o.rating))}${'☆'.repeat(5-parseInt(o.rating))}
+                                (${o.rating}/5)
+                            </div>` : `<div style="font-size:0.76rem; color:#888; margin-top:4px;">Not yet rated</div>`} </div>
                 </div>
 
             </div>`;
@@ -728,68 +737,44 @@
 
             if (res.ok) {
                 const orders = await res.json();
+                const mapped = orders.map(o => {
+                    const items = o.items || [];
+                    const ratedItem = items.find(i => i.rating !== null && i.rating !== undefined);
+                    const ratingValue = ratedItem?.rating?.rating || null;
+                    const firstItem = items.length > 0 ? items[0] : null;
+                    const productId = firstItem ? parseInt(firstItem.product_id ?? firstItem.product) : null;
+                    const productName = items.length
+                        ? items.map(i => i.product_name).join(', ')
+                        : 'Order';
 
-                if (orders.length > 0) {
-                    const savedOrders = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
-                    const savedOrdersByReference = new Map(
-                        savedOrders.map(order => [order.ref || order.order_reference, order])
-                    );
-                    const mapped = orders.map(o => {
-                        const savedOrder = savedOrdersByReference.get(o.order_reference);
-                        // ── Find rating from items ──
-                        // rating is a dict: {rating: 5, feedback_text: ""}
-                        const items = (o.items || []).map(item => {
-                            const savedItem = savedOrder?.displayItems?.find(saved =>
-                                Number(saved.product_id) === Number(item.product_id ?? item.product)
-                            );
-                            return savedItem ? {
-                                ...item,
-                                original_unit_price: item.unit_price,
-                                unit_price: savedItem.unit_price
-                            } : item;
-                        });
-                        const ratedItem = items.length
-                            ? items.find(i => i.rating !== null && i.rating !== undefined)
-                            : null;
-                        const ratingValue = ratedItem?.rating?.rating || null;
+                    return {
+                        id:         o.id,
+                        ref:        o.order_reference,
+                        product:    productName,
+                        product_id: productId,
+                        items,
+                        rating:     ratingValue,
+                        rating_count: o.items ? o.items.filter(i => i.rating).length : 0,
+                        qty:        items.length
+                            ? items.reduce((s, i) => s + i.quantity, 0)
+                            : 1,
+                        total:      `Rs ${parseFloat(o.total_amount || 0).toFixed(2)}`,
+                        date:       o.pickup_date,
+                        slot:       o.pickup_time_slot,
+                        status:     o.status,
+                        collection_deadline: o.collection_deadline
+                    };
+                });
 
-                        // ── Get first product ID ──
-                        const firstItem   = items.length > 0 ? items[0] : null;
-                        const productId   = firstItem ? parseInt(firstItem.product_id ?? firstItem.product) : null;
-                        const productName = items.length
-                            ? items.map(i => i.product_name).join(', ')
-                            : 'Order';
-
-                        return {
-                            id:         o.id,
-                            ref:        o.order_reference,
-                            product:    productName,
-                            product_id: productId,
-                            items,
-                            rating:     ratingValue,
-                            rating_count: o.items ? o.items.filter(i => i.rating).length : 0,
-                            qty:        items.length
-                                ? items.reduce((s, i) => s + i.quantity, 0)
-                                : 1,
-                            total:      savedOrder?.total || `Rs ${parseFloat(o.total_amount || 0).toFixed(2)}`,
-                            date:       o.pickup_date,
-                            slot:       o.pickup_time_slot,
-                            status:     o.status,
-                            collection_deadline: o.collection_deadline
-                        };
-                    });
-
-                    renderOrders(mapped);
-                    return;
-                }
+                renderOrders(mapped);
+                return;
             }
+            console.error('Could not load orders:', res.status);
         } catch (err) {
-            console.log('API error:', err);
+            console.error('Orders API error:', err);
         }
 
-        // Fallback to sessionStorage
-        const saved = JSON.parse(sessionStorage.getItem('myOrders') || '[]');
-        renderOrders(saved);
+        showLoadError();
     }
 
     function logout() { showLogoutConfirmation(); }

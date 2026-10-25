@@ -1,7 +1,9 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.contrib.auth.hashers import make_password
 from django.urls import reverse
 from rest_framework.test import APIRequestFactory, force_authenticate
+from rest_framework.test import APIClient
 from unittest.mock import patch
 import os
 from datetime import date, datetime, timedelta
@@ -13,6 +15,8 @@ from django.test import TestCase
 from django.test import override_settings
 from django.utils import timezone
 
+from orders.models import Customer
+from orders.models import OnlineOrder, OnlineOrderItem
 from orders.models import ChatbotLog, ChatbotRateLimit, Customer
 from orders.services.agent import (
     AgentUnavailable, PUBLIC_TOOLS, _resolve_product, _resolve_product_with_candidates, check_purchase_quantity,
@@ -33,6 +37,7 @@ from products.models import Category, Product
 from purchases.models import Purchase, PurchaseBatch
 from sales.models import ItemSalesRecord
 from suppliers.models import Supplier
+from users.models import AuditLog
 
 from zoneinfo import ZoneInfo
 
@@ -1587,3 +1592,207 @@ class ChatbotAgentToolSelectionTests(TestCase):
         from orders.services.agent import is_anonymous, PUBLIC_TOOLS, MANAGER_TOOLS
         self.assertTrue(is_anonymous(None))
         self.assertTrue(MANAGER_TOOLS.isdisjoint(PUBLIC_TOOLS))
+
+class OrderPricingTests(TestCase):
+    """
+    Tests to verify server always decides the price,
+    never trusting browser-sent values.
+    """
+
+    def setUp(self):
+        # Create test customer
+        self.customer = Customer.objects.create(
+            name='Test Customer',
+            email='test@test.com',
+            password_hash=make_password('test123'),
+            is_active=True
+        )
+
+        # Create test category
+        self.category = Category.objects.create(
+            category_name='Test Category'
+        )
+
+        # Create normal product
+        self.product_normal = Product.objects.create(
+            product_name='Normal Product',
+            unit_price=500.00,
+            cost_price=300.00,
+            avg_cost_price=300.00,
+            category=self.category,
+            is_active=True,
+            reorder_threshold=10
+        )
+
+        # Create discounted product
+        self.product_discounted = Product.objects.create(
+            product_name='Discounted Product',
+            unit_price=200.00,
+            cost_price=100.00,
+            avg_cost_price=100.00,
+            category=self.category,
+            is_active=True,
+            reorder_threshold=10
+        )
+
+        supplier = Supplier.objects.create(supplier_name='Pricing Test Supplier')
+        purchase = Purchase.objects.create(
+            supplier=supplier,
+            purchase_date=local_today(),
+        )
+        self.discount_batch = PurchaseBatch.objects.create(
+            purchase=purchase,
+            product=self.product_discounted,
+            quantity_received=10,
+            cost_price=Decimal('100.00'),
+            remaining_quantity=10,
+            expiry_date=local_today() + timedelta(days=30),
+            status='ACTIVE',
+        )
+        self.normal_batch = PurchaseBatch.objects.create(
+            purchase=purchase,
+            product=self.product_normal,
+            quantity_received=10,
+            cost_price=Decimal('300.00'),
+            remaining_quantity=10,
+            expiry_date=local_today() + timedelta(days=30),
+            status='ACTIVE',
+        )
+
+        # Create discount recommendation for discounted product
+        self.discount = DiscountRecommendation.objects.create(
+            product=self.product_discounted,
+            batch=self.discount_batch,
+            recommended_discount_pct=20.00,
+            recommended_price=160.00,
+            current_price=200.00,
+            days_until_expiry=10,
+            recovery_sell=Decimal('190.00'),
+            recovery_return=Decimal('180.00'),
+            status='APPLIED',
+            best_action='DISCOUNT'
+        )
+
+        # Get customer JWT token
+        self.client = APIClient()
+        response = self.client.post('/api/customer-auth/login/', {
+            'email': 'test@test.com',
+            'password': 'test123'
+        }, format='json')
+        self.token = response.data.get('access')
+        self.client.force_authenticate(user=self.customer)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {self.token}'
+        )
+
+    def test_discounted_product_saves_discounted_price(self):
+        """
+        Order for a discounted product must save
+        the recommended_price not the unit_price.
+        """
+        response = self.client.post('/api/orders/', {
+            'items': [
+                {'product_id': self.product_discounted.id, 'quantity': 2}
+            ],
+            'pickup_date': (local_today() + timedelta(days=2)).isoformat(),
+            'time_slot': 'MORNING'
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+
+        order = OnlineOrder.objects.latest('id')
+        item  = OnlineOrderItem.objects.get(order=order)
+
+        # Must use discounted price 160.00 not 200.00
+        self.assertEqual(float(item.unit_price), 160.00)
+        self.assertEqual(float(order.total_amount), 320.00)  # 160 x 2
+        my_orders_response = self.client.get('/api/orders/my-orders/')
+        self.assertEqual(my_orders_response.status_code, 200)
+        self.assertEqual(my_orders_response.data[0]['total_amount'], 320.00)
+        self.assertEqual(my_orders_response.data[0]['items'][0]['unit_price'], 160.00)
+        manager_detail_response = self.client.get(
+            f'/api/orders/{order.id}/detail/'
+        )
+        self.assertEqual(manager_detail_response.status_code, 200)
+        self.assertEqual(
+            float(manager_detail_response.data['total_amount']),
+            320.00,
+        )
+        self.assertEqual(
+            float(manager_detail_response.data['items'][0]['unit_price']),
+            160.00,
+        )
+        self.assertEqual(
+            float(manager_detail_response.data['items'][0]['line_total']),
+            320.00,
+        )
+        audit_log = AuditLog.objects.get(action='CREATE', table_name='online_order')
+        self.assertEqual(audit_log.new_value['items'][0]['unit_price'], '160.00')
+
+    def test_normal_product_saves_normal_price(self):
+        """
+        Order for a product with no discount must
+        save the normal unit_price.
+        """
+        response = self.client.post('/api/orders/', {
+            'items': [
+                {'product_id': self.product_normal.id, 'quantity': 1}
+            ],
+            'pickup_date': (local_today() + timedelta(days=2)).isoformat(),
+            'time_slot': 'MORNING'
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+
+        order = OnlineOrder.objects.latest('id')
+        item  = OnlineOrderItem.objects.get(order=order)
+
+        # Must use normal price 500.00
+        self.assertEqual(float(item.unit_price), 500.00)
+        self.assertEqual(float(order.total_amount), 500.00)
+
+    def test_pending_recommendation_is_not_used_as_a_customer_discount(self):
+        self.discount.status = 'PENDING'
+        self.discount.save(update_fields=['status'])
+
+        response = self.client.post('/api/orders/', {
+            'items': [
+                {'product_id': self.product_discounted.id, 'quantity': 1}
+            ],
+            'pickup_date': (local_today() + timedelta(days=2)).isoformat(),
+            'time_slot': 'MORNING'
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        order = OnlineOrder.objects.latest('id')
+        item = OnlineOrderItem.objects.get(order=order)
+        self.assertEqual(float(item.unit_price), 200.00)
+        self.assertEqual(float(order.total_amount), 200.00)
+
+    def test_fake_price_from_browser_is_ignored(self):
+        """
+        Even if browser sends a fake low price,
+        server must use its own calculated price.
+        """
+        response = self.client.post('/api/orders/', {
+            'items': [
+                {
+                    'product_id': self.product_normal.id,
+                    'quantity': 1,
+                    'unit_price': 1.00,  # fake price from browser
+                    'price': 1.00        # another attempt
+                }
+            ],
+            'pickup_date': (local_today() + timedelta(days=2)).isoformat(),
+            'time_slot': 'MORNING'
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+
+        order = OnlineOrder.objects.latest('id')
+        item  = OnlineOrderItem.objects.get(order=order)
+
+        # Must still use 500.00 not the fake 1.00
+        self.assertNotEqual(float(item.unit_price), 1.00)
+        self.assertEqual(float(item.unit_price), 500.00)
+        self.assertEqual(float(order.total_amount), 500.00)

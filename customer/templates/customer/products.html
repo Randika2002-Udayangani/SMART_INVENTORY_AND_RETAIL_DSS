@@ -545,53 +545,6 @@
         .add-btn { width: 100%; padding: 10px 12px; font-size: 0.86rem; }
         .add-btn:disabled, .modal-add-btn:disabled { opacity: 0.7; cursor: not-allowed; background: #9ca3af; }
 
-        /* ── Today's Deals (F09 active discounts) ── */
-        .deals-section { display: none; margin-bottom: 20px; }
-        .deals-section.visible { display: block; }
-        .deals-header {
-            font-size: 1.05rem; font-weight: 700; color: #222;
-            margin-bottom: 12px;
-        }
-        .deals-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 16px;
-        }
-        .deal-card {
-            position: relative; background: white; border-radius: 14px;
-            padding: 16px; border: 1.5px solid #ffe082;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-            transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;
-        }
-        .deal-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.14);
-            border-color: #ffb300;
-        }
-        .deal-badge {
-            position: absolute; top: -10px; right: 10px;
-            background: #e53935; color: white; font-size: 0.7rem;
-            font-weight: 700; padding: 3px 9px; border-radius: 999px;
-        }
-        .deal-card .pname {
-            font-weight: 700; color: #222; font-size: 0.92rem;
-            margin: 6px 0 8px; line-height: 1.3;
-        }
-        .deal-card .old-price {
-            color: #999; font-size: 0.85rem; text-decoration: line-through;
-            margin-bottom: 2px;
-        }
-        .deal-card .deal-price {
-            color: #e53935; font-weight: 700; font-size: 1.05rem;
-            margin-bottom: 10px;
-        }
-        .deal-card .add-btn {
-            width: 100%; padding: 8px; background: #1a73e8;
-            color: white; border: none; border-radius: 8px;
-            cursor: pointer; font-size: 0.88rem; font-weight: 600;
-        }
-        .deal-card .add-btn:hover { background: #1558b0; }
-
         /* ── Pagination ── */
         .pagination {
             display: flex;
@@ -843,12 +796,6 @@
 
 <!-- Main content -->
 <div class="page-shell">
-    <!-- ══ F09 Today's Deals — hidden by default; only shown when
-         GET /api/discounts/active/ returns at least one row ══ -->
-    <div class="deals-section" id="dealsSection">
-        <div class="deals-header">🔥 Today's Deals</div>
-        <div class="deals-grid" id="dealsGrid"></div>
-    </div>
     <div class="welcome-bar" id="welcomeBar">Welcome to <strong>Samanala Super Mart!</strong></div>
 
     <div class="hero-slider" id="heroSlider" aria-label="Promotional hero banner">
@@ -866,9 +813,9 @@
             <div class="hero-slide red">
                 <div class="hero-slide-inner">
                     <div class="hero-copy">
-                        <span class="hero-kicker">Today only</span>
-                        <h2 class="hero-title">Today's Special Deals</h2>
-                        <div class="hero-subtitle">Big savings on family essentials and pantry favorites.</div>
+                        <span class="hero-kicker">Great value every day</span>
+                        <h2 class="hero-title">Everyday Savings</h2>
+                        <div class="hero-subtitle">Great value on family essentials and pantry favorites.</div>
                     </div>
                     <div class="hero-art">🏷️</div>
                 </div>
@@ -1036,40 +983,6 @@
             updateCartBadge();
         }
 
-    // ── Today's Deals (F09: public active discounts) ─────────────
-    async function loadActiveDeals() {
-        // Single fetch from GET /api/discounts/active/ — the same shared
-        // definition used by the chatbot's get_active_discounts tool.
-        // The section stays hidden unless real deals come back, so an empty
-        // list or an API error renders nothing extra on the page.
-        try {
-            const res = await fetch('/api/discounts/active/');
-            if (!res.ok) return;
-            const deals = await res.json();
-            if (!Array.isArray(deals) || deals.length === 0) return;
-
-            document.getElementById('dealsGrid').innerHTML = deals.map(d => {
-                const original  = parseFloat(d.original_price);
-                const discounted = parseFloat(d.discounted_price);
-                const pct       = parseFloat(d.discount_percentage);
-                return `
-                    <div class="deal-card" onclick="openProductModal(${d.product_id})">
-                        <span class="deal-badge">${pct.toFixed(2)}% OFF</span>
-                        <div class="pname">${d.product_name}</div>
-                        <div class="old-price">Rs ${original.toFixed(2)}</div>
-                        <div class="deal-price">Rs ${discounted.toFixed(2)}</div>
-                        <button class="add-btn"
-                            onclick="event.stopPropagation(); addToCart(${d.product_id}, '${d.product_name.replace(/'/g, '')}', ${original})">
-                            Add to Cart 🛒
-                        </button>
-                    </div>`;
-            }).join('');
-            document.getElementById('dealsSection').classList.add('visible');
-        } catch (err) {
-            console.error('Deals load error:', err);   // section stays hidden
-        }
-    }
-
     function updateWelcome() {
         const name = sessionStorage.getItem('customerName');
         const welcome = document.getElementById('welcomeBar');
@@ -1097,12 +1010,8 @@
         function getProductPrice(product) {
             const unitPrice = parseFloat(product && product.unit_price);
             const recommendedValue = parseFloat(product && product.discount && product.discount.price);
-            if (Number.isFinite(recommendedValue) && recommendedValue < unitPrice) {
+            if (Number.isFinite(recommendedValue) && recommendedValue > 0 && recommendedValue < unitPrice) {
                 return recommendedValue;
-            }
-            const discountedValue = parseFloat(product && product.discounted_price !== undefined ? product.discounted_price : NaN);
-            if (Number.isFinite(discountedValue) && discountedValue < unitPrice) {
-                return discountedValue;
             }
             return unitPrice;
         }
@@ -1112,11 +1021,9 @@
             const discounted = getProductPrice(product);
 
             if (product.discount && discounted < original) {
-                const pct = product.discount.pct || Math.round((1 - discounted / original) * 100);
                 return `
                     <span class="regular-price">Rs ${original.toFixed(2)}</span>
                     <span class="discounted">Rs ${discounted.toFixed(2)}</span>
-                    <span class="discount-chip" style="margin-left:4px;">${pct}% OFF</span>
                 `;
             }
             return `Rs ${original.toFixed(2)}`;
@@ -1183,23 +1090,38 @@
 
                 let discountMap = {};
                 try {
-                    const discountsRes = await fetch('/api/discounts/public/', {
+                    const discountsRes = await fetch('/api/discounts/active/', {
                         headers: token ? { Authorization: 'Bearer ' + token } : {}
                     });
                     if (discountsRes.ok) {
                         const discData = await discountsRes.json();
                         const discounts = Array.isArray(discData) ? discData : (discData.results || []);
                         discounts.forEach((d) => {
+                            if (d.is_available === false) return;
                             const productId = d.product_id ?? d.product;
                             if (productId === undefined || productId === null) return;
+                            if (discountMap[productId]) return;
+                            const product = allProducts.find((item) => Number(item.id) === Number(productId));
+                            const originalPrice = Number(product && product.unit_price);
+                            const discountedPrice = Number(d.discounted_price);
+                            const discountPercentage = Number(d.discount_percentage);
+                            if (
+                                !Number.isFinite(originalPrice)
+                                || !Number.isFinite(discountedPrice)
+                                || !Number.isFinite(discountPercentage)
+                                || originalPrice <= 0
+                                || discountedPrice <= 0
+                                || discountedPrice >= originalPrice
+                                || discountPercentage <= 0
+                            ) return;
                             discountMap[productId] = {
-                                pct: parseFloat(d.recommended_discount_pct || 0).toFixed(0),
-                                price: parseFloat(d.recommended_price || 0).toFixed(2)
+                                pct: discountPercentage,
+                                price: discountedPrice.toFixed(2)
                             };
                         });
                     }
                 } catch (discountErr) {
-                    console.warn('Discounts unavailable, continuing without them:', discountErr);
+                    console.warn('Active discounts unavailable, continuing without them:', discountErr);
                 }
 
                 allProducts = allProducts.map((p) => ({ ...p, discount: discountMap[p.id] || null }));
@@ -1232,7 +1154,11 @@
         function showDiscountedProducts() {
             const section = document.getElementById('discountsSection');
             if (!section) return;
-            const discountedItems = allProducts.filter((p) => p.discount && Number(p.discount.pct) > 0);
+            const discountedItems = allProducts.filter((p) => (
+                p.discount
+                && Number(p.discount.price) > 0
+                && Number(p.discount.price) < Number(p.unit_price)
+            ));
             if (!discountedItems.length) {
                 section.style.display = 'none';
                 section.innerHTML = '';
@@ -1245,10 +1171,13 @@
                     <a href="#" class="section-link" onclick="showCategories(); window.scrollTo({ top: 0, behavior: 'smooth' }); return false;">View All Deals →</a>
                 </div>
                 <div class="deal-row">
-                    ${discountedItems.slice(0, 12).map((p) => {
+                    ${discountedItems.map((p) => {
                         const original = parseFloat(p.unit_price || 0);
                         const discounted = parseFloat(p.discount.price || 0);
-                        const percent = p.discount.pct || Math.round((1 - discounted / original) * 100);
+                        const percent = (
+                            Number(p.discount.pct)
+                            || (1 - discounted / original) * 100
+                        ).toFixed(2).replace(/\.?0+$/, '');
 
                         return `
                             <div class="deal-card" onclick="openProductModal(${p.id})" title="${p.product_name}">
@@ -1258,7 +1187,7 @@
                                     <span class="deal-old-price">${formatMoney(original)}</span>
                                     <span class="deal-new-price">${formatMoney(discounted)}</span>
                                 </div>
-                                <button class="deal-add-btn" type="button" data-product-id="${p.id}" onclick="event.stopPropagation(); addToCart(${p.id}, '${(p.product_name || '').replace(/'/g, "\\'")}', ${discounted})">Add to Cart</button>
+                                <button class="deal-add-btn" type="button" data-product-id="${p.id}" onclick="event.stopPropagation(); addToCart(${p.id}, '${(p.product_name || '').replace(/'/g, "\\'")}', ${discounted}, ${original})">Add to Cart</button>
                             </div>
                         `;
                     }).join('')}
@@ -1285,8 +1214,8 @@
                 updateProductCardAvailability(productId, data);
             } catch (err) {
                 buttons.forEach((button) => {
-                    button.disabled = false;
-                    button.textContent = 'Add to Cart 🛒';
+                    button.disabled = true;
+                    button.textContent = 'Availability unavailable';
                 });
             }
         }
@@ -1381,7 +1310,7 @@
                         ${p.discount ? `<div class="discount-chip">🏷️ ${p.discount.pct}% OFF</div>` : ''}
                         <div class="pname">${p.product_name}</div>
                             <div class="pprice ${p.discount ? 'discounted' : ''}">${renderProductPrice(p)}</div>
-                            <button type="button" class="add-btn" data-product-id="${p.id}" disabled onclick="event.stopPropagation(); addToCart(${p.id}, '${(p.product_name || '').replace(/'/g, "\\'")}', ${getProductPrice(p)})">Checking stock...</button>
+                            <button type="button" class="add-btn" data-product-id="${p.id}" disabled onclick="event.stopPropagation(); addToCart(${p.id}, '${(p.product_name || '').replace(/'/g, "\\'")}', ${getProductPrice(p)}, ${p.unit_price})">Checking stock...</button>
                         </div>
                     `).join('')}
                 </div>
@@ -1451,7 +1380,7 @@
                         addBtn.style.background = '#2d6a4f';
                         addBtn.textContent = 'Add to Cart 🛒';
                         addBtn.onclick = () => {
-                            addToCartWithLimit(p.id, p.product_name, getProductPrice(p), stock);
+                            addToCartWithLimit(p.id, p.product_name, getProductPrice(p), stock, p.unit_price);
                             closeProductModal();
                         };
                     } else if (status === 'LIMITED_STOCK') {
@@ -1461,7 +1390,7 @@
                         addBtn.style.background = '#2d6a4f';
                         addBtn.textContent = 'Add to Cart 🛒';
                         addBtn.onclick = () => {
-                            addToCartWithLimit(p.id, p.product_name, getProductPrice(p), stock);
+                            addToCartWithLimit(p.id, p.product_name, getProductPrice(p), stock, p.unit_price);
                             closeProductModal();
                         };
                     } else {
@@ -1475,15 +1404,11 @@
                 }
             } catch (err) {
                 const stockEl = document.getElementById('stockDisplay');
-                if (stockEl) stockEl.innerHTML = '✅ In Stock';
-                addBtn.disabled = false;
-                addBtn.style.background = '#1a73e8';
-                addBtn.style.background = '#2d6a4f';
-                addBtn.textContent = 'Add to Cart 🛒';
-                addBtn.onclick = () => {
-                    addToCart(p.id, p.product_name, getProductPrice(p));
-                    closeProductModal();
-                };
+                if (stockEl) stockEl.innerHTML = '<span style="color:#c5221f;">Could not verify availability</span>';
+                addBtn.disabled = true;
+                addBtn.style.background = '#9ca3af';
+                addBtn.textContent = 'Availability unavailable';
+                addBtn.onclick = null;
             }
         }
 
@@ -1608,7 +1533,7 @@
                                 ${p.discount ? `<div class="discount-chip">🏷️ ${p.discount.pct}% OFF</div>` : ''}
                                 <div class="pname">${p.product_name}</div>
                                 <div class="pprice ${p.discount ? 'discounted' : ''}">${renderProductPrice(p)}</div>
-                                <button class="add-btn" type="button" data-product-id="${p.id}" disabled onclick="event.stopPropagation(); addToCart(${p.id}, '${(p.product_name || '').replace(/'/g, "\\'")}', ${getProductPrice(p)})">Checking stock...</button>
+                                <button class="add-btn" type="button" data-product-id="${p.id}" disabled onclick="event.stopPropagation(); addToCart(${p.id}, '${(p.product_name || '').replace(/'/g, "\\'")}', ${getProductPrice(p)}, ${p.unit_price})">Checking stock...</button>
                             </div>
                         `).join('')}
                     </div>
@@ -1618,7 +1543,7 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        async function addToCart(productId, productName, price) {
+        async function addToCart(productId, productName, price, originalPrice = price) {
             try {
                 const response = await fetch(`/api/products/${productId}/availability/`, { cache: 'no-store' });
                 if (!response.ok) throw new Error('Availability check failed');
@@ -1637,8 +1562,9 @@
                 if (existing) {
                     existing.qty += 1;
                     existing.price = parseFloat(price);
+                    existing.original_price = parseFloat(originalPrice);
                 } else {
-                    cart.push({ product_id: productId, id: productId, product_name: productName, price: parseFloat(price), qty: 1 });
+                    cart.push({ product_id: productId, id: productId, product_name: productName, price: parseFloat(price), original_price: parseFloat(originalPrice), qty: 1 });
                 }
                 sessionStorage.setItem('cart', JSON.stringify(cart));
                 updateCartBadge();
@@ -1648,7 +1574,7 @@
             }
         }
 
-        function addToCartWithLimit(productId, productName, price, maxStock) {
+        function addToCartWithLimit(productId, productName, price, maxStock, originalPrice = price) {
             const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
             const existing = cart.find((item) => item.product_id === productId);
             if (existing) {
@@ -1658,12 +1584,14 @@
                 }
                 existing.qty += 1;
                 existing.price = parseFloat(price);
+                existing.original_price = parseFloat(originalPrice);
             } else {
                 cart.push({
                     product_id: productId,
                     id: productId,
                     product_name: productName,
                     price: parseFloat(price),
+                    original_price: parseFloat(originalPrice),
                     qty: 1,
                     max_stock: maxStock
                 });
@@ -1723,7 +1651,6 @@
         updateWelcome();
         initHero();
         loadAllProducts();
-        loadActiveDeals();
     </script>
     {% include "customer/footer.html" %}
 </body>

@@ -1,6 +1,7 @@
 import json
 
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 from django.utils import timezone
 from django.db.models import Avg, Count, OuterRef, Prefetch, Q, Subquery
@@ -22,6 +23,7 @@ from products.models import Product
 from inventory.services.stock import get_available_stock
 from inventory.services.fefo import deduct_stock_fefo
 from inventory.models import StockLedger
+from inventory.services.discount_engine import get_customer_visible_discounts
 from purchases.models import PurchaseBatch
 
 from .models import Customer, OnlineOrder, OnlineOrderItem
@@ -325,6 +327,23 @@ class CustomerChangePasswordView(APIView):
         c.save()
         return Response({'message': 'Password changed successfully'})
 
+def get_selling_price(product):
+    """
+    Return the current approved customer price, or the regular product price.
+    """
+    discount = get_customer_visible_discounts().filter(
+        product=product
+    ).order_by('id').first()
+
+    if (
+        discount
+        and discount.recommended_price > 0
+        and discount.recommended_price < product.unit_price
+    ):
+        return discount.recommended_price
+
+    return product.unit_price
+
 
 class OrderListCreateView(APIView):
 
@@ -476,7 +495,7 @@ class OrderListCreateView(APIView):
                 except Exception:
                     pass
 
-            validated_items.append((product, quantity))
+            validated_items.append((product, quantity, get_selling_price(product)))
 
         # ---- Pass 2: everything passed validation — create atomically ----
         collection_deadline = pickup_date + timedelta(days=2)
@@ -498,9 +517,10 @@ class OrderListCreateView(APIView):
                     notes=notes,
                 )
 
-                total = 0
+                total = Decimal("0.00")
+                priced_items = []
 
-                for product, quantity in validated_items:
+                for product, quantity, selling_price in validated_items:
                     deduction = deduct_stock_fefo(
                         product.id,
                         quantity,
@@ -516,9 +536,10 @@ class OrderListCreateView(APIView):
                         order=order,
                         product=product,
                         quantity=quantity,
-                        unit_price=product.unit_price,
+                        unit_price=selling_price,
                     )
-                    total += product.unit_price * quantity
+                    total += selling_price * quantity
+                    priced_items.append((product, quantity, selling_price))
 
                 order.total_amount = total
                 order.save(update_fields=["total_amount"])
@@ -542,9 +563,9 @@ class OrderListCreateView(APIView):
                     {
                         'product_id': product.id,
                         'quantity': quantity,
-                        'unit_price': str(product.unit_price),
+                        'unit_price': str(selling_price),
                     }
-                    for product, quantity in validated_items
+                    for product, quantity, selling_price in priced_items
                 ],
             },
             request=request,

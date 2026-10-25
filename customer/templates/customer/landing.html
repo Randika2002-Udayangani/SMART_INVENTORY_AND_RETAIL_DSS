@@ -145,49 +145,46 @@
 {% include "customer/footer.html" %}
 
 <script>
-    // Only the public discount list is used here (product_id, %, price) — nothing private.
     (async function loadOffers() {
         const box = document.getElementById('offers');
         const empty = '<div class="empty" style="grid-column:1/-1;">No special offers right now — check back soon!</div>';
         try {
-            const [dRes, pRes] = await Promise.all([
-                fetch('/api/discounts/public/'),
-                fetch('/api/products/?page=1&page_size=100')
-            ]);
-            if (!dRes.ok || !pRes.ok) throw new Error('unavailable');
-            const dData = await dRes.json();
-            const pData = await pRes.json();
-            const discounts = Array.isArray(dData) ? dData : (dData.results || []);
-            let products = Array.isArray(pData) ? pData : (pData.results || []);
-            if (!Array.isArray(pData) && pData.total_pages > 1) {
-                const productPages = await Promise.all(
-                    Array.from({ length: pData.total_pages - 1 }, async (_, index) => {
-                        const response = await fetch(`/api/products/?page=${index + 2}&page_size=100`);
-                        if (!response.ok) throw new Error('Products API failed');
-                        const page = await response.json();
-                        return page.results || [];
-                    })
-                );
-                products = products.concat(...productPages);
-            }
-            const byId = {};
-            products.forEach(p => { byId[p.id] = p; });
-
-            const cards = discounts.map(d => {
-                const p = byId[d.product_id];
-                if (!p) return '';
+            const response = await fetch('/api/discounts/active/');
+            if (!response.ok) throw new Error(`Active discounts request failed (${response.status})`);
+            const data = await response.json();
+            const discounts = Array.isArray(data) ? data : (data.results || []);
+            const shownProducts = new Set();
+            const cards = discounts.map(discount => {
+                const productId = Number(discount.product_id);
+                const originalPrice = Number(discount.original_price);
+                const discountedPrice = Number(discount.discounted_price);
+                const discountPercentage = Number(discount.discount_percentage);
+                if (
+                    discount.is_available === false
+                    || !Number.isFinite(productId)
+                    || !Number.isFinite(originalPrice)
+                    || !Number.isFinite(discountedPrice)
+                    || !Number.isFinite(discountPercentage)
+                    || originalPrice <= 0
+                    || discountedPrice <= 0
+                    || discountedPrice >= originalPrice
+                    || discountPercentage <= 0
+                    || shownProducts.has(productId)
+                ) return '';
+                shownProducts.add(productId);
                 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
                 return '<div class="offer">' +
-                       '<span class="badge">' + Math.round(parseFloat(d.recommended_discount_pct)) + '% OFF</span>' +
-                       '<div class="name">' + esc(p.product_name) + '</div>' +
-                       '<div><span class="old">Rs ' + parseFloat(p.unit_price).toFixed(2) + '</span>' +
-                       '<span class="new">Rs ' + parseFloat(d.recommended_price).toFixed(2) + '</span></div>' +
+                       '<span class="badge">' + discountPercentage.toFixed(2).replace(/\.?0+$/, '') + '% OFF</span>' +
+                       '<div class="name">' + esc(discount.product_name) + '</div>' +
+                       '<div><span class="old">Rs ' + originalPrice.toFixed(2) + '</span>' +
+                       '<span class="new">Rs ' + discountedPrice.toFixed(2) + '</span></div>' +
                        '<a class="btn btn-green" href="/customer/products/" style="text-align:center;">View</a>' +
                        '</div>';
             }).join('');
             box.innerHTML = cards || empty;
         } catch (e) {
-            box.innerHTML = empty;   // fail quietly — landing page must never break
+            console.error('Unable to load landing-page offers:', e);
+            box.innerHTML = '<div class="empty" style="grid-column:1/-1;">Special offers are temporarily unavailable. Please try again later.</div>';
         }
     })();
 </script>
