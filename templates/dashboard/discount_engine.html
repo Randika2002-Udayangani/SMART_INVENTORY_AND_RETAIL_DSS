@@ -129,7 +129,7 @@
 {% block page_scripts %}
 <script>
 const token = sessionStorage.getItem('access_token');
-if (!token) { window.location.href = '/dashboard/login/'; }
+if (!token) { window.location.href = '{{ STAFF_LOGIN_URL }}'; }
 
 function switchTab(name, btn) {
     document.getElementById('tab-recommendations').style.display = name === 'recommendations' ? 'block' : 'none';
