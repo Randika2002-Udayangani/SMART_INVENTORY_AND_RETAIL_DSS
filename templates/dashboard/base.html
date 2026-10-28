@@ -900,7 +900,7 @@
   // JWT CHECK — shared across every dashboard page
   function checkAuth() {
     const token = sessionStorage.getItem('access_token');
-    if (!token) { window.location.href = '{{ STAFF_LOGIN_URL }}'; }
+    if (!token) { window.location.href = (sessionStorage.getItem('staff_login_url') || '/'); }
   }
   checkAuth();
 
@@ -908,7 +908,7 @@
   function doLogout() {
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('refresh_token');
-    window.location.href = '{{ STAFF_LOGIN_URL }}';
+    window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
   }
 
   async function apiFetch(url, options = {}) {
@@ -919,7 +919,7 @@
     if (response.status === 401) {
       sessionStorage.removeItem('access_token');
       sessionStorage.removeItem('refresh_token');
-      window.location.href = '{{ STAFF_LOGIN_URL }}';
+      window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
       throw new Error('Authentication expired');
     }
     if (!response.ok) {
@@ -993,7 +993,7 @@
       if (response.status === 401) {
         sessionStorage.removeItem('access_token');
         sessionStorage.removeItem('refresh_token');
-        window.location.href = '{{ STAFF_LOGIN_URL }}';
+        window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
         throw new Error('Authentication expired');
       }
       if (!response.ok) throw new Error(`Notification request failed (${response.status})`);

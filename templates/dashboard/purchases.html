@@ -702,7 +702,7 @@ async function submitPurchase() {
         if (res.status === 401) {
             sessionStorage.removeItem('access_token');
             sessionStorage.removeItem('refresh_token');
-            window.location.href = '{{ STAFF_LOGIN_URL }}';
+            window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
             return;
         }
         const data = await res.json().catch(() => ({}));
