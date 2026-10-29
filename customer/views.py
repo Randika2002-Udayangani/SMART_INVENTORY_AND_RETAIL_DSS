@@ -37,5 +37,3 @@ def profile_page(request):
 def product_detail_page(request):
     return render(request, 'customer/product_detail.html')
 
-def home_page(request):
-    return render(request, 'home.html')

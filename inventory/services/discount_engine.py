@@ -294,9 +294,9 @@ def get_customer_visible_discounts():
       * product still active        product.is_active
       * batch still sellable        batch.status == 'ACTIVE'
       * batch still has stock       batch.remaining_quantity > 0
-      * batch not past expiry       batch.expiry_date >= today
+      * expiry date must be after today  batch.expiry_date > today
 
-    (a NULL batch expiry_date fails the ``>= today`` comparison, so batches
+    (a NULL batch expiry_date fails the ``> today`` comparison, so batches
     without an expiry date never qualify either — same strict rule the
     customer-facing consumers need).
 
@@ -318,7 +318,7 @@ def get_customer_visible_discounts():
             product__is_active=True,
             batch__status='ACTIVE',
             batch__remaining_quantity__gt=0,
-            batch__expiry_date__gte=today,
+            batch__expiry_date__gt=today,
         )
         .select_related('product', 'product__category', 'product__brand', 'batch')
         .order_by('product__product_name', 'id')
