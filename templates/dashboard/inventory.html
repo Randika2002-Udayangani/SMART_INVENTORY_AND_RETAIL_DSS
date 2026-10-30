@@ -250,7 +250,7 @@
 
 const token = sessionStorage.getItem('access_token');
 if (!token) {
-    window.location.href = '/dashboard/login/';
+    window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
 }
 
 async function request(url, options = {}) {

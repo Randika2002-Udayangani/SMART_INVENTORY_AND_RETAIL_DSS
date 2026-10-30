@@ -171,7 +171,7 @@ async function fetchBlob(url) {
     if (res.status === 401) {
         sessionStorage.removeItem('access_token');
         sessionStorage.removeItem('refresh_token');
-        window.location.href = '/dashboard/login/';
+        window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
         throw new Error('Authentication expired');
     }
     if (!res.ok) {
