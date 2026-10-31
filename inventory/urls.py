@@ -51,8 +51,12 @@ urlpatterns = [
     path('discount-rules/<int:pk>/', views.DiscountRuleDetailView.as_view(), name='discount-rule-detail'),
 
     # ── F09 Discount Recommendations (read + review only) ──
+    path('discounts/public/', views.PublicDiscountRecommendationListView.as_view(), name='discount-public-list'),
     path('discounts/recommendations/', views.DiscountRecommendationListView.as_view(), name='discount-recommendation-list'),
     path('discounts/recommendations/<int:pk>/', views.DiscountRecommendationDetailView.as_view(), name='discount-recommendation-detail'),
+
+    # ── F09 Active customer-facing discounts (PUBLIC — Today's deals) ──
+    path('discounts/active/', views.ActiveDiscountListView.as_view(), name='discount-active-list'),
 
     # ── F10 Reorder Recommendations ───────────────────────── 
     path('reorder/calculate/', views.ReorderCalculateView.as_view(), name='reorder-calculate'),

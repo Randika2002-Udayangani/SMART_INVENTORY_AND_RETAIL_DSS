@@ -15,6 +15,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / 'smart_inventory' / '.env')
 load_dotenv(BASE_DIR / '.env')
 
+# Private staff login address, e.g. STAFF_LOGIN_PATH=my-private-word
+# The fallback below is for local development ONLY. In production
+# (DEBUG off) the variable is required so the guessable default can never
+# be used by accident.
+_staff_login_path = os.getenv('STAFF_LOGIN_PATH', '').strip().strip('/')
+if not _staff_login_path:
+    if os.getenv('DEBUG', 'False') == 'True':
+        _staff_login_path = 'dev-staff-entry'
+    else:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            'STAFF_LOGIN_PATH must be set when DEBUG is off '
+            '(it is the private staff login address).'
+        )
+STAFF_LOGIN_PATH = _staff_login_path
+
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 
@@ -25,6 +41,11 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 # database-backed counter so it is shared across Django workers.
 CHATBOT_RATE_LIMIT = int(os.getenv('CHATBOT_RATE_LIMIT', '20'))
 CHATBOT_RATE_WINDOW_SECONDS = int(os.getenv('CHATBOT_RATE_WINDOW_SECONDS', '300'))
+
+# Audit log client IP. Number of trusted proxies in front of Django that add
+# to X-Forwarded-For (0 = ignore the header, use REMOTE_ADDR). Set this on the
+# hosting site only after checking the IP shown in the Audit Log is correct.
+AUDIT_PROXY_COUNT = int(os.getenv('AUDIT_PROXY_COUNT', '0'))
 
 # ─────────────────────────────────────────────────────────────────
 # ALLOWED_HOSTS

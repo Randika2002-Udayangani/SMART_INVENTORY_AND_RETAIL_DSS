@@ -7,12 +7,13 @@
 <style>
     .card { border-radius:12px; border:1px solid var(--border); background: var(--card); }
     .btn-primary { background: var(--sidebar); border: none; }
-    .btn-primary:hover { background: #0a2b2c; }
-    .badge-healthy { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-    .badge-watch { background:#fef9c3; color:#854d0e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-    .badge-atrisk { background:#fed7aa; color:#c2410c; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-    .badge-critical { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .btn-primary:hover { background: #14532d; }
+    .badge-healthy { background:#F0FDF4; color:#16A34A; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-watch { background:#FEFCE8; color:#CA8A04; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-atrisk { background:#FFF7ED; color:#EA580C; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-critical { background:#FEF2F2; color:#DC2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
     .kpi-card { background:var(--card); border-radius:12px; padding:20px; border:1px solid var(--border); text-align:center; }
+    .kpi-card[role="button"] { cursor:pointer; }
     .kpi-val { font-size:28px; font-weight:700; color: var(--txt); }
     .kpi-lbl { font-size:12px; color:var(--muted); text-transform:uppercase; }
     .table thead.table-light th {
@@ -26,7 +27,7 @@
        since there's no room for it to "travel" within such a short table. */
     #hsMainTable thead.table-light th {
         position: sticky;
-        top: var(--topbar-height, 56px); /* set dynamically in base.html to match the actual topbar height on this page */
+        top: 0;
         z-index: 120;
         background-color: var(--card2);
     }
@@ -61,6 +62,11 @@
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Decision Support</span><span>›</span><span class="current-page">Health Score</span></div>
+  <h1 class="page-title">Health Score <span class="tooltip-icon" title="Healthy 70+, Needs Attention 55–70, At Risk 40–55, Act Now below 40">ⓘ</span></h1>
+  <p class="page-subtitle">Evaluate stock health across products using the latest inventory signals.</p>
+</div>
 <div class="topbar">
     <div>
         <h1>Inventory Health Score</h1>
@@ -68,11 +74,11 @@
     </div>
     <div>
         <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
-            <button class="btn btn-primary btn-sm" id="calcBtn" onclick="runCalculation()">▶ Run Health Calculation</button>
+            <button class="btn btn-primary btn-sm" id="calcBtn" onclick="runCalculation()">Update health scores</button>
             <small id="lastCalculatedLabel" class="text-muted">Last calculated: --</small>
         </div>
         <div class="mt-2 d-flex justify-content-end">
-            <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+            <button onclick="doLogout()" class="btn btn-sm" style="background:#EF4444;color:white;">Logout</button>
         </div>
     </div>
 </div>
@@ -80,31 +86,31 @@
 <!-- Band Cards -->
 <div class="row g-3 mb-4">
     <div class="col-md-3">
-        <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#16a34a;">HEALTHY · 80–100</div>
-            <div class="kpi-val" style="color:#16a34a;" id="countHealthy">0</div>
-            <small class="text-muted">Monitor normally</small>
+        <div class="kpi-card" role="button" tabindex="0" onclick="filterTable('HEALTHY')" onkeydown="if(event.key==='Enter'||event.key===' ') filterTable('HEALTHY')">
+            <div class="kpi-lbl" style="color:#16A34A;">Healthy</div>
+            <div class="kpi-val" style="color:#16A34A;" id="countHealthy">0</div>
+            <small class="text-muted">Healthy</small>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#854d0e;">WATCH · 60–79</div>
-            <div class="kpi-val" style="color:#ca8a04;" id="countWatch">0</div>
-            <small class="text-muted">Keep an eye on these</small>
+        <div class="kpi-card" role="button" tabindex="0" onclick="filterTable('WATCH')" onkeydown="if(event.key==='Enter'||event.key===' ') filterTable('WATCH')">
+            <div class="kpi-lbl" style="color:#CA8A04;">Needs Attention</div>
+            <div class="kpi-val" style="color:#CA8A04;" id="countWatch">0</div>
+            <small class="text-muted">Needs Attention</small>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#c2410c;">AT RISK · 40–59</div>
-            <div class="kpi-val" style="color:#ea580c;" id="countAtRisk">0</div>
-            <small class="text-muted">Needs attention soon</small>
+        <div class="kpi-card" role="button" tabindex="0" onclick="filterTable('AT RISK')" onkeydown="if(event.key==='Enter'||event.key===' ') filterTable('AT RISK')">
+            <div class="kpi-lbl" style="color:#EA580C;">At Risk</div>
+            <div class="kpi-val" style="color:#F97316;" id="countAtRisk">0</div>
+            <small class="text-muted">At Risk</small>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="kpi-card">
-            <div class="kpi-lbl" style="color:#b91c1c;">CRITICAL · 0–39</div>
-            <div class="kpi-val" style="color:#dc2626;" id="countCritical">0</div>
-            <small class="text-muted">Immediate action required</small>
+        <div class="kpi-card" role="button" tabindex="0" onclick="filterTable('CRITICAL')" onkeydown="if(event.key==='Enter'||event.key===' ') filterTable('CRITICAL')">
+            <div class="kpi-lbl" style="color:#DC2626;">Act Now</div>
+            <div class="kpi-val" style="color:#DC2626;" id="countCritical">0</div>
+            <small class="text-muted">Act Now</small>
         </div>
     </div>
 </div>
@@ -114,11 +120,12 @@
     <div class="col-lg-6">
         <div class="card p-3 h-100">
             <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="fw-bold mb-0" style="color:#b91c1c;">Critical Products — Immediate Attention</h6>
+                <h6 class="fw-bold mb-0" style="color:#DC2626;">Critical Products — Immediate Attention</h6>
                 <button class="btn btn-outline-secondary btn-sm" onclick="refreshCritical()">Refresh</button>
             </div>
             <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0">
+                <div class="table-scroll-wrap">
+<table class="table table-sm table-hover mb-0 table-sticky-header">
                     <thead class="table-light">
                         <tr><th>Product</th><th>Score</th><th>Recommended Action</th></tr>
                     </thead>
@@ -126,6 +133,7 @@
                         <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
                     </tbody>
                 </table>
+</div>
             </div>
             <div id="criticalPagination" class="d-flex justify-content-between align-items-center mt-2"></div>
         </div>
@@ -137,7 +145,8 @@
                 <button class="btn btn-outline-secondary btn-sm" onclick="refreshCategories()">Refresh</button>
             </div>
             <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0">
+                <div class="table-scroll-wrap">
+<table class="table table-sm table-hover mb-0 table-sticky-header">
                     <thead class="table-light">
                         <tr><th>Category</th><th>Avg Score</th><th>Status</th></tr>
                     </thead>
@@ -145,6 +154,7 @@
                         <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
                     </tbody>
                 </table>
+</div>
             </div>
         </div>
     </div>
@@ -154,23 +164,24 @@
 <div class="mb-3 d-flex gap-2 align-items-center flex-wrap" id="filterButtons">
     <button class="btn btn-sm btn-outline-secondary active" onclick="filterTable('ALL', this)">All</button>
     <button class="btn btn-sm btn-outline-success" onclick="filterTable('HEALTHY', this)">Healthy</button>
-    <button class="btn btn-sm btn-outline-warning" onclick="filterTable('WATCH', this)">Watch</button>
-    <button class="btn btn-sm" style="border:1px solid #c2410c;color:#c2410c;" onclick="filterTable('AT RISK', this)">At Risk</button>
-    <button class="btn btn-sm btn-outline-danger" onclick="filterTable('CRITICAL', this)">Critical</button>
+    <button class="btn btn-sm btn-outline-warning" onclick="filterTable('WATCH', this)">Needs Attention</button>
+    <button class="btn btn-sm" style="border:1px solid #EA580C;color:#EA580C;" onclick="filterTable('AT RISK', this)">At Risk</button>
+    <button class="btn btn-sm btn-outline-danger" onclick="filterTable('CRITICAL', this)">Act Now</button>
     <input type="text" id="productSearch" class="form-control form-control-sm ms-auto" style="max-width:260px;"
-           placeholder="Search product name or SKU..." oninput="handleSearchInput()">
+           placeholder="Search product…" autocomplete="off" oninput="handleSearchInput()">
 </div>
 
 <!-- Table -->
 <div class="card p-4">
-    <table class="table table-hover" id="hsMainTable">
+    <div class="table-scroll-wrap">
+<table class="table table-hover table-sticky-header" id="hsMainTable">
             <thead class="table-light">
                 <tr>
                     <th>Product</th>
                     <th>Category</th>
-                    <th>Velocity</th>
-                    <th>Margin</th>
-                    <th>Expiry Risk</th>
+                    <th>Sales speed <span class="tooltip-icon" title="How fast a product sells — units sold per day">ⓘ</span></th>
+                    <th>Margin % <span class="tooltip-icon" title="Margin percentage — the share of each sale left after the product cost">ⓘ</span></th>
+                    <th>Expiry safety <span class="tooltip-icon" title="100 = no expiry worries, 0 = expires very soon">ⓘ</span></th>
                     <th>Stock Duration</th>
                     <th>Overall Score</th>
                     <th>Status</th>
@@ -182,6 +193,7 @@
                 <tr><td colspan="10" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         <div id="hsPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
 </div>
 
@@ -205,7 +217,7 @@
 {% block page_scripts %}
 <script>
 // NOTE: checkAuth(), doLogout(), and apiFetch() (which attaches the bearer
-// token and redirects to /dashboard/login/ on a 401) now live in base.html
+// token and redirects to the staff login page on a 401) now live in base.html
 // and are shared across every dashboard page — no need to duplicate them
 // here, so all calls below go through apiFetch() instead of raw fetch().
 //
@@ -234,12 +246,12 @@ function statusBadge(s) {
         'AT RISK': 'badge-atrisk',
         'CRITICAL': 'badge-critical'
     };
-    return `<span class="${map[s] || 'badge-watch'}">${s}</span>`;
+    return `<span class="${map[s] || 'badge-watch'}">${displayLabel(HEALTH_LABELS, s)}</span>`;
 }
 
 function numberCell(value) {
     const num = Number(value);
-    return Number.isFinite(num) ? num.toFixed(2) : '—';
+    return Number.isFinite(num) ? String(Math.round(num)) : '—';
 }
 
 function formatTimestamp(value) {
@@ -269,7 +281,12 @@ function setLastCalculatedLabel(rawValue, fallbackToNow = false) {
 function filterTable(filter, btn) {
     currentFilter = filter;
     document.querySelectorAll('#filterButtons button').forEach(b => b.classList.remove('active'));
-    if (btn) btn.classList.add('active');
+    const activeButton = btn || [...document.querySelectorAll('#filterButtons button')]
+        .find(button => button.textContent.trim() === ({
+            ALL: 'All', HEALTHY: 'Healthy', WATCH: 'Needs Attention',
+            'AT RISK': 'At Risk', CRITICAL: 'Act Now'
+        }[filter] || ''));
+    if (activeButton) activeButton.classList.add('active');
     hsPage = 1; // filter changed — back to page 1
     fetchHealthScorePage();
 }
@@ -303,15 +320,15 @@ function renderTable() {
     // to fetch every row once and filter/search/slice 25 at a time here.
     tbody.innerHTML = rows.map(r => `
         <tr>
-            <td style="font-weight:600">${r.product__product_name ?? r.product_name ?? '—'}</td>
-            <td>${r.product__category__category_name ?? r.category ?? '—'}</td>
+            <td style="font-weight:600">${escapeHtmlHs(r.product__product_name ?? r.product_name ?? '—')}</td>
+            <td>${escapeHtmlHs(r.product__category__category_name ?? r.category ?? '—')}</td>
             <td>${numberCell(r.velocity_score)}</td>
             <td>${numberCell(r.margin_score)}</td>
             <td>${numberCell(r.expiry_risk_score)}</td>
             <td>${numberCell(r.stock_duration_score)}</td>
             <td><strong>${numberCell(r.overall_score)}</strong></td>
             <td>${statusBadge(r.status)}</td>
-            <td><em style="color:#64748b;font-size:12px;">${r.recommended_action ?? '—'}</em></td>
+            <td><em style="color:#64748b;font-size:12px;">${escapeHtmlHs(r.recommended_action ?? '—')}</em></td>
             <td><button class="btn btn-outline-secondary btn-sm" onclick="showProductDetails(${r.product ?? r.product__id ?? 'null'})">Details</button></td>
         </tr>
     `).join('');
@@ -339,11 +356,14 @@ async function showProductDetails(productId) {
             apiFetch(`/api/health-scores/history/${productId}/`)
         ]);
 
-        const field = (label, value, full = false) => `
+        const field = (label, value, full = false) => {
+            if (value === null || value === undefined || ['','—'].includes(String(value).trim())) return '';
+            return `
             <div class="hs-detail-item${full ? ' full' : ''}">
                 <div class="lbl">${escapeHtmlHs(label)}</div>
-                <div class="val">${escapeHtmlHs(value ?? '—')}</div>
+                <div class="val">${escapeHtmlHs(value)}</div>
             </div>`;
+        };
 
         document.getElementById('hsDetailsTitle').textContent = detail.product_name ?? 'Product Health Details';
 
@@ -361,22 +381,23 @@ async function showProductDetails(productId) {
                 ? `<p class="text-muted small mt-2 mb-0">…and ${history.length - 10} earlier run(s).</p>`
                 : '';
             historyHtml = `
-                <table class="table table-sm mb-0">
+                <div class="table-scroll-wrap">
+<table class="table table-sm mb-0 table-sticky-header">
                     <thead><tr><th>Calculated At</th><th>Score</th><th>Status</th></tr></thead>
                     <tbody>${rows}</tbody>
-                </table>${more}`;
+                </table>
+</div>${more}`;
         }
 
         document.getElementById('hsDetailsBody').innerHTML = `
             <div class="hs-detail-grid">
-                ${field('SKU', detail.sku_code)}
-                ${field('Overall Score', `${numberCell(detail.overall_score)} (${detail.status ?? '—'})`)}
-                ${field('Velocity', numberCell(detail.velocity_score))}
-                ${field('Margin', numberCell(detail.margin_score))}
-                ${field('Expiry Risk', numberCell(detail.expiry_risk_score))}
+                ${field('Product code', detail.sku_code)}
+                ${field('Overall Score', `${numberCell(detail.overall_score)} (${displayLabel(HEALTH_LABELS, detail.status)})`)}
+                ${field('Sales speed', numberCell(detail.velocity_score))}
+                ${field('Margin %', numberCell(detail.margin_score))}
+                ${field('Expiry safety', numberCell(detail.expiry_risk_score))}
                 ${field('Stock Duration', numberCell(detail.stock_duration_score))}
                 ${field('Rating Score', detail.rating_sufficient ? numberCell(detail.rating_score) : 'Not enough ratings yet')}
-                ${field('Weighting Mode', detail.weighting_mode)}
                 ${field('Recommended Action', detail.recommended_action, true)}
                 ${field('Calculated At', formatTimestamp(detail.calculated_at), true)}
             </div>
@@ -431,9 +452,9 @@ function renderCriticalPage() {
 
     tbody.innerHTML = rows.length ? rows.map(r => `
             <tr>
-                <td>${r.product__product_name ?? '—'}</td>
-                <td><strong style="color:#dc2626;">${numberCell(r.overall_score)}</strong></td>
-                <td><em style="color:#64748b;font-size:12px;">${r.recommended_action ?? '—'}</em></td>
+                <td>${escapeHtmlHs(r.product__product_name ?? '—')}</td>
+                <td><strong style="color:#DC2626;">${numberCell(r.overall_score)}</strong></td>
+                <td><em style="color:#64748b;font-size:12px;">${escapeHtmlHs(r.recommended_action ?? '—')}</em></td>
             </tr>
         `).join('') : '<tr><td colspan="3" class="text-center text-muted">No critical products right now.</td></tr>';
 
@@ -466,7 +487,7 @@ async function loadCategories() {
         const rows = await apiFetch('/api/health-scores/categories/');
         tbody.innerHTML = rows.length ? rows.map(r => `
             <tr>
-                <td>${r.category__category_name ?? '—'}</td>
+                <td>${escapeHtmlHs(r.category__category_name ?? '—')}</td>
                 <td>${numberCell(r.avg_health_score)}</td>
                 <td>${statusBadge(r.status)}</td>
             </tr>
@@ -579,7 +600,7 @@ async function runCalculation() {
             '<tr><td colspan="10" class="text-center text-danger">Calculation failed. Please try again.</td></tr>';
     }
     document.querySelectorAll('#filterButtons button').forEach(b => b.disabled = false);
-    btn.innerHTML = '▶ Run Health Calculation';
+    btn.innerHTML = 'Update health scores';
     btn.disabled = false;
 }
 

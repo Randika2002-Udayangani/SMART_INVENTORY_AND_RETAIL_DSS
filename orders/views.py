@@ -1,6 +1,7 @@
 import json
 
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 from django.utils import timezone
 from django.db.models import Avg, Count, OuterRef, Prefetch, Q, Subquery
@@ -22,6 +23,7 @@ from products.models import Product
 from inventory.services.stock import get_available_stock
 from inventory.services.fefo import deduct_stock_fefo
 from inventory.models import StockLedger
+from inventory.services.discount_engine import get_customer_visible_discounts
 from purchases.models import PurchaseBatch
 
 from .models import Customer, OnlineOrder, OnlineOrderItem
@@ -34,6 +36,23 @@ from .services.agent import AgentUnavailable, run_agent
 from .services.rate_limit import consume_chatbot_request, get_client_ip
 
 LOCAL_TZ = ZoneInfo("Asia/Colombo")
+
+
+PICKUP_SLOT_END_MINUTES = {
+    "MORNING": 12 * 60,
+    "AFTERNOON": 17 * 60,
+    "EVENING": 20 * 60,
+}
+
+
+def _is_pickup_slot_available(pickup_date, time_slot, now=None):
+    local_now = (now or timezone.now()).astimezone(LOCAL_TZ)
+    if pickup_date < local_now.date():
+        return False
+    if pickup_date > local_now.date():
+        return True
+    return PICKUP_SLOT_END_MINUTES[time_slot] > local_now.hour * 60 + local_now.minute
+
 
 class CustomerRegisterView(APIView):
 
@@ -57,6 +76,11 @@ class CustomerRegisterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if len(password) < 8:
+            return Response(
+                {"error": "Password must be at least 8 characters"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         if Customer.objects.filter(email=email).exists():
 
@@ -294,14 +318,31 @@ class CustomerChangePasswordView(APIView):
 
         if not old_password or not new_password:
             return Response({'error': 'old_password and new_password are required'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(new_password) < 6:
-            return Response({'error': 'New password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(new_password) < 8:
+            return Response({'error': 'New password must be at least 8 characters'}, status=status.HTTP_400_BAD_REQUEST)
         if not check_password(old_password, c.password_hash):
             return Response({'error': 'old_password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
 
         c.password_hash = make_password(new_password)
         c.save()
         return Response({'message': 'Password changed successfully'})
+
+def get_selling_price(product):
+    """
+    Return the current approved customer price, or the regular product price.
+    """
+    discount = get_customer_visible_discounts().filter(
+        product=product
+    ).order_by('id').first()
+
+    if (
+        discount
+        and discount.recommended_price > 0
+        and discount.recommended_price < product.unit_price
+    ):
+        return discount.recommended_price
+
+    return product.unit_price
 
 
 class OrderListCreateView(APIView):
@@ -395,6 +436,12 @@ class OrderListCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        if not _is_pickup_slot_available(pickup_date, time_slot):
+            return Response(
+                {"error": "That pickup time has passed. Choose a future pickup date or time slot."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # ---- Pass 1: validate every item BEFORE creating anything ----
         validated_items = []
         for item in items:
@@ -448,7 +495,7 @@ class OrderListCreateView(APIView):
                 except Exception:
                     pass
 
-            validated_items.append((product, quantity))
+            validated_items.append((product, quantity, get_selling_price(product)))
 
         # ---- Pass 2: everything passed validation — create atomically ----
         collection_deadline = pickup_date + timedelta(days=2)
@@ -470,9 +517,10 @@ class OrderListCreateView(APIView):
                     notes=notes,
                 )
 
-                total = 0
+                total = Decimal("0.00")
+                priced_items = []
 
-                for product, quantity in validated_items:
+                for product, quantity, selling_price in validated_items:
                     deduction = deduct_stock_fefo(
                         product.id,
                         quantity,
@@ -488,9 +536,10 @@ class OrderListCreateView(APIView):
                         order=order,
                         product=product,
                         quantity=quantity,
-                        unit_price=product.unit_price,
+                        unit_price=selling_price,
                     )
-                    total += product.unit_price * quantity
+                    total += selling_price * quantity
+                    priced_items.append((product, quantity, selling_price))
 
                 order.total_amount = total
                 order.save(update_fields=["total_amount"])
@@ -500,6 +549,28 @@ class OrderListCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         
+        # Audit: an online order deducts stock, so it must leave a trace.
+        # Customers are not staff users, so user=None; the customer is
+        # identified inside new_value.
+        log_action(
+            user=None, action='CREATE', table_name='online_order',
+            record_id=order.id, old_value=None,
+            new_value={
+                'order_reference': order.order_reference,
+                'customer_id': customer.id,
+                'total_amount': str(order.total_amount),
+                'items': [
+                    {
+                        'product_id': product.id,
+                        'quantity': quantity,
+                        'unit_price': str(selling_price),
+                    }
+                    for product, quantity, selling_price in priced_items
+                ],
+            },
+            request=request,
+        )
+
         from inventory.services.notifications import create_notification
         create_notification(
             type='NEW_ORDER', priority='MEDIUM',
@@ -1019,6 +1090,13 @@ class RatingSummaryCalculateView(APIView):
                 },
             )
             updated.append(product_id)
+
+        log_action(
+            user=request.user, action='CALCULATE', table_name='product_rating_summary',
+            record_id=None, old_value=None,
+            new_value={'period': period, 'products_updated': len(updated)},
+            request=request,
+        )
 
         return Response({
             "message": f"Rating summaries recalculated for {len(updated)} product(s).",

@@ -1,0 +1,99 @@
+<style>
+    .customer-footer {
+        background: #0b2d0b;
+        color: #fff;
+        padding: 38px 24px 24px;
+        margin-top: 48px;
+    }
+    .customer-footer-inner {
+        width: min(100%, 1460px);
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 2fr repeat(4, minmax(0, 1fr));
+        gap: 32px;
+    }
+    .customer-footer h2 {
+        color: #58c943;
+        font-size: 1rem;
+        font-weight: 500;
+        margin: 0 0 18px;
+    }
+    .customer-footer .footer-address h2 { font-weight: 700; }
+    .customer-footer section { padding: 0; }
+    .customer-footer p,
+    .customer-footer a {
+        color: #fff;
+        font-size: 0.94rem;
+        line-height: 1.8;
+    }
+    .customer-footer a {
+        display: block;
+        text-decoration: none;
+        margin-bottom: 4px;
+    }
+    .customer-footer a:hover { text-decoration: underline; }
+    .customer-footer .footer-placeholder { color: #d2dfd2; }
+    .customer-footer .footer-phone {
+        color: #58c943;
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-top: 22px;
+    }
+    .customer-footer .footer-hours { margin-top: 4px; }
+    .customer-footer .footer-bottom {
+        width: min(100%, 1460px);
+        margin: 28px auto 0;
+        padding-top: 16px;
+        border-top: 1px solid rgba(255,255,255,.18);
+        color: #c7d5c7;
+        font-size: .82rem;
+    }
+    @media (max-width: 900px) {
+        .customer-footer-inner { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 600px) {
+        .customer-footer { padding: 30px 20px 20px; }
+        .customer-footer-inner { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 18px; }
+        .customer-footer .footer-address { grid-column: 1 / -1; }
+        .customer-footer .footer-phone { font-size: 1.25rem; }
+    }
+</style>
+
+<footer class="customer-footer">
+    <div class="customer-footer-inner">
+        <section class="footer-address" aria-labelledby="footerAddressHeading">
+            <h2 id="footerAddressHeading">Address</h2>
+            <p class="footer-placeholder">Business address will be added here.</p>
+            <p class="footer-phone">Phone number coming soon</p>
+            <p class="footer-hours footer-placeholder">Customer service hours will be added here.</p>
+        </section>
+        <section aria-labelledby="footerQuickLinksHeading">
+            <h2 id="footerQuickLinksHeading">Quick Links</h2>
+            <a href="/">Home</a>
+            <a href="/customer/products/">Catalogue &amp; Deals</a>
+            <a href="/customer/my-orders/">Track my order</a>
+            <a href="/customer/cart/">My Cart</a>
+        </section>
+        <section aria-labelledby="footerCategoriesHeading">
+            <h2 id="footerCategoriesHeading">Categories</h2>
+            <a href="/customer/products/?category=Beverages">Beverages</a>
+            <a href="/customer/products/?category=Biscuits">Biscuits</a>
+            <a href="/customer/products/?category=Chocolate">Chocolate</a>
+            <a href="/customer/products/?category=Dry%20Groceries">Dry Groceries</a>
+            <a href="/customer/products/?category=Snacks">Snacks</a>
+        </section>
+        <section aria-labelledby="footerUsefulLinksHeading">
+            <h2 id="footerUsefulLinksHeading">Useful Links</h2>
+            <a href="/customer/products/">Products</a>
+            <a href="/customer/chatbot/">ShopMate</a>
+            <a href="/customer/login/">Login</a>
+            <a href="/customer/register/">Create account</a>
+        </section>
+        <section aria-labelledby="footerServiceHeading">
+            <h2 id="footerServiceHeading">Customer Service</h2>
+            <p class="footer-placeholder">Contact details will be added here.</p>
+            <p class="footer-placeholder">Service information coming soon.</p>
+        </section>
+    </div>
+    <div class="footer-bottom">© Samanala Super Mart</div>
+</footer>

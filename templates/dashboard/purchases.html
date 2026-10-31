@@ -8,32 +8,38 @@
     .kpi-card { background:var(--card); border-radius:12px; padding:18px; border:1px solid var(--border); text-align:center; }
     .kpi-val { font-size:24px; font-weight:700; color: var(--txt); }
     .kpi-lbl { font-size:11px; color:var(--muted); text-transform:uppercase; }
-    .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
-    .nav-tabs .nav-link { color:var(--txt); }
-    .badge-active { background:#dcfce7; color:#16a34a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-    .badge-expired { background:#fee2e2; color:#dc2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-    .badge-disposed { background:#f3f4f6; color:#374151; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-    .badge-pending { background:#fef9c3; color:#854d0e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-active { background:#F0FDF4; color:#16A34A; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-expired { background:#FEF2F2; color:#DC2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-disposed { background:#F1F5F9; color:#64748B; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-pending { background:#FEFCE8; color:#CA8A04; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
     .table thead.table-light th {
         position: sticky;
-        top: var(--topbar-height, 56px); /* set dynamically in base.html to match the actual topbar height on this page */
+        top: 0;
         z-index: 120;
         background-color: var(--card2);
     }
     .btn-primary { background: var(--sidebar); border: none; }
-    .btn-primary:hover { background: #0a2b2c; }
+    .btn-primary:hover { background: #14532d; }
+    .btn-outline-primary:hover { background:#14532d; border-color:#14532d; color:#fff; }
     .restricted-cell { color: var(--muted); font-style: italic; font-size: 11.5px; }
+    #tab-new .card { max-width: none !important; width: 100%; }
+    #tab-new .card + .card { margin-top: 16px; }
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span class="current-page">Purchases</span></div>
+  <h1 class="page-title">Purchases</h1>
+  <p class="page-subtitle">Track supplier deliveries, batches, and expiry windows.</p>
+</div>
 <div class="topbar">
     <div>
         <h1>Purchases & Batches</h1>
-        <div class="sub">Samanala Super Mart — supplier GRNs, batch tracking, expiry monitoring</div>
+        <div class="sub">Samanala Super Mart — supplier deliveries, batch tracking, expiry monitoring</div>
     </div>
     <div>
-        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#EF4444;color:white;">Logout</button>
     </div>
 </div>
 
@@ -51,7 +57,8 @@
                placeholder="Search by invoice number..." oninput="handlePurchaseSearch()">
     </div>
     <div class="card p-4">
-        <table class="table table-hover">
+        <div class="table-scroll-wrap">
+<table class="table table-hover table-sticky-header">
             <thead class="table-light">
                 <tr><th>Invoice #</th><th>Supplier</th><th>Purchase Date</th><th id="totalAmountHeader">Total Amount</th><th>Batches</th></tr>
             </thead>
@@ -59,6 +66,7 @@
                 <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         <div id="purchasesPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
 </div>
@@ -68,9 +76,9 @@
     <div class="mb-3 d-flex gap-2">
         <select id="batchStatusFilter" class="form-select form-select-sm" style="width:180px;" onchange="loadBatches()">
             <option value="">All Status</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="EXPIRED">EXPIRED</option>
-            <option value="DISPOSED">DISPOSED</option>
+            <option value="ACTIVE">In stock</option>
+            <option value="EXPIRED">Expired</option>
+            <option value="DISPOSED">Disposed</option>
         </select>
         <button class="btn btn-sm btn-outline-primary" onclick="updateSelectedBatchStatuses('ACTIVE')">Mark Active</button>
         <button class="btn btn-sm btn-outline-danger" onclick="updateSelectedBatchStatuses('EXPIRED')">Mark Expired</button>
@@ -78,7 +86,8 @@
         <button class="btn btn-sm btn-primary" onclick="bulkConfirmExpiry()">Confirm Selected Expiry</button>
     </div>
     <div class="card p-4">
-        <table class="table table-hover">
+        <div class="table-scroll-wrap">
+<table class="table table-hover table-sticky-header">
             <thead class="table-light">
                 <tr>
                     <th style="width:36px;"><input type="checkbox" id="selectAllBatches" onchange="toggleSelectAllBatches(this)" aria-label="Select all pending batches on this page"></th>
@@ -89,6 +98,7 @@
                 <tr><td colspan="9" class="text-center text-muted">Loading...</td></tr>
             </tbody>
         </table>
+</div>
         <div id="batchesPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
 </div>
@@ -101,7 +111,8 @@
         <button class="btn btn-sm btn-outline-secondary" onclick="loadExpiring(30)">30 Days</button>
     </div>
     <div class="card p-4">
-        <table class="table table-hover">
+        <div class="table-scroll-wrap">
+<table class="table table-hover table-sticky-header">
             <thead class="table-light">
                 <tr><th>Product</th><th>Batch</th><th>Remaining Qty</th><th>Expiry Date</th><th>Days Left</th></tr>
             </thead>
@@ -109,6 +120,7 @@
                 <tr><td colspan="5" class="text-center text-muted">Select a window above.</td></tr>
             </tbody>
         </table>
+</div>
         <div id="expiringPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
     </div>
 </div>
@@ -123,7 +135,7 @@
         <div id="invoiceUploadMsg" class="mt-2" aria-live="polite"></div>
     </div>
     <div class="card p-4" style="max-width:700px;">
-        <h6 class="fw-bold mb-3">Record New Purchase (GRN)</h6>
+        <h6 class="fw-bold mb-3">Record New Purchase (Goods received <span class="tooltip-icon" title="Goods Received Note — a record of stock received from a supplier">ⓘ</span>)</h6>
         <div class="row g-3 mb-3">
             <div class="col-md-6">
                 <label class="form-label">Supplier</label>
@@ -371,8 +383,8 @@ function renderPurchasesTable() {
         <tr>
             <td><a href="/dashboard/purchases/detail/${p.id}/">${p.invoice_number ?? '—'}</a></td>
             <td>${p.supplier_name ?? (typeof p.supplier === 'object' ? p.supplier?.name : p.supplier) ?? '—'}</td>
-            <td>${p.purchase_date ?? '—'}</td>
-            <td>${canSeeFinancials ? 'Rs ' + Number(p.total_amount ?? 0).toLocaleString() : '<span class="restricted-cell">Restricted</span>'}</td>
+            <td>${formatDate(p.purchase_date)}</td>
+            <td>${canSeeFinancials ? formatMoney(p.total_amount) : '<span class="restricted-cell">Restricted</span>'}</td>
             <td>${(p.batches ?? []).length || p.batch_count || '—'}</td>
         </tr>
     `).join('');
@@ -390,7 +402,7 @@ function changePurchasesPage(delta) {
 
 function batchStatusBadge(s) {
     const map = { 'ACTIVE': 'badge-active', 'EXPIRED': 'badge-expired', 'DISPOSED': 'badge-disposed', 'PENDING_EXPIRY': 'badge-pending' };
-    return `<span class="${map[s] || 'badge-active'}">${s ?? '—'}</span>`;
+    return `<span class="${map[s] || 'badge-active'}">${displayLabel(BATCH_STATUS_LABELS, s)}</span>`;
 }
 
 let allBatches = [];
@@ -446,14 +458,14 @@ function renderBatches() {
         const isPending = b.status === 'PENDING_EXPIRY';
         const expiryCell = isPending
             ? `<input type="date" id="expiryInput_${b.id}" class="form-control form-control-sm" style="min-width:150px;">`
-            : (b.expiry_date ?? '—');
+            : formatDate(b.expiry_date);
         // Fix: previously this checkbox only rendered for PENDING_EXPIRY rows,
         // so Mark Active / Mark Expired / Mark Disposed had nothing to select
         // for any other status. Now every row is selectable; bulkConfirmExpiry()
         // below separately filters down to only the pending ones it cares about.
         const selectCell = `<input type="checkbox" class="batch-select" data-batch-id="${b.id}" aria-label="Select batch ${b.id}">`;
         const costCell = canSeeFinancials
-            ? 'Rs ' + Number(b.cost_price ?? 0).toLocaleString()
+            ? formatMoney(b.cost_price)
             : '<span class="restricted-cell">Restricted</span>';
         return `
         <tr>
@@ -494,8 +506,8 @@ function toggleSelectAllBatches(checkbox) {
 
 async function updateSelectedBatchStatuses(status) {
     const ids = [...document.querySelectorAll('.batch-select:checked')].map(input => input.dataset.batchId);
-    if (!ids.length) { alert('Select at least one batch first.'); return; }
-    if (!confirm(`Update ${ids.length} selected batch(es) to ${status}?`)) return;
+    if (!ids.length) { showConfirm('No batches selected', 'Select at least one batch first.', function() {}, 'OK', 'btn-secondary'); return; }
+    if (!(await confirmAction('Update batch status', `Update ${ids.length} selected batch(es) to ${status}?`, 'Update', 'btn-primary'))) return;
     try {
         await Promise.all(ids.map(id => apiFetch(`/api/batches/${id}/status/`, {
             method: 'PATCH',
@@ -504,7 +516,7 @@ async function updateSelectedBatchStatuses(status) {
         })));
         await loadBatches();
     } catch (e) {
-        alert('Could not update one or more batch statuses.');
+        showConfirm('Update failed', 'Could not update one or more batch statuses.', function() {}, 'OK', 'btn-secondary');
     }
 }
 
@@ -520,8 +532,8 @@ async function bulkConfirmExpiry() {
         batch_id: Number(input.dataset.batchId),
         expiry_date: document.getElementById(`expiryInput_${input.dataset.batchId}`)?.value
     }));
-    if (!batches.length) { alert('Select at least one PENDING_EXPIRY batch first.'); return; }
-    if (batches.some(batch => !batch.expiry_date)) { alert('Enter an expiry date for every selected batch.'); return; }
+    if (!batches.length) { showConfirm('No batches selected', 'Select at least one PENDING_EXPIRY batch first.', function() {}, 'OK', 'btn-secondary'); return; }
+    if (batches.some(batch => !batch.expiry_date)) { showConfirm('Expiry date required', 'Enter an expiry date for every selected batch.', function() {}, 'OK', 'btn-secondary'); return; }
     try {
         await apiFetch('/api/batches/confirm-expiry/bulk/', {
             method: 'POST',
@@ -530,7 +542,7 @@ async function bulkConfirmExpiry() {
         });
         await loadBatches();
     } catch (e) {
-        alert('Could not confirm the selected expiry dates.');
+        showConfirm('Confirmation failed', 'Could not confirm the selected expiry dates.', function() {}, 'OK', 'btn-secondary');
     }
 }
 
@@ -549,7 +561,7 @@ function daysLeftCell(expiryDateStr) {
     if (days === null) return '—';
     if (days < 0) return `<span class="text-danger fw-semibold">Expired ${Math.abs(days)} ago</span>`;
     if (days <= 7) return `<span class="text-danger fw-semibold">${days}</span>`;
-    if (days <= 14) return `<span style="color:#c2410c;font-weight:600;">${days}</span>`;
+    if (days <= 14) return `<span style="color:#EA580C;font-weight:600;">${days}</span>`;
     return `${days}`;
 }
 
@@ -590,7 +602,7 @@ function renderExpiring() {
             <td>${b.product_name ?? '—'}</td>
             <td>${b.batch_id ?? b.id ?? '—'}</td>
             <td>${b.remaining_quantity ?? '—'}</td>
-            <td>${b.expiry_date ?? '—'}</td>
+            <td>${formatDate(b.expiry_date)}</td>
             <td>${daysLeftCell(b.expiry_date)}</td>
         </tr>
     `).join('');
@@ -690,7 +702,7 @@ async function submitPurchase() {
         if (res.status === 401) {
             sessionStorage.removeItem('access_token');
             sessionStorage.removeItem('refresh_token');
-            window.location.href = '/dashboard/login/';
+            window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
             return;
         }
         const data = await res.json().catch(() => ({}));

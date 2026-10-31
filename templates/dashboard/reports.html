@@ -9,7 +9,7 @@
     .report-card { transition:transform .15s, box-shadow .15s; }
     .report-card:hover { transform:translateY(-2px); box-shadow:0 4px 16px rgba(0,0,0,.08); }
     .btn-primary { background: var(--sidebar); border:none; }
-    .btn-primary:hover { background:#0a2b2c; }
+    .btn-primary:hover { background:#14532d; }
     .btn-report-pdf { border:1px solid var(--sidebar); color:var(--sidebar); background-color:var(--card); }
     .btn-report-pdf:hover { background-color: var(--card2); color: var(--sidebar); cursor:pointer; }
     .download-actions { display:flex; flex-wrap:wrap; gap:8px; }
@@ -22,13 +22,18 @@
 {% endblock %}
 
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Overview</span><span>›</span><span class="current-page">Reports</span></div>
+  <h1 class="page-title">Reports</h1>
+  <p class="page-subtitle">Download manager reports from current system data.</p>
+</div>
 <div class="topbar">
     <div>
         <h1>Reports</h1>
         <div class="sub">Download manager reports from the current system data</div>
     </div>
     <div>
-        <button onclick="doLogout()" class="btn btn-sm" style="background:#ef4444;color:white;">Logout</button>
+        <button onclick="doLogout()" class="btn btn-sm" style="background:#EF4444;color:white;">Logout</button>
     </div>
 </div>
 
@@ -40,6 +45,7 @@
         <div class="card report-card p-4">
             <div class="d-flex justify-content-between"><h5>Sales Report</h5><span class="report-icon">▤</span></div>
             <p class="description">Detailed sales revenue, units sold, and best-selling products.</p>
+            <p class="small text-muted report-summary">Download the report to review how much the store sold during the selected period.</p>
             <div class="row g-2 mb-3">
                 <div class="col"><label class="date-label" for="salesFrom">From</label><input type="date" id="salesFrom" class="form-control form-control-sm"></div>
                 <div class="col"><label class="date-label" for="salesTo">To</label><input type="date" id="salesTo" class="form-control form-control-sm"></div>
@@ -56,7 +62,8 @@
     <div class="col-12 col-lg-6 fin-restricted">
         <div class="card report-card p-4">
             <div class="d-flex justify-content-between"><h5>Profit Report</h5><span class="report-icon">↗</span></div>
-            <p class="description">WAC-based revenue, cost, gross profit, and margin results.</p>
+            <p class="description">Revenue, cost, gross profit, and margin results using <span data-tooltip="Weighted Average Cost — the average price paid per unit across all purchases" tabindex="0">WAC <span class="tooltip-icon">ⓘ</span></span> and <span data-tooltip="Margin percentage — the share of each sale left after the product cost" tabindex="0">Margin % <span class="tooltip-icon">ⓘ</span></span>.</p>
+            <p class="small text-muted report-summary">This report helps you compare revenue with WAC-based costs and understand profit performance.</p>
             <div class="row g-2 mb-3">
                 <div class="col"><label class="date-label" for="profitFrom">From</label><input type="date" id="profitFrom" class="form-control form-control-sm"></div>
                 <div class="col"><label class="date-label" for="profitTo">To</label><input type="date" id="profitTo" class="form-control form-control-sm"></div>
@@ -95,6 +102,8 @@
         </div>
     </div>
 
+    
+
     <!-- Supplier Report — purchasing activity. Financial: hidden from STAFF. -->
     <div class="col-12 col-lg-6 col-xl-4 fin-restricted">
         <div class="card report-card p-4">
@@ -111,8 +120,8 @@
     <!-- Lifecycle Report — status/velocity only, no money. Visible to all. -->
     <div class="col-12 col-lg-6 col-xl-4">
         <div class="card report-card p-4">
-            <div class="d-flex justify-content-between"><h5>Lifecycle Report</h5><span class="report-icon"><i class="bi bi-bezier2"></i></span></div>
-            <p class="description">Lifecycle status, sales velocity, and recommendations.</p>
+            <div class="d-flex justify-content-between"><h5>Product stage report</h5><span class="report-icon"><i class="bi bi-bezier2"></i></span></div>
+            <p class="description">Product stage status, sales speed, and recommendations.</p>
             <div class="download-actions">
                 <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/lifecycle/','lifecycle_report','excel',{},this)">Download Excel</button>
                 <button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/lifecycle/','lifecycle_report','pdf',{},this)">Download PDF</button>
@@ -138,7 +147,7 @@
     <div class="col-12 col-lg-6 col-xl-4 fin-restricted">
         <div class="card report-card p-4">
             <div class="d-flex justify-content-between"><h5>Reorder Report</h5><span class="report-icon">⟳</span></div>
-            <p class="description">Reorder recommendations, urgency, quantities, and costs.</p>
+            <p class="description">Restocking recommendations, urgency, quantities, and estimated costs.</p>
             <div class="download-actions">
                 <button class="btn btn-primary btn-sm" onclick="downloadReport('/api/reports/reorder/','reorder_report','excel',{},this)">Download Excel</button>
                 <button class="btn btn-report-pdf btn-sm" onclick="downloadReport('/api/reports/reorder/','reorder_report','pdf',{},this)">Download PDF</button>
@@ -162,7 +171,7 @@ async function fetchBlob(url) {
     if (res.status === 401) {
         sessionStorage.removeItem('access_token');
         sessionStorage.removeItem('refresh_token');
-        window.location.href = '/dashboard/login/';
+        window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
         throw new Error('Authentication expired');
     }
     if (!res.ok) {

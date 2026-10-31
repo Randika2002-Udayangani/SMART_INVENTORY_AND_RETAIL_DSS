@@ -8,7 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import AuthenticationFailed, APIException
-from .audit import log_action
+from .audit import log_action, resolve_actors
 from .models import SystemConfig
 from .models import AuditLog
 from .models import UserLoginSecurity
@@ -108,6 +108,19 @@ class RegisterView(APIView):
         # Track role via Django Group (ADMIN / MANAGER / STAFF)
         group, _ = Group.objects.get_or_create(name=role_name)
         user.groups.add(group)
+
+        # Audit: who created which account with which role (never the password).
+        log_action(
+            user=request.user, action='CREATE', table_name='auth_user',
+            record_id=user.id, old_value=None,
+            new_value={
+                'username': user.username,
+                'role': role_name,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
+            },
+            request=request,
+        )
 
         return Response({
             'message' : f'User "{username}" registered successfully',
@@ -373,7 +386,7 @@ class AuditLogListView(APIView):
     permission_classes = [IsManagerOrAdmin]
 
     def get(self, request):
-        logs = AuditLog.objects.all().order_by('-timestamp')
+        logs = AuditLog.objects.select_related('user').order_by('-timestamp')
 
         user_id = request.query_params.get('user')
         table_name = request.query_params.get('table_name')
@@ -420,12 +433,15 @@ class AuditLogListView(APIView):
 
         start = (page - 1) * page_size
         end = start + page_size
-        page_logs = logs[start:end]
+        page_logs = list(logs[start:end])
+        actors = resolve_actors(page_logs)
 
         data = [{
             'id': log.id,
             'user_id': log.user_id,
             'username': log.user.username if log.user else None,
+            'actor_type': actors[log.id][0],
+            'actor_label': actors[log.id][1],
             'action': log.action,
             'table_name': log.table_name,
             'record_id': log.record_id,
@@ -451,14 +467,18 @@ class AuditLogDetailView(APIView):
 
     def get(self, request, pk):
         try:
-            log = AuditLog.objects.get(pk=pk)
+            log = AuditLog.objects.select_related('user').get(pk=pk)
         except AuditLog.DoesNotExist:
             return Response({'error': 'Audit log entry not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        actor_type, actor_label = resolve_actors([log])[log.id]
 
         return Response({
             'id': log.id,
             'user_id': log.user_id,
             'username': log.user.username if log.user else None,
+            'actor_type': actor_type,
+            'actor_label': actor_label,
             'action': log.action,
             'table_name': log.table_name,
             'record_id': log.record_id,
@@ -511,15 +531,31 @@ class LockoutTokenObtainPairSerializer(TokenObtainPairSerializer):
         try:
             data = super().validate(attrs)
         except AuthenticationFailed:
+            failed_count = None
+            just_locked = False
             if user:
                 security, _ = UserLoginSecurity.objects.get_or_create(user=user)
                 security.failed_login_count += 1
-                just_locked = False
                 if security.failed_login_count >= self.LOCKOUT_MAX_ATTEMPTS:
                     security.locked_until = timezone.now() + timedelta(minutes=self.LOCKOUT_DURATION_MINUTES)
                     just_locked = True
                 security.save()
+                failed_count = security.failed_login_count
 
+            # Audit every wrong password, including unknown usernames
+            # (user=None then). Never log the password itself.
+            log_action(
+                user=user, action='LOGIN_FAILED', table_name='auth_user',
+                record_id=user.id if user else None,
+                old_value=None,
+                new_value={
+                    'username': str(username)[:150],
+                    'failed_login_count': failed_count,
+                },
+                request=self.context.get('request'),
+            )
+
+            if user:
                 if just_locked:
                     log_action(
                         user=user, action='LOGIN_LOCKOUT', table_name='user_login_security',

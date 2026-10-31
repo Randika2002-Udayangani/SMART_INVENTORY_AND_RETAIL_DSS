@@ -6,27 +6,28 @@
   <title>{% block title %}Smart Inventory DSS — Dashboard{% endblock %}</title>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet"/>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
     :root {
-      --bg:       #e8f5eb;
-      --card:     #f4faf5;
-      --card2:    #eaf6ed;
-      --border:   #b8dfc2;
-      --txt:      #1a2e1e;
-      --muted:    #5a8266;
-      --sidebar:  #0f3d3e;
-      --green1:   #34d17a;
-      --green2:   #22c55e;
-      --amber:    #f59e0b;
-      --red:      #ef4444;
-      --purple:   #8b5cf6;
-      --orange:   #ea580c;
+      --bg:       #F0FDF4;
+      --card:     #fff;
+      --card2:    #F0FDF4;
+      --border:   #86EFAC;
+      --txt:      #64748B;
+      --muted:    #64748B;
+      --sidebar:  #14532d;
+      --green1:   #22C55E;
+      --green2:   #22C55E;
+      --amber:    #EAB308;
+      --red:      #EF4444;
+      --purple:   #3B82F6;
+      --orange:   #F97316;
       --sidebar-w: 220px;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); font-family: 'DM Sans', sans-serif; color: var(--txt); min-height: 100vh; }
+    body { background: var(--bg); font-family: 'Inter', sans-serif; color: var(--txt); min-height: 100vh; }
 
     /* ── SIDEBAR ─────────────────────────────────────────── */
     .sidebar {
@@ -37,13 +38,18 @@
       transition: transform 0.25s ease;
       overflow-y: auto;
     }
-    /* Collapsed state — slides fully off-canvas */
+    .sidebar .sb-toggle {
+      position: absolute; top: 18px; right: 12px; left: auto;
+    }
+    /* Collapsed state — show the independent reopen control */
     body.sidebar-collapsed .sidebar { transform: translateX(-100%); }
-    body.sidebar-collapsed .main { margin-left: 0; }
-    body.sidebar-collapsed .sb-toggle { left: 16px; }
+    body.sidebar-collapsed .main { margin-left: 0; width: 100%; max-width: 100%; }
+    body.sidebar-collapsed .sb-toggle-reopen { display: flex; }
+    body.sidebar-collapsed .page-header-breadcrumb { padding-left: 64px; }
 
     .sb-logo { padding: 20px 18px 14px; border-bottom: 1px solid rgba(255,255,255,0.15); }
-    .sb-logo .lt { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #d4f7e0; }
+    .sidebar .sb-logo { padding-right: 60px; }
+    .sb-logo .lt { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #F0FDF4; }
     .sb-logo .ls { font-size: 9.5px; color: rgba(255,255,255,0.5); margin-top: 2px; }
     .sb-nav { padding: 12px 8px; flex: 1; overflow-y: auto; }
     .sb-sec { font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.4); padding: 0 10px 6px; margin-top: 10px; }
@@ -73,42 +79,495 @@
       cursor: pointer; transition: left 0.25s ease, box-shadow 0.15s ease;
       box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     }
+    .sb-toggle-reopen {
+      display: none;
+      left: 16px;
+    }
+    .mobile-header-actions {
+      display: contents;
+    }
+    .sidebar-backdrop {
+      display: none;
+      border: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      cursor: default;
+    }
+    .sidebar-overlay {
+      display: none;
+    }
     .sb-toggle:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
     .sb-toggle i { font-size: 17px; color: var(--sidebar); }
 
     /* ── MAIN ────────────────────────────────────────────── */
-    .main { margin-left: var(--sidebar-w); padding: 68px 28px 40px; transition: margin-left 0.25s ease; }
+    .main {
+      width: calc(100% - var(--sidebar-w)); max-width: calc(100% - var(--sidebar-w)); min-width: 0;
+      margin-left: var(--sidebar-w); padding: 0 28px 40px;
+      transition: margin-left 0.25s ease, width 0.25s ease;
+    }
+    .page-header-breadcrumb {
+      padding: 16px 190px 12px 24px;
+      background: #fff;
+      border-bottom: 1px solid #E2E8F0;
+      margin-bottom: 20px;
+      position: sticky;
+      top: 0;
+      z-index: 110;
+    }
+    .breadcrumb-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+      font-size: 0.7rem;
+      color: #94A3B8;
+    }
+    .breadcrumb-nav a {
+      color: #22C55E;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .breadcrumb-nav a:hover { text-decoration: underline; }
+    .breadcrumb-nav span { color: #CBD5E1; }
+    .page-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #1E293B;
+      margin-bottom: 3px;
+    }
+    .page-subtitle {
+      font-size: 0.72rem;
+      color: #94A3B8;
+      margin: 0;
+    }
+    .main button[onclick="doLogout()"] { display: none !important; }
+    .table-scroll-wrap {
+      overflow-x: clip;
+      overflow-y: visible;
+      -webkit-overflow-scrolling: touch;
+    }
+    .table-responsive {
+      overflow-x: clip;
+      overflow-y: visible;
+      -webkit-overflow-scrolling: touch;
+    }
+    .table-scroll-wrap thead th {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      z-index: 5;
+    }
+    .table-sticky-header thead th {
+      position: sticky;
+      top: calc(var(--dashboard-header-height, 0px)) !important;
+      background: #f8fafc;
+      z-index: 5;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    @media (max-width: 960px) {
+      .table-scroll-wrap,
+      .table-responsive {
+        overflow-x: auto;
+        overflow-y: visible;
+      }
+    }
 
     /* ── SHARED TOPBAR (kept minimal — pages can extend) ─── */
     .topbar {
       display: flex; align-items: flex-start; justify-content: space-between;
       margin-bottom: 22px;
-      position: sticky; top: 0; z-index: 150;
-      background: var(--bg);
+      position: sticky; top: var(--page-header-height, 0px); z-index: 100;
+      background: white;
       padding: 12px 0 8px;
-      margin-left: -28px; margin-right: -28px; padding-left: 28px; padding-right: 28px;
+      padding-left: 56px;
     }
     .topbar h1 { font-size: 19px; font-weight: 700; }
     .topbar .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    /* Breadcrumb headers provide the page title and description consistently. */
+    .topbar > div:first-child:has(h1) { display: none; }
+    .topbar > div:first-child,
+    .page-header > div:first-child { display: none; }
+    .btn-primary { background:#14532d !important; border-color:#14532d !important; }
+    .btn-primary:hover, .btn-primary:focus { background:#14532d !important; border-color:#14532d !important; }
+    .topbar:not(:has(button)):not(:has(a)) { display: none; }
+    .page-header > div:first-child:has(h4) { display: none; }
+    .page-header:not(:has(button)):not(:has(a)) { display: none; }
+    .tooltip-icon,
+    [data-tooltip] {
+      display:inline-block; margin-left:3px; color:var(--sidebar); cursor:help; font-size:.9em;
+      position:relative;
+    }
+    [data-tooltip]::after {
+      content:attr(data-tooltip); position:absolute; left:50%; bottom:calc(100% + 8px);
+      transform:translateX(-50%); width:max-content; padding:7px 9px;
+      border-radius:6px; background:#1E293B; color:#fff; font-size:11px; font-weight:400;
+      line-height:1.35; text-align:left; opacity:0; pointer-events:none; z-index:300;
+      transition:opacity .12s ease;
+    }
+    [data-tooltip]:hover::after,
+    [data-tooltip]:focus-visible::after,
+    [data-tooltip].tooltip-open::after { opacity:1; }
+    th [data-tooltip]::after { bottom:auto; top:calc(100% + 8px); }
+    [data-tooltip]::after { max-width:min(260px, 70vw); }
+
+    /* ── NOTIFICATION NAVBAR ─────────────────────────────── */
+    .notification-nav {
+      position:fixed; top:18px; right:28px; z-index:260;
+      display:flex; align-items:center; gap:8px;
+      background:#fff; padding:6px 8px; border-radius:10px;
+      box-shadow:0 1px 4px rgba(0,0,0,.06);
+    }
+    .header-logout {
+      height:36px; border:0; border-radius:8px; padding:0 12px;
+      background:#EF4444; color:#fff; cursor:pointer; font-size:12px;
+      box-shadow:0 1px 4px rgba(0,0,0,0.06);
+    }
+    .header-logout:hover { background:#DC2626; }
+    .notification-bell {
+      position:relative; width:36px; height:36px; border:1px solid var(--border);
+      border-radius:8px; background:var(--card); color:var(--sidebar); cursor:pointer;
+      box-shadow:0 1px 4px rgba(0,0,0,.06); font-size:18px; line-height:1;
+    }
+    .notification-bell:hover, .notification-bell[aria-expanded="true"] { background:var(--card2); }
+    .notification-count {
+      position:absolute; top:-7px; right:-7px; min-width:18px; height:18px; padding:0 4px;
+      border-radius:10px; background:var(--red); color:#fff; font-size:10px; font-weight:700;
+      display:flex; align-items:center; justify-content:center; border:2px solid var(--bg);
+    }
+    .notification-count.is-empty { display:none; }
+    .notification-count.is-ping { animation: notification-ping .7s ease-out; }
+    @keyframes notification-ping {
+      0% { transform: scale(1); }
+      35% { transform: scale(1.45); }
+      100% { transform: scale(1); }
+    }
+    @media (prefers-reduced-motion: reduce) { .notification-count.is-ping { animation: none; } }
+    .notification-dropdown {
+      position:absolute; top:44px; right:0; width:min(390px, calc(100vw - 24px));
+      background:var(--card); border:1px solid var(--border); border-radius:10px;
+      box-shadow:0 8px 28px rgba(15,61,62,.18); overflow:hidden; display:none;
+    }
+    .notification-nav.is-open .notification-dropdown { display:block; }
+    .notification-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px 10px; }
+    .notification-header strong { font-size:15px; }
+    .notification-mark-read { border:0; background:transparent; color:var(--sidebar); cursor:pointer; font-size:11px; padding:3px 0; }
+    .notification-mark-read:hover { text-decoration:underline; }
+    .notification-tabs { display:flex; gap:4px; padding:0 12px 8px; border-bottom:1px solid var(--border); }
+    .notification-tab { border:0; border-radius:5px; background:transparent; color:var(--muted); cursor:pointer; font-size:11px; padding:6px 8px; }
+    .notification-tab.active { background:var(--card2); color:var(--sidebar); font-weight:700; }
+    .notification-list { max-height:365px; overflow-y:auto; }
+    .notification-item { display:flex; gap:9px; align-items:flex-start; padding:11px 12px; border-bottom:1px solid rgba(184,223,194,.65); }
+    .notification-item.unread { border-left:3px solid var(--green2); padding-left:9px; background:rgba(234,246,237,.55); }
+    .notification-dot { flex:0 0 auto; width:9px; height:9px; margin-top:5px; border-radius:50%; }
+    .notification-dot.critical { background:#EF4444; } .notification-dot.high { background:#f97316; }
+    .notification-dot.medium { background:#eab308; } .notification-dot.low { background:#3b82f6; }
+    .notification-dot.read { background:#64748B; }
+    .notification-content { min-width:0; flex:1; }
+    .notification-title { font-size:12px; font-weight:700; line-height:1.3; }
+    .notification-text { color:var(--muted); font-size:11px; line-height:1.35; margin-top:2px; }
+    .notification-time { color:var(--muted); font-size:10px; margin-top:4px; }
+    .notification-dismiss { flex:0 0 auto; border:0; background:transparent; color:var(--muted); cursor:pointer; font-size:15px; line-height:1; padding:1px 2px; }
+    .notification-dismiss:hover { color:var(--red); }
+    .notification-empty { color:var(--muted); font-size:12px; padding:24px 16px; text-align:center; }
+    .notification-footer { border-top:1px solid var(--border); padding:10px 16px; text-align:center; }
+    .notification-footer a { color:var(--sidebar); font-size:11px; font-weight:700; text-decoration:none; }
+    .notification-footer a:hover { text-decoration:underline; }
 
     /* ── RESPONSIVE — on small screens default to collapsed ── */
     @media (max-width: 960px) {
-      .main { padding-top: 68px; }
+      .mobile-header-actions {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        z-index: 260;
+      }
+      .main {
+        width: 100%;
+        max-width: 100%;
+        margin-left: 0;
+        padding-top: 82px;
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+      .sidebar {
+        left: -200px;
+        transform: none;
+        transition: left 0.3s ease;
+        box-shadow: 4px 0 18px rgba(0,0,0,0.18);
+      }
+      body:not(.sidebar-collapsed) .sidebar {
+        left: 0;
+        z-index: 270;
+      }
+      .sidebar.sidebar-open {
+        left: 0;
+      }
+      body:not(.sidebar-collapsed) .sidebar .sb-toggle {
+        top: 12px;
+        right: 12px;
+        left: auto;
+        z-index: 280;
+        display: flex;
+        background: #fff;
+      }
+      body:not(.sidebar-collapsed) .sidebar .sb-toggle i {
+        color: var(--sidebar);
+      }
+      body:not(.sidebar-collapsed) .sidebar-backdrop,
+      .sidebar-overlay.active {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 190;
+        background: rgba(15, 23, 42, 0.38);
+      }
+      .sb-toggle {
+        left: 16px;
+      }
+      body:not(.sidebar-collapsed) .sb-toggle {
+        left: calc(var(--sidebar-w) + 12px);
+      }
+      .sb-toggle-reopen {
+        display: flex;
+        position: static;
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        background: var(--sidebar);
+        border: 2px solid #fff;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.28);
+      }
+      .sb-toggle-reopen i {
+        color: #fff;
+        font-size: 20px;
+      }
+      body:not(.sidebar-collapsed) .sb-toggle-reopen {
+        display: none;
+      }
+      .notification-nav {
+        position: static;
+        margin-left: auto;
+      }
+      .page-header-breadcrumb,
+      body.sidebar-collapsed .page-header-breadcrumb { padding: 14px 12px 10px; }
+    }
+    @media (max-width: 560px) {
+      .main {
+        padding-top: 82px;
+        padding-left: 10px;
+        padding-right: 10px;
+      }
+      .topbar {
+        padding-top: 8px;
+      }
+      .page-header-breadcrumb {
+        padding: 14px 12px 10px;
+      }
+      .notification-nav {
+        margin-left: auto;
+      }
+      .notification-dropdown {
+        position: fixed;
+        top: 58px;
+        left: 10px;
+        right: 10px;
+        width: auto;
+      }
+      .sb-toggle-reopen { width: 48px; height: 48px; }
     }
   </style>
   {% block extra_css %}{% endblock %}
+  <style>
+    .nav-tabs .nav-link {
+      color: #64748B;
+      border: none;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      padding: 8px 16px;
+      font-size: 0.82rem;
+      font-weight: 500;
+    }
+    .nav-tabs .nav-link.active {
+      color: #14532d;
+      border-bottom-color: #22C55E;
+      font-weight: 600;
+      background: transparent;
+    }
+    .nav-tabs .nav-link:hover {
+      color: #1e293b;
+      border-bottom-color: #CBD5E1;
+    }
+    @media (max-width: 768px) {
+      .sidebar {
+        position: fixed;
+        left: -200px;
+        top: 0;
+        height: 100vh;
+        z-index: 999;
+        transition: left 0.3s ease;
+      }
+      .sidebar.sidebar-open {
+        left: 0;
+      }
+      .sidebar-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 998;
+      }
+      .sidebar-overlay.active {
+        display: block;
+      }
+      .main, .main-content { width: 100%; margin-left: 0; }
+      .kpi-grid, .grid-4, .row.g-3 { grid-template-columns: repeat(2, 1fr); }
+      .table-responsive { overflow-x: auto; }
+      .page-header-breadcrumb { padding: 12px 16px; }
+      .btn { font-size: 0.75rem; padding: 4px 10px; }
+    }
+    @media (max-width: 480px) {
+      .kpi-grid, .grid-4 { grid-template-columns: 1fr; }
+    }
+    .sb-nav a.active {
+      border-left: 3px solid #22C55E;
+      border-radius: 0 7px 7px 0;
+      padding-left: 7px;
+    }
+    .notification-tab.active {
+      color: #22C55E !important;
+      border-color: #22C55E !important;
+    }
+    .badge,
+    [class*="badge-"],
+    .status-badge,
+    .status-pill,
+    .sp,
+    .pill,
+    .exp-days,
+    .notif-pri,
+    .upload-status {
+      border: 1px solid currentColor;
+      border-radius: 999px !important;
+      white-space: nowrap;
+    }
+    .status-badge,
+    .status-pill,
+    .sp,
+    .pill,
+    [class*="badge-"] {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 3px 10px;
+    }
+    .badge-healthy, .badge-available, .badge-applied, .badge-success, .status-ACCEPTED, .status-APPLIED {
+      background: #F0FDF4 !important; border-color: #86EFAC !important; color: #16A34A !important;
+    }
+    .badge.bg-success, .badge.text-bg-success {
+      background: #F0FDF4 !important; border-color: #86EFAC !important; color: #16A34A !important;
+    }
+    .badge-watch, .badge-low, .badge-partial, .status-badge.warn, .status-MEDIUM {
+      background: #FEFCE8 !important; border-color: #FDE047 !important; color: #CA8A04 !important;
+    }
+    .badge-atrisk, .badge-high, .status-badge.bad, .status-HIGH {
+      background: #FFF7ED !important; border-color: #FDBA74 !important; color: #EA580C !important;
+    }
+    .badge.bg-warning, .badge.text-bg-warning {
+      background: #FEFCE8 !important; border-color: #FDE047 !important; color: #CA8A04 !important;
+    }
+    .badge-critical, .badge-out, .badge-expired, .status-CRITICAL {
+      background: #FEF2F2 !important; border-color: #FCA5A5 !important; color: #DC2626 !important;
+    }
+    .badge.bg-danger, .badge.text-bg-danger {
+      background: #FEF2F2 !important; border-color: #FCA5A5 !important; color: #DC2626 !important;
+    }
+    .badge-new, .status-NEW {
+      background: #EFF6FF !important; border-color: #BFDBFE !important; color: #1D4ED8 !important;
+    }
+    .badge-pending, .badge-ignored, .badge-disposed, .status-badge.muted, .status-PENDING, .status-LOW, .status-STABLE {
+      background: #F1F5F9 !important; border-color: #CBD5E1 !important; color: #64748B !important;
+    }
+    .badge.bg-secondary, .badge.text-bg-secondary, .badge.bg-light, .badge.text-bg-light {
+      background: #F1F5F9 !important; border-color: #CBD5E1 !important; color: #64748B !important;
+    }
+    .kpi,
+    .kpi-card {
+      background: #fff !important;
+      border: 1px solid transparent !important;
+      border-top: 3px solid #22C55E !important;
+      border-radius: 10px !important;
+    }
+    .card-box,
+    .card,
+    .upload-card {
+      border-radius: 10px !important;
+    }
+    .kpi-grid,
+    .kpi-strip,
+    .row.g-3,
+    .row.g-4 {
+      row-gap: 16px;
+    }
+    .main:has(#chartsRow) {
+      display: flex;
+      flex-direction: column;
+    }
+    .main:has(#chartsRow) > .topbar { order: 1; }
+    .main:has(#chartsRow) > .alert-banner { order: 2; }
+    .main:has(#chartsRow) > .kpi-grid { order: 3; }
+    .main:has(#chartsRow) > #chartsRow { order: 4; }
+    .main:has(#chartsRow) > .one-col { order: 5; }
+    .main:has(#chartsRow) > .two-col:not(#chartsRow) { order: 6; }
+  </style>
 </head>
 <body>
 
-<!-- ── HAMBURGER TOGGLE ──────────────────────────────────── -->
-<button class="sb-toggle" id="sbToggle" title="Toggle sidebar" aria-label="Toggle sidebar">
-  <i class="bi bi-list"></i>
-</button>
+<div class="sidebar-overlay" id="sidebarBackdrop" onclick="this.classList.remove('active'); document.querySelector('.sidebar').classList.remove('sidebar-open');"></div>
+<div class="mobile-header-actions">
+  <button class="sb-toggle sb-toggle-reopen menu-btn" id="sbToggleReopen" title="Show sidebar" aria-label="Show sidebar">
+    <i class="bi bi-list"></i>
+  </button>
+  <div class="notification-nav" id="notificationNav">
+  <button class="notification-bell" id="notificationBell" type="button" aria-label="Notifications" aria-expanded="false" aria-controls="notificationDropdown">
+    🔔<span class="notification-count is-empty" id="notificationCount" aria-label="0 unread notifications">0</span>
+  </button>
+  <button class="header-logout" type="button" onclick="doLogout()">
+    <i class="bi bi-box-arrow-right"></i> Logout
+  </button>
+  <section class="notification-dropdown" id="notificationDropdown" aria-label="Notifications">
+    <div class="notification-header">
+      <strong>Notifications</strong>
+      <button class="notification-mark-read" id="markAllNotifications" type="button">Mark all as read</button>
+    </div>
+    <div class="notification-tabs" role="tablist" aria-label="Notification filter">
+      <button class="notification-tab active" type="button" data-notification-filter="all" role="tab">All (<span id="notificationAllCount">0</span>)</button>
+      <button class="notification-tab" type="button" data-notification-filter="unread" role="tab">Unread (<span id="notificationUnreadCount">0</span>)</button>
+      <button class="notification-tab" type="button" data-notification-filter="read" role="tab">Read</button>
+    </div>
+    <div class="notification-list" id="notificationList"><div class="notification-empty">Loading notifications...</div></div>
+    <div class="notification-footer"><a href="/dashboard/notifications/">View all notifications &rarr;</a></div>
+  </section>
+  </div>
+</div>
 
 <!-- ── SIDEBAR — shared across every dashboard page ─────────
      Include this partial and set request.resolver_match.url_name
      (or a page-specific block variable) to control which link gets .active -->
 <aside class="sidebar" id="sidebar">
+  <button class="sb-toggle" id="sbToggle" title="Toggle sidebar" aria-label="Toggle sidebar">
+    <i class="bi bi-list"></i>
+  </button>
   <div class="sb-logo">
     <div class="lt">Smart Inventory</div>
     <div class="ls">Decision Support System — Samanala Super Mart</div>
@@ -117,30 +576,30 @@
     <div class="sb-sec">Overview</div>
     <a href="/dashboard/" class="{% block nav_dashboard %}{% endblock %}"><i class="bi bi-grid-1x2"></i> Dashboard <span class="badge-pill" id="dashboardNavBadge">0</span></a>
     <a href="/dashboard/analytics/" class="{% block nav_analytics %}{% endblock %}"><i class="bi bi-bar-chart-line"></i> Analytics</a>
+    <a href="/dashboard/reports/" class="{% block nav_reports %}{% endblock %}"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
+
+    <div class="sb-sec">⚠️ Urgent</div>
+    <a href="/dashboard/notifications/" class="{% block nav_notifications %}{% endblock %}"><i class="bi bi-bell"></i> Notifications <span class="badge-pill" id="sidebarAlertCount">0</span></a>
+    <a href="/dashboard/purchases/?tab=expiring" class="{% block nav_expiry %}{% endblock %}"><i class="bi bi-calendar-x"></i> Expiring Soon</a>
+    <a href="/dashboard/reorder/" class="{% block nav_reorder %}{% endblock %}"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
 
     <div class="sb-sec">Inventory</div>
     <a href="/dashboard/inventory/" class="{% block nav_inventory %}{% endblock %}"><i class="bi bi-box-seam"></i> Inventory</a>
     <a href="/dashboard/purchases/?tab=purchases" class="{% block nav_purchases %}{% endblock %}"><i class="bi bi-receipt"></i> Purchases</a>
     <a href="/dashboard/purchases/?tab=batches" class="{% block nav_batches %}{% endblock %}"><i class="bi bi-layers"></i> Batches</a>
-    <a href="/dashboard/purchases/?tab=expiring" class="{% block nav_expiry %}{% endblock %}"><i class="bi bi-calendar-x"></i> Expiring Soon</a>
     <a href="/dashboard/sales-upload/" class="{% block nav_sales_upload %}{% endblock %}"><i class="bi bi-upload"></i> Sales Upload</a>
     <a href="/dashboard/products/" class="{% block nav_products %}{% endblock %}"><i class="bi bi-boxes"></i> Products</a>
 
     <div class="sb-sec">Decision Support</div>
     <a href="/dashboard/health-score/" class="{% block nav_health %}{% endblock %}"><i class="bi bi-heart-pulse"></i> Health Score</a>
-    <a href="/dashboard/zone-recommendations/" class="{% block nav_zone_recommendations %}{% endblock %}"><i class="bi bi-signpost-split"></i> Zone Recommendations</a>
     <a href="/dashboard/discount-engine/" class="{% block nav_discount %}{% endblock %}"><i class="bi bi-tag"></i> Discount Engine</a>
-    <a href="/dashboard/reorder/" class="{% block nav_reorder %}{% endblock %}"><i class="bi bi-arrow-clockwise"></i> Reorder</a>
     <a href="/dashboard/loss-analysis/" class="{% block nav_loss %}{% endblock %}"><i class="bi bi-graph-down-arrow"></i> Loss Analysis</a>
-    <a href="/dashboard/lifecycle/" class="{% block nav_lifecycle %}{% endblock %}"><i class="bi bi-activity"></i> Lifecycle</a>
+    <a href="/dashboard/lifecycle/" class="{% block nav_lifecycle %}{% endblock %}"><i class="bi bi-activity"></i> Product stage</a>
+    <a href="/dashboard/zone-recommendations/" class="{% block nav_zone_recommendations %}{% endblock %}"><i class="bi bi-signpost-split"></i> Zone Recommendations</a>
 
     <div class="sb-sec">Operations</div>
     <a href="/dashboard/order-management/" class="{% block nav_order_management %}{% endblock %}"><i class="bi bi-receipt"></i> Order Management</a>
     <a href="/dashboard/suppliers/" class="{% block nav_suppliers %}{% endblock %}"><i class="bi bi-truck"></i> Suppliers</a>
-
-    <div class="sb-sec">Reports</div>
-    <a href="/dashboard/reports/" class="{% block nav_reports %}{% endblock %}"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
-    <a href="/dashboard/notifications/" class="{% block nav_notifications %}{% endblock %}"><i class="bi bi-bell"></i> Notifications <span class="badge-pill" id="sidebarAlertCount">0</span></a>
 
     <div class="sb-sec">Administration</div>
     <a href="/dashboard/system-config/" class="{% block nav_config %}{% endblock %}"><i class="bi bi-sliders"></i> System Config</a>
@@ -158,30 +617,267 @@
   {% block content %}{% endblock %}
 </main>
 
+<!-- Shared confirm modal -->
+<div class="modal fade" id="confirmModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold" id="confirmModalTitle">Confirm</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="confirmModalBody"></div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmModalOk">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── SHARED SCRIPTS ────────────────────────────────────── -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
 <script>
+  function scrollToForm(formId) {
+    const form = document.getElementById(formId);
+    if (form) {
+      form.style.scrollMarginTop = 'calc(var(--dashboard-header-height, 0px) + 16px)';
+      form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      form.style.border = '2px solid #22C55E';
+      setTimeout(() => form.style.border = '', 2000);
+    }
+  }
+
+  function showConfirm(title, message, onConfirm, confirmBtnText = 'Confirm', confirmBtnClass = 'btn-danger') {
+    document.getElementById('confirmModalTitle').textContent = title;
+    document.getElementById('confirmModalBody').textContent = message;
+    const okBtn = document.getElementById('confirmModalOk');
+    okBtn.className = 'btn ' + confirmBtnClass;
+    okBtn.textContent = confirmBtnText;
+    okBtn.onclick = function() {
+      bootstrap.Modal.getInstance(document.getElementById('confirmModal')).hide();
+      onConfirm();
+    };
+    new bootstrap.Modal(document.getElementById('confirmModal')).show();
+  }
+
+  function confirmAction(title, message, confirmBtnText = 'Confirm', confirmBtnClass = 'btn-danger') {
+    return new Promise(resolve => {
+      const modal = document.getElementById('confirmModal');
+      let settled = false;
+      const finish = value => {
+        if (!settled) {
+          settled = true;
+          resolve(value);
+        }
+      };
+      modal.addEventListener('hidden.bs.modal', () => finish(false), { once: true });
+      showConfirm(title, message, () => finish(true), confirmBtnText, confirmBtnClass);
+    });
+  }
+
+  const HEALTH_LABELS = {
+    'HEALTHY': '🟢 Healthy',
+    'WATCH': '🟡 Needs Attention',
+    'AT_RISK': '🟠 At Risk',
+    'CRITICAL': '🔴 Act Now'
+  };
+
+  const REORDER_LABELS = {
+    'CRITICAL': '🔴 Order Today',
+    'HIGH': '🟠 Order This Week',
+    'MEDIUM': '🟡 Order Soon',
+    'LOW': '⚪ No Rush'
+  };
+
+  const LIFECYCLE_LABELS = {
+    'NEW': '🔵 New',
+    'GROWING': '🟢 Growing',
+    'STABLE': '⚪ Stable',
+    'SLOW_MOVING': '🟡 Slow Moving',
+    'DECLINING': '🟠 Declining'
+  };
+  const STATUS_LABELS = {
+    'PENDING': 'Pending', 'CONFIRMED': 'Confirmed', 'READY': 'Ready',
+    'COMPLETED': 'Completed', 'CANCELLED': 'Cancelled', 'REJECTED': 'Rejected',
+    'APPLIED': 'Applied', 'IGNORED': 'Ignored', 'ACTIVE': 'Active', 'INACTIVE': 'Inactive'
+  };
+  const ORDER_STATUS_LABELS = {
+    'COMPLETED': 'Collected', 'CANCELLED': 'Cancelled', 'EXPIRED': 'Pickup deadline missed',
+    'PENDING': 'Waiting for confirmation', 'CONFIRMED': 'Confirmed', 'READY': 'Ready for pickup'
+  };
+  const LOSS_TYPE_LABELS = { 'EXPIRY': 'Expired stock', 'DAMAGE': 'Damaged', 'OTHER': 'Other loss' };
+  const ROLE_LABELS = { 'STAFF': 'Staff', 'MANAGER': 'Manager', 'ADMIN': 'Admin' };
+  const LIFECYCLE_ACTION_LABELS = {
+    'RETAIN': 'Keep selling', 'MONITOR': 'Watch closely', 'DISCOUNT': 'Apply discount',
+    'CLEARANCE': 'Clearance sale', 'PHASE_OUT': 'Phase out', 'DISCONTINUE': 'Discontinue'
+  };
+  const BATCH_STATUS_LABELS = {
+    'ACTIVE': 'In stock', 'DEPLETED': 'Sold out', 'DISPOSED': 'Disposed', 'PENDING_EXPIRY': 'Needs expiry date'
+  };
+  const UPLOAD_TYPE_LABELS = {
+    'EXPORT': 'Report download', 'SUPPLIER_RETURN': 'Supplier return',
+    'SUPPLIER_INVOICE': 'Supplier invoice', 'DAILY_BILL': 'Daily bills', 'ITEM_SALES': 'Item-wise sales'
+  };
+  const REORDER_STATUS_LABELS = {
+    'ORDERED': 'Marked as ordered', 'PENDING': 'Not ordered yet', 'IGNORED': 'Ignored', 'AUTO_RESOLVED': 'Auto resolved'
+  };
+  const TRANSACTION_LABELS = {
+    'PURCHASE': 'Purchase', 'SALE_SYNC': 'Sale Sync', 'MANUAL_ADJUSTMENT': 'Manual Adjustment'
+  };
+  const PRIORITY_LABELS = {
+    'CRITICAL': '🔴 Act Now', 'HIGH': '🟠 High Priority',
+    'MEDIUM': '🟡 Medium Priority', 'LOW': '⚪ Low Priority'
+  };
+
+  function displayLabel(labels, value) {
+    const key = String(value ?? '').replaceAll(' ', '_');
+    return labels[key] || String(value ?? '—');
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' +
+      d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
+  }
+
+  function formatMoney(amount) {
+    if (amount === null || amount === undefined || amount === '') return '—';
+    const value = Number(amount);
+    return Number.isFinite(value)
+      ? 'Rs. ' + value.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+      : '—';
+  }
+
+  function enhanceTooltips(root) {
+    (root || document).querySelectorAll('.tooltip-icon[title]').forEach(function(element) {
+      if (element.matches('#sbToggle, #sbToggleReopen')) return;
+      const text = element.getAttribute('title');
+      if (!text) return;
+      element.setAttribute('data-tooltip', text);
+      element.setAttribute('tabindex', element.getAttribute('tabindex') || '0');
+      element.removeAttribute('title');
+    });
+  }
+
+  function wrapTables(root) {
+    (root || document).querySelectorAll('table').forEach(function(table) {
+      if (table.closest('.table-responsive, .table-scroll-wrap')) return;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'table-responsive';
+      table.parentNode.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+    });
+  }
+
+  document.addEventListener('click', function(event) {
+    const target = event.target.closest('[data-tooltip]');
+    document.querySelectorAll('[data-tooltip].tooltip-open').forEach(function(item) {
+      if (item !== target) item.classList.remove('tooltip-open');
+    });
+    if (target) target.classList.toggle('tooltip-open');
+  });
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+      document.querySelectorAll('[data-tooltip].tooltip-open').forEach(item => item.classList.remove('tooltip-open'));
+    }
+  });
+  enhanceTooltips();
+  wrapTables();
+  new MutationObserver(function(records) {
+    records.forEach(record => record.addedNodes.forEach(node => {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        enhanceTooltips(node);
+        wrapTables(node);
+      }
+    }));
+  }).observe(document.body, { childList: true, subtree: true });
+
   // ── SIDEBAR TOGGLE — persists collapsed/open state across pages ──
+  document.addEventListener('DOMContentLoaded', function() {
+    const activeItem = document.querySelector('.nav-item.active, .sidebar .active');
+    if (activeItem) {
+      activeItem.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+    const menuBtn = document.querySelector('.menu-btn, [onclick*="sidebar"], .navbar-toggler');
+    const sidebar = document.querySelector('.sidebar, #sidebar, .side-nav');
+    const sidebarOverlay = document.querySelector('.sidebar-overlay');
+    if (menuBtn && sidebar) {
+      menuBtn.addEventListener('click', function() {
+        sidebar.classList.toggle('sidebar-open');
+        if (sidebarOverlay) sidebarOverlay.classList.toggle('active', sidebar.classList.contains('sidebar-open'));
+      });
+    }
+  });
+
   (function() {
     const STORAGE_KEY = 'sidebar_collapsed';
-    const toggle = document.getElementById('sbToggle');
+    const toggles = document.querySelectorAll('#sbToggle, #sbToggleReopen');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    const sidebarLinks = document.querySelectorAll('.sb-nav a');
     const body = document.body;
 
-    // Restore saved state on load (per-browser preference, not per-page)
-    if (localStorage.getItem(STORAGE_KEY) === 'true') {
+    function setCollapsed(collapsed) {
+      body.classList.toggle('sidebar-collapsed', collapsed);
+      if (window.innerWidth > 960) localStorage.setItem(STORAGE_KEY, collapsed);
+      toggles.forEach(function(toggle) {
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+      });
+    }
+
+    // Restore saved state on desktop. Small screens always start collapsed so
+    // the page remains usable even when a desktop preference was saved.
+    if (window.innerWidth <= 960 || localStorage.getItem(STORAGE_KEY) === 'true') {
       body.classList.add('sidebar-collapsed');
     }
 
-    toggle.addEventListener('click', function() {
-      body.classList.toggle('sidebar-collapsed');
-      localStorage.setItem(STORAGE_KEY, body.classList.contains('sidebar-collapsed'));
+    toggles.forEach(function(toggle) {
+      toggle.setAttribute('aria-expanded', String(!body.classList.contains('sidebar-collapsed')));
+      toggle.addEventListener('click', function() {
+        setCollapsed(!body.classList.contains('sidebar-collapsed'));
+      });
+    });
+    backdrop.addEventListener('click', function() { setCollapsed(true); });
+    sidebarLinks.forEach(function(link) {
+      link.addEventListener('click', function() {
+        if (window.innerWidth <= 960) setCollapsed(true);
+      });
+    });
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape' && window.innerWidth <= 960 && !body.classList.contains('sidebar-collapsed')) {
+        setCollapsed(true);
+      }
     });
 
-    // Default to collapsed on small screens the first time a user visits,
-    // but don't override an explicit choice they've already made
-    if (window.innerWidth <= 960 && localStorage.getItem(STORAGE_KEY) === null) {
-      body.classList.add('sidebar-collapsed');
-    }
+    let wasMobile = window.innerWidth <= 960;
+    window.addEventListener('resize', function() {
+      const isMobile = window.innerWidth <= 960;
+      if (isMobile === wasMobile) return; // ignore mobile address-bar resizes
+      wasMobile = isMobile;
+      if (isMobile) body.classList.add('sidebar-collapsed');
+      else body.classList.toggle('sidebar-collapsed', localStorage.getItem(STORAGE_KEY) === 'true');
+    });
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    document.addEventListener('touchstart', function(event) {
+      if (window.innerWidth > 960 || !event.touches.length) return;
+      touchStartX = event.touches[0].clientX;
+      touchStartY = event.touches[0].clientY;
+    }, { passive: true });
+    document.addEventListener('touchend', function(event) {
+      if (window.innerWidth > 960 || !event.changedTouches.length) return;
+      const touch = event.changedTouches[0];
+      const deltaX = touch.clientX - touchStartX;
+      const deltaY = Math.abs(touch.clientY - touchStartY);
+      if (deltaY > 80 || Math.abs(deltaX) < 60) return;
+      if (body.classList.contains('sidebar-collapsed') && touchStartX < 32 && deltaX > 0) {
+        setCollapsed(false);
+      } else if (!body.classList.contains('sidebar-collapsed') && deltaX < 0) {
+        setCollapsed(true);
+      }
+    }, { passive: true });
   })();
 
   // ── STICKY TOPBAR HEIGHT — exposed as a CSS variable ──
@@ -190,10 +886,13 @@
   // (some have a tab bar underneath, some don't). Measuring it here means
   // no page has to hardcode a guessed pixel offset.
   function setTopbarHeightVar() {
+    const pageHeader = document.querySelector('.page-header-breadcrumb');
     const topbar = document.querySelector('.topbar');
-    if (topbar) {
-      document.documentElement.style.setProperty('--topbar-height', topbar.offsetHeight + 'px');
-    }
+    const pageHeaderHeight = pageHeader ? pageHeader.offsetHeight : 0;
+    const topbarHeight = topbar ? topbar.offsetHeight : 0;
+    document.documentElement.style.setProperty('--page-header-height', pageHeaderHeight + 'px');
+    document.documentElement.style.setProperty('--topbar-height', topbarHeight + 'px');
+    document.documentElement.style.setProperty('--dashboard-header-height', (pageHeaderHeight + topbarHeight) + 'px');
   }
   window.addEventListener('load', setTopbarHeightVar);
   window.addEventListener('resize', setTopbarHeightVar);
@@ -201,7 +900,7 @@
   // JWT CHECK — shared across every dashboard page
   function checkAuth() {
     const token = sessionStorage.getItem('access_token');
-    if (!token) { window.location.href = '/dashboard/login/'; }
+    if (!token) { window.location.href = (sessionStorage.getItem('staff_login_url') || '/'); }
   }
   checkAuth();
 
@@ -209,7 +908,7 @@
   function doLogout() {
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('refresh_token');
-    window.location.href = '/dashboard/login/';
+    window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
   }
 
   async function apiFetch(url, options = {}) {
@@ -220,7 +919,7 @@
     if (response.status === 401) {
       sessionStorage.removeItem('access_token');
       sessionStorage.removeItem('refresh_token');
-      window.location.href = '/dashboard/login/';
+      window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
       throw new Error('Authentication expired');
     }
     if (!response.ok) {
@@ -240,6 +939,14 @@
       error.status = response.status;
       error.data = data;
       throw error;
+    }
+    // Any save/update/delete can create a notification as a side effect (placing
+    // a reorder, adding a purchase, changing a product...). Re-check the bell
+    // shortly afterwards so the manager's own actions show up straight away.
+    // Notification calls themselves are handled by the bell, so skip those.
+    const method = String(options.method || 'GET').toUpperCase();
+    if (method !== 'GET' && !String(url).includes('/api/notifications/') && window.refreshNotificationCount) {
+      window.setTimeout(window.refreshNotificationCount, 400);
     }
     if (response.status === 204) return null;
     return response.json();
@@ -263,6 +970,208 @@
     }
   }
 
+  // ── NAVBAR NOTIFICATIONS ─────────────────────────────────
+  // Notification requests intentionally read the JWT from sessionStorage,
+  // as required by the notification API contract.
+  (function() {
+    const nav = document.getElementById('notificationNav');
+    const bell = document.getElementById('notificationBell');
+    const list = document.getElementById('notificationList');
+    const countBadge = document.getElementById('notificationCount');
+    const allCount = document.getElementById('notificationAllCount');
+    const unreadCount = document.getElementById('notificationUnreadCount');
+    let notifications = [];
+    let activeFilter = 'all';
+
+    function notificationHeaders() {
+      const token = sessionStorage.getItem('access_token');
+      return token ? { 'Authorization': 'Bearer ' + token } : {};
+    }
+
+    async function notificationFetch(url, options = {}) {
+      const response = await fetch(url, { ...options, headers: { ...notificationHeaders(), ...(options.headers || {}) } });
+      if (response.status === 401) {
+        sessionStorage.removeItem('access_token');
+        sessionStorage.removeItem('refresh_token');
+        window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
+        throw new Error('Authentication expired');
+      }
+      if (!response.ok) throw new Error(`Notification request failed (${response.status})`);
+      return response.status === 204 ? null : response.json();
+    }
+
+    function getNotificationArray(data) {
+      return Array.isArray(data) ? data : (data.results || data.notifications || []);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>'"]/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[character]);
+    }
+
+    function timeAgo(value) {
+      const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+      if (seconds < 60) return 'Just now';
+      const units = [[86400, 'day'], [3600, 'hour'], [60, 'minute']];
+      for (const [size, label] of units) {
+        if (seconds >= size) {
+          const amount = Math.floor(seconds / size);
+          return `${amount} ${label}${amount === 1 ? '' : 's'} ago`;
+        }
+      }
+      return 'Just now';
+    }
+
+    // Last unread total we showed. When it changes (new order, read on another
+    // tab, etc.) we tell every other widget on the page via 'notifications:changed'
+    // so the Dashboard card/list and the Notifications page stay in step with the bell.
+    let lastUnread = null;
+
+    function announceChange(unread) {
+      if (lastUnread !== null && unread !== lastUnread) {
+        const increased = unread > lastUnread;
+        if (increased) {
+          countBadge.classList.remove('is-ping');
+          void countBadge.offsetWidth; // restart the animation
+          countBadge.classList.add('is-ping');
+        }
+        document.dispatchEvent(new CustomEvent('notifications:changed', { detail: { unread: unread, previous: lastUnread, increased: increased } }));
+        // A new alert arrived while the dropdown is open — show it straight away.
+        if (increased && nav.classList.contains('is-open')) loadNotifications();
+      }
+      lastUnread = unread;
+    }
+
+    function updateCounts(unreadOverride) {
+      const unread = unreadOverride ?? notifications.filter(item => !item.is_read).length;
+      countBadge.textContent = unread > 99 ? '99+' : unread;
+      countBadge.classList.toggle('is-empty', unread === 0);
+      countBadge.setAttribute('aria-label', `${unread} unread notifications`);
+      allCount.textContent = notifications.length;
+      unreadCount.textContent = unread;
+      const sidebarBadge = document.getElementById('sidebarAlertCount');
+      const dashBadge = document.getElementById('dashboardNavBadge');
+      if (sidebarBadge) sidebarBadge.textContent = unread;
+      if (dashBadge) dashBadge.textContent = unread;
+      announceChange(unread);
+    }
+
+    function renderNotifications() {
+      const visible = notifications.filter(item => activeFilter === 'all' || (activeFilter === 'unread' ? !item.is_read : item.is_read)).slice(0, 5);
+      if (!visible.length) {
+        list.innerHTML = '<div class="notification-empty">No notifications to show.</div>';
+        return;
+      }
+      list.innerHTML = visible.map(item => {
+        const priority = String(item.priority || 'LOW').toLowerCase();
+        const dotClass = item.is_read ? 'read' : (['critical', 'high', 'medium', 'low'].includes(priority) ? priority : 'low');
+        return `<article class="notification-item${item.is_read ? '' : ' unread'}" tabindex="0" data-notification-read="${escapeHtml(item.id)}">
+          <span class="notification-dot ${dotClass}" aria-hidden="true"></span>
+          <div class="notification-content">
+            <div class="notification-title">${escapeHtml(item.title)}</div>
+            <div class="notification-text">${escapeHtml(item.message)}</div>
+            <div class="notification-time">${escapeHtml(timeAgo(item.created_at))}</div>
+          </div>
+          <button class="notification-dismiss" type="button" data-notification-dismiss="${escapeHtml(item.id)}" aria-label="Dismiss notification">&times;</button>
+        </article>`;
+      }).join('');
+    }
+
+    // One shared "re-check the unread count" used by the bell, both sidebar
+    // badges and every page. Overlapping calls share a single request.
+    let unreadRequest = null;
+    function refreshUnreadCount() {
+      if (unreadRequest) return unreadRequest;
+      unreadRequest = (async function() {
+        try {
+          const data = await notificationFetch('/api/notifications/?status=unread');
+          updateCounts(getNotificationArray(data).length);
+        } catch (error) {
+          console.error('refreshUnreadCount failed:', error);
+        } finally {
+          unreadRequest = null;
+        }
+      })();
+      return unreadRequest;
+    }
+    window.refreshNotificationCount = refreshUnreadCount;
+
+    async function loadNotifications() {
+      try {
+        notifications = getNotificationArray(await notificationFetch('/api/notifications/?status=all'));
+        updateCounts(notifications.filter(item => !item.is_read).length);
+        renderNotifications();
+      } catch (error) {
+        list.innerHTML = '<div class="notification-empty">Notifications could not be loaded.</div>';
+        console.error('loadNotifications failed:', error);
+      }
+    }
+
+    bell.addEventListener('click', function() {
+      const isOpen = nav.classList.toggle('is-open');
+      bell.setAttribute('aria-expanded', isOpen);
+      if (isOpen) loadNotifications();
+    });
+
+    document.addEventListener('click', function(event) {
+      if (!nav.contains(event.target)) {
+        nav.classList.remove('is-open');
+        bell.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    document.querySelectorAll('[data-notification-filter]').forEach(tab => tab.addEventListener('click', function() {
+      activeFilter = this.dataset.notificationFilter;
+      document.querySelectorAll('[data-notification-filter]').forEach(item => item.classList.toggle('active', item === this));
+      renderNotifications();
+    }));
+
+    list.addEventListener('click', async function(event) {
+      const dismissButton = event.target.closest('[data-notification-dismiss]');
+      const item = event.target.closest('[data-notification-read]');
+      if (dismissButton) {
+        const id = dismissButton.dataset.notificationDismiss;
+        try {
+          await notificationFetch(`/api/notifications/${id}/`, { method: 'DELETE' });
+          notifications = notifications.filter(item => String(item.id) !== String(id));
+          updateCounts(notifications.filter(item => !item.is_read).length);
+          renderNotifications();
+        } catch (error) { console.error('dismiss notification failed:', error); }
+        return;
+      }
+      if (!item) return;
+      const id = item.dataset.notificationRead;
+      const notification = notifications.find(entry => String(entry.id) === String(id));
+      if (!notification || notification.is_read) return;
+      try {
+        await notificationFetch(`/api/notifications/${id}/read/`, { method: 'PATCH' });
+        notification.is_read = true;
+        updateCounts(notifications.filter(item => !item.is_read).length);
+        renderNotifications();
+      } catch (error) { console.error('mark notification read failed:', error); }
+    });
+
+    document.getElementById('markAllNotifications').addEventListener('click', async function() {
+      const unread = notifications.filter(item => !item.is_read);
+      try {
+        await Promise.all(unread.map(item => notificationFetch(`/api/notifications/${item.id}/read/`, { method: 'PATCH' })));
+        notifications = notifications.map(item => ({ ...item, is_read: true }));
+        updateCounts(0);
+        renderNotifications();
+      } catch (error) {
+        console.error('mark all notifications read failed:', error);
+      }
+    });
+
+    // Check every 15s while the tab is visible (a new online order shows up
+    // within seconds), and straight away when the manager comes back to the tab —
+    // browsers slow background-tab timers to about once a minute.
+    const NOTIFICATION_POLL_MS = 15000;
+    refreshUnreadCount();
+    window.setInterval(function() { if (!document.hidden) refreshUnreadCount(); }, NOTIFICATION_POLL_MS);
+    document.addEventListener('visibilitychange', function() { if (!document.hidden) refreshUnreadCount(); });
+    window.addEventListener('focus', refreshUnreadCount);
+  })();
+
   // ── SIDEBAR ALERT BADGES — shared across every dashboard page ──
   // #dashboardNavBadge and #sidebarAlertCount live in THIS shared sidebar
   // markup (hardcoded to "0" above), but they used to only get filled in by
@@ -273,19 +1182,15 @@
   // page load, regardless of which page-specific script is also loaded.
   // GET /api/notifications/ returns only unread notifications (API Design
   // Doc §21.2), so its length is exactly what both badges should show.
-  async function refreshSidebarAlertBadge() {
-    try {
-      const data = await apiFetch('/api/notifications/');
-      const count = Array.isArray(data) ? data.length : (data.count ?? (data.results ?? []).length);
-      const sidebarBadge = document.getElementById('sidebarAlertCount');
-      const dashBadge = document.getElementById('dashboardNavBadge');
-      if (sidebarBadge) sidebarBadge.innerText = count;
-      if (dashBadge) dashBadge.innerText = count;
-    } catch(e) {
-      console.error('refreshSidebarAlertBadge failed:', e);
-    }
+  //
+  // This used to run its own separate fetch that updated only the two sidebar
+  // badges, so after reading or dismissing on the Notifications page the bell
+  // kept the old number until its next poll. It now just asks the bell's shared
+  // refresh (see window.refreshNotificationCount above), which updates the bell
+  // AND both sidebar badges in one go. Page scripts keep calling this name.
+  function refreshSidebarAlertBadge() {
+    return window.refreshNotificationCount ? window.refreshNotificationCount() : Promise.resolve();
   }
-  refreshSidebarAlertBadge();
 </script>
 {% block extra_js %}{% endblock %}
 {% block page_scripts %}{% endblock %}

@@ -5,14 +5,16 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import render
 from django.utils import timezone
-from django.db.models import Min, Q, Sum
+from django.db.models import Min, Prefetch, Q, Sum
 from purchases.models import PurchaseBatch
+from inventory.services.stock import get_sellable_batches
 from core.authentication import LenientJWTAuthentication
 from users.audit import log_action
 import pandas as pd
 from users.permissions import IsAdmin, IsManagerOrAdmin
 
 from .models import Brand, Category, StoreZone, Product, ZoneRecommendation, ProductZoneOverride, ZoneCalculationRun
+from inventory.models import DiscountRecommendation
 from .serializers import (
     BrandSerializer, CategorySerializer,
     StoreZoneSerializer, ProductSerializer, ProductPublicSerializer,
@@ -22,6 +24,27 @@ from .serializers import (
 )
 from sales.models import UploadLog
 from core.pagination import StandardResultsPagination
+
+
+def _with_public_product_data(queryset):
+    today = timezone.localdate()
+    pending_discounts = DiscountRecommendation.objects.filter(status='PENDING')
+    return queryset.order_by('id').annotate(
+        earliest_expiry=Min(
+            'purchasebatch__expiry_date',
+            filter=Q(
+                purchasebatch__status__in=['ACTIVE', 'PENDING_EXPIRY'],
+                purchasebatch__remaining_quantity__gt=0,
+                purchasebatch__expiry_date__gt=today,
+            ),
+        ),
+    ).select_related('category', 'brand').prefetch_related(
+        Prefetch(
+            'discountrecommendation_set',
+            queryset=pending_discounts,
+            to_attr='_pending_discounts',
+        )
+    )
 
 
 def product_list(request):
@@ -53,15 +76,58 @@ class ProductPickerOptionsView(APIView):
         return Response({'products': list(products)})
 
 
+class AuditedWriteMixin:
+    """
+    Adds audit logging to DRF generic create / update / delete views.
+    Set `audit_table` on the view. Put this mixin BEFORE the generic view in
+    the class bases, e.g. class BrandDetailView(AuditedWriteMixin, generics...).
+    """
+    audit_table = ''
+
+    def _audit_snapshot(self, instance):
+        import json
+        data = self.get_serializer(instance).data
+        return json.loads(json.dumps(data, default=str))
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        log_action(
+            user=self.request.user, action='CREATE', table_name=self.audit_table,
+            record_id=instance.pk, old_value=None,
+            new_value=self._audit_snapshot(instance), request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        old_value = self._audit_snapshot(serializer.instance)
+        instance = serializer.save()
+        log_action(
+            user=self.request.user, action='UPDATE', table_name=self.audit_table,
+            record_id=instance.pk, old_value=old_value,
+            new_value=self._audit_snapshot(instance), request=self.request,
+        )
+
+    def perform_destroy(self, instance):
+        old_value = self._audit_snapshot(instance)
+        record_id = instance.pk
+        instance.delete()
+        log_action(
+            user=self.request.user, action='DELETE', table_name=self.audit_table,
+            record_id=record_id, old_value=old_value, new_value=None,
+            request=self.request,
+        )
+
+
 # ─────────────────────────────────────────────
 # Brand
 # ─────────────────────────────────────────────
-class BrandListCreateView(generics.ListCreateAPIView):
+class BrandListCreateView(AuditedWriteMixin, generics.ListCreateAPIView):
+    audit_table = 'brand'
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
 
 
-class BrandDetailView(generics.RetrieveUpdateDestroyAPIView):
+class BrandDetailView(AuditedWriteMixin, generics.RetrieveUpdateDestroyAPIView):
+    audit_table = 'brand'
     queryset = Brand.objects.all()
     serializer_class = BrandSerializer
 
@@ -69,12 +135,14 @@ class BrandDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ─────────────────────────────────────────────
 # Category
 # ─────────────────────────────────────────────
-class CategoryListCreateView(generics.ListCreateAPIView):
+class CategoryListCreateView(AuditedWriteMixin, generics.ListCreateAPIView):
+    audit_table = 'category'
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
 
-class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+class CategoryDetailView(AuditedWriteMixin, generics.RetrieveUpdateDestroyAPIView):
+    audit_table = 'category'
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
 
@@ -82,12 +150,14 @@ class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ─────────────────────────────────────────────
 # StoreZone — staff-only, no customer traffic, default auth is fine
 # ─────────────────────────────────────────────
-class StoreZoneListCreateView(generics.ListCreateAPIView):
+class StoreZoneListCreateView(AuditedWriteMixin, generics.ListCreateAPIView):
+    audit_table = 'store_zone'
     queryset = StoreZone.objects.all()
     serializer_class = StoreZoneSerializer
 
 
-class StoreZoneDetailView(generics.RetrieveUpdateDestroyAPIView):
+class StoreZoneDetailView(AuditedWriteMixin, generics.RetrieveUpdateDestroyAPIView):
+    audit_table = 'store_zone'
     queryset = StoreZone.objects.all()
     serializer_class = StoreZoneSerializer
 
@@ -100,15 +170,9 @@ class ProductListCreateView(generics.ListCreateAPIView):
     pagination_class = StandardResultsPagination
 
     def get_queryset(self):
-        queryset = Product.objects.filter(is_active=True).annotate(
-            earliest_expiry=Min(
-                'purchasebatch__expiry_date',
-                filter=Q(
-                    purchasebatch__status__in=['ACTIVE', 'PENDING_EXPIRY'],
-                    purchasebatch__remaining_quantity__gt=0,
-                ),
-            ),
-        )
+        queryset = Product.objects.filter(is_active=True)
+
+        # Apply filters
         category = self.request.query_params.get('category')
         brand    = self.request.query_params.get('brand')
         search   = self.request.query_params.get('search')
@@ -118,7 +182,8 @@ class ProductListCreateView(generics.ListCreateAPIView):
             queryset = queryset.filter(brand__id=brand)
         if search:
             queryset = queryset.filter(product_name__icontains=search)
-        return queryset.order_by('id')
+
+        return _with_public_product_data(queryset)
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -164,9 +229,10 @@ class ProductAvailabilityView(APIView):
         except Product.DoesNotExist:
             return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        current_stock = PurchaseBatch.objects.filter(
-            product=product, status='ACTIVE'
-        ).aggregate(total=Sum('remaining_quantity'))['total'] or 0
+        valid_batches = get_sellable_batches(product.id)
+
+        current_stock = valid_batches.aggregate(total=Sum('remaining_quantity'))['total'] or 0
+        earliest_expiry = valid_batches.order_by('expiry_date').values_list('expiry_date', flat=True).first()
 
         if current_stock == 0:
             availability_status = 'UNAVAILABLE'
@@ -182,7 +248,7 @@ class ProductAvailabilityView(APIView):
             'status': availability_status,
             'can_order': can_order,
             'stock': int(current_stock),
-
+            'earliest_expiry': str(earliest_expiry) if earliest_expiry else None,
         })
 
 
@@ -227,16 +293,10 @@ class ProductReorderThresholdView(APIView):
 
 
 class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Product.objects.all().annotate(
-        earliest_expiry=Min(
-            'purchasebatch__expiry_date',
-            filter=Q(
-                purchasebatch__status__in=['ACTIVE', 'PENDING_EXPIRY'],
-                purchasebatch__remaining_quantity__gt=0,
-            ),
-        ),
-    )
     authentication_classes = [LenientJWTAuthentication]
+
+    def get_queryset(self):
+        return _with_public_product_data(Product.objects.all())
 
     def get_serializer_class(self):
         if self.request.method in ('PUT', 'PATCH', 'DELETE'):
@@ -883,7 +943,8 @@ class ProductZoneOverrideListCreateView(generics.ListCreateAPIView):
         )
 
 
-class ProductZoneOverrideDetailView(generics.RetrieveUpdateDestroyAPIView):
+class ProductZoneOverrideDetailView(AuditedWriteMixin, generics.RetrieveUpdateDestroyAPIView):
+    audit_table = 'product_zone_override'
     queryset = ProductZoneOverride.objects.select_related('product', 'zone')
     serializer_class = ProductZoneOverrideSerializer
 

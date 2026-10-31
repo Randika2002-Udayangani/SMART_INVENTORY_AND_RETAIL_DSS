@@ -5,15 +5,21 @@
 {% block extra_css %}
     <style>
         .btn-primary { background:var(--sidebar); border:none; }
-        .btn-primary:hover { background:#0a2b2c; }
+        .btn-primary:hover { background:#14532d; }
         .card { border-radius:12px; border:1px solid var(--border); background:var(--card); }
-        .nav-tabs .nav-link.active { background:var(--sidebar); color:white; border-color:var(--sidebar); }
-        .nav-tabs .nav-link { color:var(--txt); }
-        .table thead.table-light th { position:sticky; top:var(--topbar-height, 56px); z-index:120; background:var(--card2); }
+        .table thead.table-light th { position:sticky; top:0; z-index:120; background:var(--card2); }
         .crud-form { max-width: 520px; }
+        #tab-list .table-scroll-wrap { overflow-x:clip; overflow-y:visible; }
+        #tab-list table { min-width:900px; }
+        #tab-list table th:first-child, #tab-list table td:first-child { min-width:260px; white-space:normal; }
     </style>
 {% endblock %}
 {% block content %}
+<div class="page-header-breadcrumb">
+  <div class="breadcrumb-nav"><a href="/dashboard/">🏠 Home</a><span>›</span><span>Inventory</span><span>›</span><span class="current-page">Products</span></div>
+  <h1 class="page-title">Products</h1>
+  <p class="page-subtitle">Manage the product catalogue, classifications, brands, and categories.</p>
+</div>
 <div class="topbar">
     <div>
         <h1>Product Management</h1>
@@ -45,8 +51,8 @@
                 <input type="text" id="prodName" class="form-control">
             </div>
             <div class="col-md-6">
-                <label class="form-label">SKU Code</label>
-                <input type="text" id="prodSku" class="form-control" placeholder="No SKU assigned">
+                <label class="form-label">Product code <span class="tooltip-icon" title="Stock Keeping Unit — a unique code for each product">ⓘ</span></label>
+                <input type="text" id="prodSku" class="form-control" placeholder="No product code assigned">
             </div>
             <div class="col-md-6">
                 <label class="form-label">Unit Price</label>
@@ -76,24 +82,27 @@
         </div>
         <div id="prodMsg" class="mt-3"></div>
     </div>
-        <div class="mb-3 d-flex gap-2">
+        <div class="mb-3 d-flex gap-2 flex-wrap">
             <input type="text" id="prodSearch" class="form-control form-control-sm" style="width:260px;" placeholder="Search product name...">
             <select id="prodCategory" class="form-select form-select-sm" style="width:180px;">
                 <option value="">All Categories</option>
             </select>
             <button class="btn btn-primary btn-sm" onclick="loadProducts()">Search</button>
-            <button class="btn btn-outline-secondary btn-sm" id="reclassifyBtn" onclick="reclassify()">Reclassify Products</button>
+            <button class="btn btn-outline-secondary btn-sm" id="reclassifyBtn" onclick="reclassify()">Reclassify Products <span class="tooltip-icon" title="Re-assigns categories using the product name">ⓘ</span></button>
+            <button class="btn btn-outline-warning btn-sm" onclick="updateBuyingPrices()">Update buying prices</button>
             <button class="btn btn-primary btn-sm" onclick="openAddForm()">+ Add Product</button>
         </div>
         <div class="card p-4">
-            <table class="table table-hover">
+            <div class="table-scroll-wrap">
+<table class="table table-hover table-sticky-header">
                 <thead class="table-light">
-                    <tr><th>Product</th><th>Category</th><th>Brand</th><th>SKU</th><th>Unit Price</th><th>Actions</th></tr>
+                    <tr><th>Product</th><th>Category</th><th>Brand</th><th>Product code <span class="tooltip-icon" title="Stock Keeping Unit — a unique code for each product">ⓘ</span></th><th>Unit Price</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="prodBody">
                     <tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+</div>
             <div id="prodPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
         </div>
     </div>
@@ -104,7 +113,7 @@
     <!-- Import Tab -->
     <div id="tab-import" style="display:none;">
         <div class="card p-4" style="max-width:600px;">
-            <h6 class="fw-bold mb-3">Import Item Master Excel</h6>
+            <h6 class="fw-bold mb-3">Import product list (Excel)</h6>
             <input type="file" id="importFile" class="form-control mb-3" accept=".xlsx,.xls">
             <button class="btn btn-primary" onclick="submitImport()">Upload & Import</button>
             <div id="importMsg" class="mt-3"></div>
@@ -113,7 +122,7 @@
 
     <!-- Brands Tab -->
     <div id="tab-brands" style="display:none;">
-        <div class="card p-4 mb-3 crud-form">
+        <div class="card p-4 mb-3 crud-form" id="brandForm">
             <h6 class="fw-bold mb-3" id="brandFormTitle">Add Brand</h6>
             <input type="hidden" id="brandId">
             <div class="mb-3">
@@ -128,20 +137,22 @@
         </div>
 
         <div class="card p-4">
-            <table class="table table-hover">
+            <div class="table-scroll-wrap">
+<table class="table table-hover table-sticky-header">
                 <thead class="table-light">
-                    <tr><th>ID</th><th>Brand Name</th><th>Actions</th></tr>
+                    <tr><th>Brand Name</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="brandsBody">
-                    <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
+                    <tr><td colspan="2" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+</div>
         </div>
     </div>
 
     <!-- Categories Tab -->
     <div id="tab-categories" style="display:none;">
-        <div class="card p-4 mb-3 crud-form">
+        <div class="card p-4 mb-3 crud-form" id="categoryForm">
             <h6 class="fw-bold mb-3" id="categoryFormTitle">Add Category</h6>
             <input type="hidden" id="categoryId">
             <div class="mb-3">
@@ -156,20 +167,22 @@
         </div>
 
         <div class="card p-4">
-            <table class="table table-hover">
+            <div class="table-scroll-wrap">
+<table class="table table-hover table-sticky-header">
                 <thead class="table-light">
-                    <tr><th>ID</th><th>Category Name</th><th>Actions</th></tr>
+                    <tr><th>Category Name</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="categoriesBody">
-                    <tr><td colspan="3" class="text-center text-muted">Loading...</td></tr>
+                    <tr><td colspan="2" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+</div>
         </div>
     </div>
 
     <!-- Store Zones Tab -->
     <div id="tab-zones-crud" style="display:none;">
-        <div class="card p-4 mb-3 crud-form">
+        <div class="card p-4 mb-3 crud-form" id="zoneForm">
             <h6 class="fw-bold mb-3" id="zoneFormTitle">Add Store Zone</h6>
             <input type="hidden" id="zoneId">
             <div class="mb-3">
@@ -197,14 +210,16 @@
         </div>
 
         <div class="card p-4">
-            <table class="table table-hover">
+            <div class="table-scroll-wrap">
+<table class="table table-hover table-sticky-header">
                 <thead class="table-light">
-                    <tr><th>ID</th><th>Zone Name</th><th>Traffic</th><th>Description</th><th>Actions</th></tr>
+                    <tr><th>Zone Name</th><th>Traffic</th><th>Description</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="zonesCrudBody">
-                    <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
+                    <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
                 </tbody>
             </table>
+</div>
         </div>
     </div>
 
@@ -238,7 +253,7 @@
                                         <div id="detailProductId" class="fw-semibold">—</div>
                                     </div>
                                     <div class="col-md-6">
-                                        <div class="small text-muted">SKU</div>
+                                        <div class="small text-muted">Product code</div>
                                         <div id="detailSku" class="fw-semibold">—</div>
                                     </div>
                                     <div class="col-md-6">
@@ -265,7 +280,7 @@
                                     </div>
 
                                     <div class="col-md-6">
-                                        <div class="small text-muted">Avg Cost Price</div>
+                                        <div class="small text-muted">Average cost <span class="tooltip-icon" title="Weighted Average Cost — the average price paid per unit across all purchases">ⓘ</span></div>
                                         <div id="detailAvgCostPrice" class="fw-semibold">—</div>
                                     </div>
                                     <div class="col-md-6">
@@ -457,7 +472,8 @@ async function loadProducts() {
 }
 
 function renderProducts() {
-    const rows = allProducts;
+    const rows = [...allProducts].sort((a, b) =>
+        String(a.product_name ?? '').localeCompare(String(b.product_name ?? '')));
     const tbody = document.getElementById('prodBody');
 
     if (rows.length === 0) {
@@ -472,12 +488,11 @@ function renderProducts() {
             <td>${escapeHtml(p.category_name ?? '—')}</td>
             <td>${escapeHtml(p.brand_name ?? '—')}</td>
             <td>${escapeHtml(p.sku_code ?? '—')}</td>
-            <td>Rs ${Number(p.unit_price ?? 0).toLocaleString()}</td>
+            <td>${formatMoney(p.unit_price)}</td>
             <td>
                 <div class="d-flex gap-2 flex-wrap">
                     <button class="btn btn-sm btn-outline-secondary" onclick="openEditFormPayload('${encodePayload(p)}')">Edit</button>
                     <button class="btn btn-sm btn-outline-primary" onclick='viewProductAvailability(${p.id})'>View</button>
-                    <button class="btn btn-sm btn-outline-warning" onclick='recalculateWAC(${p.id})'>WAC</button>
                 </div>
             </td>
         </tr>
@@ -495,7 +510,7 @@ function changeProdPage(delta) {
 }
 
 async function reclassify() {
-    if (!confirm('Run product reclassification now?')) return;
+    if (!(await confirmAction('Reclassify products', 'Run product reclassification now?', 'Reclassify', 'btn-primary'))) return;
     try {
         const res = await request('/api/products/reclassify/', {
             method: 'POST',
@@ -583,16 +598,11 @@ function openEditForm(p) {
     // Show delete button only for ADMIN or MANAGER roles
     document.getElementById('prodDeleteBtn').style.display = isUserManagerOrAdmin() ? 'inline-block' : 'none';
     document.getElementById('prodForm').style.display = 'block';
+    scrollToForm('prodForm');
 }
 
 function hideEditForm() {
     document.getElementById('prodForm').style.display = 'none';
-}
-
-function formatCurrency(value) {
-    const num = Number(value ?? 0);
-    if (!Number.isFinite(num)) return '—';
-    return 'Rs ' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function getAvailabilityBadgeClass(status) {
@@ -614,9 +624,9 @@ function showProductDetailModal(product, stockData = {}) {
     document.getElementById('detailBrand').textContent = product.brand_name || '—';
     document.getElementById('detailStatusText').textContent = statusText;
     document.getElementById('detailCanOrder').textContent = canOrder;
-    document.getElementById('detailUnitPrice').textContent = formatCurrency(product.unit_price);
-    document.getElementById('detailCostPrice').textContent = formatCurrency(product.cost_price);
-    document.getElementById('detailAvgCostPrice').textContent = product.avg_cost_price != null ? formatCurrency(product.avg_cost_price) : '—';
+    document.getElementById('detailUnitPrice').textContent = formatMoney(product.unit_price);
+    document.getElementById('detailCostPrice').textContent = formatMoney(product.cost_price);
+    document.getElementById('detailAvgCostPrice').textContent = product.avg_cost_price != null ? formatMoney(product.avg_cost_price) : '—';
 
     const badge = document.getElementById('detailAvailabilityBadge');
     badge.textContent = statusText;
@@ -709,7 +719,7 @@ async function viewProductAvailability(id) {
 }
 
 async function recalculateWAC(id) {
-    if (!confirm('Recalculate WAC for this product?')) return;
+    if (!(await confirmAction('Recalculate average cost', 'Recalculate average cost for this product?', 'Recalculate', 'btn-primary'))) return;
     try {
         const res = await request(`/api/products/${id}/recalculate-wac/`, {
             method: 'POST',
@@ -717,13 +727,34 @@ async function recalculateWAC(id) {
         const data = await res.json().catch(() => ({}));
 
         if (res.ok) {
-            showProductMessage(data.message || 'WAC recalculated successfully.', 'success');
+            showProductMessage(data.message || 'Average cost recalculated successfully.', 'success');
             loadProducts();
         } else {
-            showProductMessage(data.detail || data.error || 'WAC recalculation failed.');
+            showProductMessage(data.detail || data.error || 'Average cost recalculation failed.');
         }
+
     } catch (e) {
-        showProductMessage('Network error while recalculating WAC: ' + e.message);
+        showProductMessage('Network error while recalculating average cost: ' + e.message);
+    }
+}
+
+async function updateBuyingPrices() {
+    if (!allProducts.length) return;
+    if (!(await confirmAction('Update buying prices', 'Update buying prices for the products on this page?', 'Update', 'btn-primary'))) return;
+    try {
+        const results = await Promise.all(allProducts.map(async product => {
+            const res = await request(`/api/products/${product.id}/recalculate-wac/`, { method: 'POST' });
+            return res.ok;
+        }));
+        const updated = results.filter(Boolean).length;
+        if (updated === results.length) {
+            showProductMessage('Buying prices updated.', 'success');
+        } else {
+            showProductMessage(`${updated} of ${results.length} buying prices were updated.`, 'warning');
+        }
+        loadProducts();
+    } catch (e) {
+        showProductMessage('Could not update buying prices: ' + e.message);
     }
 }
 
@@ -769,7 +800,7 @@ async function saveProduct() {
 async function deleteProduct() {
     const id = document.getElementById('prodId').value;
     if (!id) return;
-    if (!confirm('Deactivate this product? This cannot be undone easily.')) return;
+    if (!(await confirmAction('Deactivate product', 'Deactivate this product? This cannot be undone easily.', 'Deactivate', 'btn-danger'))) return;
 
     try {
         const res = await request(`/api/products/${id}/`, {
@@ -788,24 +819,22 @@ async function deleteProduct() {
     }
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   BRANDS CRUD
-   ═══════════════════════════════════════════════════════════════ */
+/* ===== BRANDS CRUD ===== */
 async function loadBrands() {
     try {
         const res = await request('/api/brands/');
         const data = await res.json();
-        const rows = extractArray(data);
+        const rows = extractArray(data).sort((a, b) =>
+            String(a.brand_name ?? '').localeCompare(String(b.brand_name ?? '')));
         const tbody = document.getElementById('brandsBody');
 
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No brands found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No brands found.</td></tr>';
             return;
         }
 
         tbody.innerHTML = rows.map(b => `
             <tr>
-                <td>${b.id ?? '—'}</td>
                 <td>${escapeHtml(b.brand_name ?? '—')}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="editBrandPayload('${encodePayload(b)}')">Edit</button>
@@ -814,7 +843,7 @@ async function loadBrands() {
             </tr>
         `).join('');
     } catch(e) {
-        document.getElementById('brandsBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading brands.</td></tr>';
+        document.getElementById('brandsBody').innerHTML = '<tr><td colspan="2" class="text-center text-danger">Error loading brands.</td></tr>';
     }
 }
 
@@ -823,6 +852,7 @@ function editBrand(brand) {
     document.getElementById('brandId').value = brand.id ?? '';
     document.getElementById('brandName').value = brand.brand_name ?? '';
     document.getElementById('brandMsg').innerHTML = '';
+    scrollToForm('brandForm');
 }
 
 function resetBrandForm() {
@@ -865,7 +895,7 @@ async function saveBrand() {
 }
 
 async function confirmDeleteBrand(id) {
-    if (!confirm('Delete this brand?')) return;
+    if (!(await confirmAction('Delete brand', 'Delete this brand?', 'Delete', 'btn-danger'))) return;
     try {
         const res = await request(`/api/brands/${id}/`, {
             method: 'DELETE',
@@ -882,24 +912,22 @@ async function confirmDeleteBrand(id) {
     }
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   CATEGORIES CRUD
-   ═══════════════════════════════════════════════════════════════ */
+/* ===== CATEGORIES CRUD ===== */
 async function loadCategoriesCrud() {
     try {
         const res = await request('/api/categories/');
         const data = await res.json();
-        const rows = extractArray(data);
+        const rows = extractArray(data).sort((a, b) =>
+            String(a.category_name ?? '').localeCompare(String(b.category_name ?? '')));
         const tbody = document.getElementById('categoriesBody');
 
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No categories found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No categories found.</td></tr>';
             return;
         }
 
         tbody.innerHTML = rows.map(c => `
             <tr>
-                <td>${c.id ?? '—'}</td>
                 <td>${escapeHtml(c.category_name ?? '—')}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="editCategoryPayload('${encodePayload(c)}')">Edit</button>
@@ -908,7 +936,7 @@ async function loadCategoriesCrud() {
             </tr>
         `).join('');
     } catch(e) {
-        document.getElementById('categoriesBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading categories.</td></tr>';
+        document.getElementById('categoriesBody').innerHTML = '<tr><td colspan="2" class="text-center text-danger">Error loading categories.</td></tr>';
     }
 }
 
@@ -917,6 +945,7 @@ function editCategory(cat) {
     document.getElementById('categoryId').value = cat.id ?? '';
     document.getElementById('categoryName').value = cat.category_name ?? '';
     document.getElementById('categoryMsg').innerHTML = '';
+    scrollToForm('categoryForm');
 }
 
 function resetCategoryForm() {
@@ -960,7 +989,7 @@ async function saveCategory() {
 }
 
 async function confirmDeleteCategory(id) {
-    if (!confirm('Delete this category?')) return;
+    if (!(await confirmAction('Delete category', 'Delete this category?', 'Delete', 'btn-danger'))) return;
     try {
         const res = await request(`/api/categories/${id}/`, {
             method: 'DELETE',
@@ -978,9 +1007,7 @@ async function confirmDeleteCategory(id) {
     }
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   STORE ZONES CRUD
-   ═══════════════════════════════════════════════════════════════ */
+/* ===== STORE ZONES CRUD ===== */
 async function loadStoreZones() {
     try {
         const res = await request('/api/zones/');
@@ -989,13 +1016,12 @@ async function loadStoreZones() {
         const tbody = document.getElementById('zonesCrudBody');
 
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No zones found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No zones found.</td></tr>';
             return;
         }
 
         tbody.innerHTML = rows.map(z => `
             <tr>
-                <td>${z.id ?? '—'}</td>
                 <td>${escapeHtml(z.zone_name ?? '—')}</td>
                 <td>${escapeHtml(z.traffic_level ?? '—')}</td>
                 <td>${escapeHtml(z.description ?? '—')}</td>
@@ -1006,7 +1032,7 @@ async function loadStoreZones() {
             </tr>
         `).join('');
     } catch(e) {
-        document.getElementById('zonesCrudBody').innerHTML = '<tr><td colspan="5" class="text-center text-danger">Error loading zones.</td></tr>';
+        document.getElementById('zonesCrudBody').innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error loading zones.</td></tr>';
     }
 }
 
@@ -1017,6 +1043,7 @@ function editZone(zone) {
     document.getElementById('zoneTrafficLevel').value = zone.traffic_level ?? '';
     document.getElementById('zoneDescription').value = zone.description ?? '';
     document.getElementById('zoneMsg').innerHTML = '';
+    scrollToForm('zoneForm');
 }
 
 function resetZoneForm() {
@@ -1074,7 +1101,7 @@ async function saveZone() {
 }
 
 async function confirmDeleteZone(id) {
-    if (!confirm('Delete this zone?')) return;
+    if (!(await confirmAction('Delete zone', 'Delete this zone?', 'Delete', 'btn-danger'))) return;
     try {
         const res = await request(`/api/zones/${id}/`, {
             method: 'DELETE',
@@ -1093,4 +1120,3 @@ async function confirmDeleteZone(id) {
 </script>
 
 {% endblock %}
-
