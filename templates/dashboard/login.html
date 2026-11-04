@@ -80,6 +80,10 @@
     </div>
 
     <script>
+        // Remember where this private login page lives (this browser tab only),
+        // so dashboard pages can send an expired session back here without the
+        // path ever being written into the dashboard HTML.
+        sessionStorage.setItem('staff_login_url', window.location.pathname);
         async function doLogin() {
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;

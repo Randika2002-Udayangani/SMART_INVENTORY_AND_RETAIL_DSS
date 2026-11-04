@@ -135,7 +135,7 @@
 {% block page_scripts %}
 <script>
 const token = sessionStorage.getItem('access_token');
-if (!token) { window.location.href = '/dashboard/login/'; }
+if (!token) { window.location.href = (sessionStorage.getItem('staff_login_url') || '/'); }
 
 let allSuppliers = [];
 let canManageSuppliers = false;
