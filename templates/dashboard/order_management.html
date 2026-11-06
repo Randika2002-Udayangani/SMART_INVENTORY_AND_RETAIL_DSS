@@ -133,7 +133,7 @@
       .filter(nextStatus => nextStatus !== 'CANCELLED' || canCancelOrders)
       .map(nextStatus => {
       const buttonClass = nextStatus === 'CANCELLED' ? 'btn-outline-secondary' : 'btn-success';
-      const label = nextStatus === 'CONFIRMED' ? 'Confirm' : nextStatus[0] + nextStatus.slice(1).toLowerCase();
+      const label = nextStatus === 'CONFIRMED' ? 'Confirm' : nextStatus === 'COMPLETED' ? 'Mark as picked up' : nextStatus === 'CANCELLED' ? 'Cancel order' : nextStatus[0] + nextStatus.slice(1).toLowerCase();
       return `<button class="btn btn-sm ${buttonClass} me-1" onclick="updateStatus(event, ${order.id}, '${nextStatus}')">${label}</button>`;
     }).join('');
   }
@@ -211,12 +211,22 @@
     const button = document.getElementById('overdueBtn');
     button.classList.toggle('btn-primary', showingOverdue);
     button.classList.toggle('btn-outline-secondary', !showingOverdue);
-    document.getElementById('filterRow').hidden = showingOverdue;
+    const filterRow = document.getElementById('filterRow');
+    filterRow.hidden = showingOverdue;
+    filterRow.style.display = showingOverdue ? 'none' : '';
     loadOrders();
   }
 
   async function updateStatus(event, id, nextStatus) {
     event.stopPropagation();
+    if (nextStatus === 'CANCELLED') {
+      showConfirm('Cancel order', 'Cancel this order?', () => updateOrderStatus(id, nextStatus), 'Cancel order', 'btn-danger');
+      return;
+    }
+    await updateOrderStatus(id, nextStatus);
+  }
+
+  async function updateOrderStatus(id, nextStatus) {
     try {
       const token = sessionStorage.getItem('access_token');
       await apiFetch(`/api/orders/${id}/status/`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ status: nextStatus }) });

@@ -172,6 +172,19 @@
         overflow-y: visible;
       }
     }
+    @media (max-width: 768px) {
+      .table-scroll-wrap,
+      .table-responsive {
+        max-height: 60vh;
+        overflow: auto;
+      }
+      .table-scroll-wrap thead th,
+      .table-responsive thead th,
+      .table-sticky-header thead th {
+        top: 0 !important;
+        white-space: nowrap;
+      }
+    }
 
     /* ── SHARED TOPBAR (kept minimal — pages can extend) ─── */
     .topbar {
@@ -736,6 +749,10 @@
 
   function formatDate(dateStr) {
     if (!dateStr) return '—';
+    if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      return new Date(year, month - 1, day).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
     const d = new Date(dateStr);
     if (Number.isNaN(d.getTime())) return '—';
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' +
@@ -956,9 +973,11 @@
   // Every page should call this and read window.currentUserRole afterward
   // for its own role-based hiding (e.g. money widgets on home.html).
   window.currentUserRole = null;
+  window.currentUser = null;
   async function fetchCurrentUser() {
     try {
       const data = await apiFetch('/api/auth/me/');
+      window.currentUser = data;
       document.getElementById('sbUserName').innerText = data.username;
       document.getElementById('sbUserRole').innerText = data.role + ' · Samanala Super Mart';
       window.currentUserRole = data.role;

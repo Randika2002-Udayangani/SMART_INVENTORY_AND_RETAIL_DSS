@@ -112,7 +112,7 @@
         </div>
         <div class="col-md-3">
             <div class="kpi-card">
-                <div class="kpi-lbl">Last Synced</div>
+                <div class="kpi-lbl">Data last updated</div>
                 <div class="kpi-val" style="font-size:16px;" id="kpiSync">—</div>
             </div>
         </div>
@@ -455,7 +455,7 @@ function changeStockPage(delta) {
 }
 
 async function loadLowStock() {
-   await loadAlertStock('/api/inventory/low-stock/', 'lowBody', 'low_stock_products', rows => rows.map(p => `<tr><td>${p.product_name ?? '—'}</td><td>${p.current_stock ?? 0}</td><td>${p.reorder_threshold ?? '—'}</td><td>${p.shortage ?? '—'}</td><td>${p.urgency ?? '—'}</td></tr>`).join(''), 5);
+   await loadAlertStock('/api/inventory/low-stock/', 'lowBody', 'low_stock_products', rows => rows.map(p => `<tr><td>${p.product_name ?? '—'}</td><td>${p.current_stock ?? 0}</td><td>${p.reorder_threshold ?? '—'}</td><td>${p.shortage ?? '—'}</td><td>${displayLabel(REORDER_LABELS, p.urgency)}</td></tr>`).join(''), 5);
 }
 
 async function loadOutOfStock() {
@@ -539,7 +539,7 @@ async function loadHistoryPage() {
         tbody.innerHTML = rows.map(h => {
             const insufficientStockData = h.balance_after !== null && h.balance_after !== undefined && Number(h.balance_after) < 0;
             const balanceCell = insufficientStockData
-                ? '<span class="badge bg-warning text-dark" title="The recorded sales exceed the available purchase/stock records.">Insufficient stock data</span>'
+                ? '<span class="badge bg-secondary" title="The recorded sales exceed the available purchase/stock records.">No stock data</span>'
                 : (h.balance_after ?? '—');
             const reasonCell = insufficientStockData
                 ? 'Recorded sales exceed available stock data.'

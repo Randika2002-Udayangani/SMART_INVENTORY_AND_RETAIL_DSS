@@ -185,7 +185,8 @@
       PHASE_OUT: '#FFF7ED;color:#EA580C', DISCONTINUE: '#FEF2F2;color:#DC2626'
     };
     const safeRecommendation = String(recommendation ?? '—');
-    return `<span class="pill" style="background:${map[safeRecommendation] || '#F1F5F9;color:#64748B'}">${escapeHtml(displayLabel(LIFECYCLE_ACTION_LABELS, safeRecommendation))}</span>`;
+    const labels = { ...LIFECYCLE_ACTION_LABELS, IMMEDIATE_ACTION: 'Act now', DISCOUNT_REVIEW: 'Consider discount' };
+    return `<span class="pill" style="background:${map[safeRecommendation] || '#F1F5F9;color:#64748B'}">${escapeHtml(displayLabel(labels, safeRecommendation))}</span>`;
   }
 
   function showError(message) {

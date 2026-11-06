@@ -139,7 +139,7 @@
           <td>${statusLabel(user)}</td>
           <td>${escapeHtml(formatDate(user.date_joined))}</td>
           <td><div class="user-actions">
-            <button class="btn btn-outline-secondary btn-sm" data-user-action="toggle" data-user-id="${user.id}" data-active="${user.is_active}">${user.is_active ? 'Deactivate' : 'Activate'}</button>
+            ${String(user.id) !== String(window.currentUser?.id) && user.username !== window.currentUser?.username ? `<button class="btn btn-outline-secondary btn-sm" data-user-action="toggle" data-user-id="${user.id}" data-active="${user.is_active}">${user.is_active ? 'Deactivate' : 'Activate'}</button>` : ''}
             ${showUnlock ? `<button class="btn btn-outline-warning btn-sm" data-user-action="unlock" data-user-id="${user.id}">Unlock</button>` : ''}
             <button class="btn btn-outline-primary btn-sm" data-user-action="reset" data-user-id="${user.id}" data-username="${escapeHtml(user.username)}">Reset password</button>
           </div></td>

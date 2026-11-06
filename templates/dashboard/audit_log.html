@@ -68,7 +68,25 @@
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])); }
   function showMessage(text, type = 'danger') { const element = document.getElementById('message'); element.className = `alert alert-${type}`; element.innerText = text; element.hidden = false; }
   function clearFilters() { ['userFilter','tableFilter','actionFilter','recordFilter','dateFrom','dateTo'].forEach(id => { document.getElementById(id).value = ''; }); loadLogs(); }
-  function jsonText(value) { return escapeHtml(JSON.stringify(value ?? {}, null, 2)); }
+  const AUDIT_ACTION_LABELS = {
+    ORDER_STATUS_CHANGE: 'Order status changed',
+  };
+  const AUDIT_TABLE_LABELS = {
+    auth_user: 'User account',
+  };
+  function auditActionLabel(value) { return AUDIT_ACTION_LABELS[value] || String(value ?? '—'); }
+  function auditTableLabel(value) { return AUDIT_TABLE_LABELS[value] || String(value ?? '—'); }
+  function detailText(value) {
+    if (value === null || value === undefined || value === '') return '—';
+    let parsed = value;
+    if (typeof value === 'string') {
+      try { parsed = JSON.parse(value); } catch (error) { return escapeHtml(value); }
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return Object.entries(parsed).map(([key, item]) => `${escapeHtml(key)}: ${escapeHtml(typeof item === 'object' ? JSON.stringify(item) : item)}`).join('<br>');
+    }
+    return escapeHtml(String(parsed));
+  }
 
   // ── Pagination is now server-side (see AuditLogListView in users/views.py) ──
   // The backend returns { results, count, page, page_size, total_pages }
@@ -126,7 +144,7 @@
       return;
     }
 
-    body.innerHTML = rows.map(log => `<tr><td>${escapeHtml(formatDate(log.timestamp))}</td><td>${escapeHtml(log.actor_label || log.username || 'System')}${log.user_id != null ? ` <span class="text-muted">#${escapeHtml(log.user_id)}</span>` : ''}</td><td><span class="badge text-bg-secondary">${escapeHtml(log.action)}</span></td><td>${escapeHtml(log.table_name)}</td><td title="Database row ID in ${escapeHtml(log.table_name || 'the affected table')}">${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</td><td>${escapeHtml(log.ip_address || '-')}</td><td><button class="btn btn-outline-secondary btn-sm" onclick="showDetails(${log.id})">Details</button></td></tr>`).join('');
+    body.innerHTML = rows.map(log => `<tr><td>${escapeHtml(formatDate(log.timestamp))}</td><td>${escapeHtml(log.actor_label || log.username || 'System')}${log.user_id != null ? ` <span class="text-muted">#${escapeHtml(log.user_id)}</span>` : ''}</td><td><span class="badge text-bg-secondary">${escapeHtml(auditActionLabel(log.action))}</span></td><td>${escapeHtml(auditTableLabel(log.table_name))}</td><td title="Database row ID in ${escapeHtml(auditTableLabel(log.table_name))}">${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</td><td>${escapeHtml(log.ip_address || '-')}</td><td><button class="btn btn-outline-secondary btn-sm" onclick="showDetails(${log.id})">Details</button></td></tr>`).join('');
 
     document.getElementById('auditPagination').innerHTML = auditTotalPages > 1 ? `
       <button class="btn btn-sm btn-outline-secondary" onclick="changeAuditPage(-1)" ${auditPage === 1 ? 'disabled' : ''}>Previous</button>
@@ -144,7 +162,7 @@
   async function showDetails(id) {
     try {
       const log = await apiFetch(`/api/audit-log/${id}/`);
-      document.getElementById('detailBody').innerHTML = `<div class="row g-3"><div class="col-md-6"><strong>User who performed action</strong><div>${escapeHtml(log.actor_label || log.username || 'System')}${log.user_id != null ? ' #' + escapeHtml(log.user_id) : ''}</div></div><div class="col-md-6"><strong>Time</strong><div>${escapeHtml(formatDate(log.timestamp))}</div></div><div class="col-md-6"><strong>Action</strong><div>${escapeHtml(log.action)}</div></div><div class="col-md-6"><strong>Affected table</strong><div><span class="badge text-bg-light">${escapeHtml(log.table_name)}</span></div></div><div class="col-md-6"><strong>Affected record ID</strong><div>${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</div></div><div class="col-md-6"><strong>IP address</strong><div>${escapeHtml(log.ip_address || '-')}</div></div><div class="col-12"><strong>Old value</strong><pre class="audit-detail">${jsonText(log.old_value)}</pre></div><div class="col-12"><strong>New value</strong><pre class="audit-detail">${jsonText(log.new_value)}</pre></div></div>`;
+      document.getElementById('detailBody').innerHTML = `<div class="row g-3"><div class="col-md-6"><strong>User who performed action</strong><div>${escapeHtml(log.actor_label || log.username || 'System')}${log.user_id != null ? ' #' + escapeHtml(log.user_id) : ''}</div></div><div class="col-md-6"><strong>Time</strong><div>${escapeHtml(formatDate(log.timestamp))}</div></div><div class="col-md-6"><strong>Action</strong><div>${escapeHtml(auditActionLabel(log.action))}</div></div><div class="col-md-6"><strong>Affected table</strong><div><span class="badge text-bg-light">${escapeHtml(auditTableLabel(log.table_name))}</span></div></div><div class="col-md-6"><strong>Affected record ID</strong><div>${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</div></div><div class="col-md-6"><strong>IP address</strong><div>${escapeHtml(log.ip_address || '-')}</div></div><div class="col-12"><strong>Old value</strong><div class="audit-detail">${detailText(log.old_value)}</div></div><div class="col-12"><strong>New value</strong><div class="audit-detail">${detailText(log.new_value)}</div></div></div>`;
       bootstrap.Modal.getOrCreateInstance(document.getElementById('detailModal')).show();
     } catch (error) { showMessage(error.message); }
   }

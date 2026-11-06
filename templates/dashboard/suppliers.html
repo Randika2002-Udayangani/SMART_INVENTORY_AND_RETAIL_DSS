@@ -20,6 +20,9 @@
         .returns-history-table th:nth-child(2), .returns-history-table th:nth-child(4) { min-width:105px; }
         .returns-history-table th:nth-child(5), .returns-history-table th:nth-child(6) { min-width:90px; }
         .returns-history-table td { vertical-align:middle; }
+        .return-status-confirmed { background:#D1FAE5; color:#047857; }
+        .return-status-pending { background:#FEF3C7; color:#B45309; }
+        .return-status-rejected { background:#FEE2E2; color:#B91C1C; }
         .returns-history-table .return-product { min-width:220px; white-space:normal; }
     </style>
 {% endblock %}
@@ -188,7 +191,12 @@ async function loadSupplierReturns() {
         const res = await fetch('/api/supplier-returns/', { headers: { 'Authorization': 'Bearer ' + token } });
         if (!res.ok) throw new Error('Could not load returns.');
         const rows = await res.json();
-        tbody.innerHTML = rows.length ? rows.map(r => `<tr><td>${r.id}</td><td>${r.supplier ?? '—'}</td><td class="return-product">${String(r.product_name ?? '—').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])}</td><td>${r.batch ?? '—'}</td><td>${r.quantity_returned ?? 0}</td><td><span class="badge bg-success">${r.status ?? '—'}</span></td></tr>`).join('') : '<tr><td colspan="6" class="text-center text-muted">No supplier returns found.</td></tr>';
+        tbody.innerHTML = rows.length ? rows.map(r => {
+            const status = String(r.status ?? '—').toUpperCase();
+            const statusClass = status === 'CONFIRMED' ? 'return-status-confirmed' : status === 'PENDING' ? 'return-status-pending' : status === 'REJECTED' ? 'return-status-rejected' : 'bg-secondary';
+            const supplier = r.supplier_name ?? r.supplier_id ?? r.supplier ?? '—';
+            return `<tr><td>${r.id}</td><td>${supplier}</td><td class="return-product">${String(r.product_name ?? '—').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])}</td><td>${r.batch ?? '—'}</td><td>${r.quantity_returned ?? 0}</td><td><span class="badge ${statusClass}">${status}</span></td></tr>`;
+        }).join('') : '<tr><td colspan="6" class="text-center text-muted">No supplier returns found.</td></tr>';
     } catch (error) {
         tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Could not load supplier returns.</td></tr>';
     }
@@ -249,7 +257,7 @@ function renderSuppliers() {
     }
     tbody.innerHTML = rows.map(s => `
         <tr>
-            <td style="font-weight:600">${s.name ?? s.supplier_name ?? '—'}</td>
+            <td style="font-weight:600">${s.name ?? s.supplier_name ?? s.id ?? s.supplier_id ?? '—'}</td>
             <td>${s.email ?? '—'}</td>
             <td>${s.contact_number ?? s.phone ?? '—'}</td>
             <td>${s.lead_time_days ?? '—'} days</td>
@@ -386,7 +394,7 @@ async function showCostTrend(id) {
             <h6>${group.product_name ?? 'Product'}</h6>
             <div class="table-scroll-wrap">
 <table class="table table-sm table-sticky-header"><thead><tr><th>Purchase date</th><th>Cost</th><th>Change</th></tr></thead><tbody>
-                ${(group.history ?? []).map(item => `<tr><td>${item.purchase_date ?? '—'}</td><td>${item.cost_price ?? '—'}</td><td>${item.increase_pct ?? 0}%</td></tr>`).join('')}
+                ${(group.history ?? []).map(item => `<tr><td>${item.purchase_date ?? '—'}</td><td>${formatMoney(item.cost_price)}</td><td>${item.increase_pct ?? 0}%</td></tr>`).join('')}
             </tbody></table>
 </div>`).join('') || '<div class="text-muted">No cost history found.</div>');
     } catch (e) {
@@ -404,7 +412,7 @@ async function showPurchaseHistory(id) {
         const data = await res.json();
         const purchases = extractArray(data).filter(p => String(p.supplier ?? p.supplier_id) === String(id));
         showSupplierModal('Supplier Purchase History', purchases.length ? `<div class="table-scroll-wrap">
-<table class="table table-sm table-sticky-header"><thead><tr><th>Invoice</th><th>Date</th><th>Total</th></tr></thead><tbody>${purchases.map(p => `<tr><td>${p.invoice_number ?? '—'}</td><td>${formatDate(p.purchase_date)}</td><td>${p.total_amount ?? '—'}</td></tr>`).join('')}</tbody></table>
+<table class="table table-sm table-sticky-header"><thead><tr><th>Invoice</th><th>Date</th><th>Total</th></tr></thead><tbody>${purchases.map(p => `<tr><td>${p.invoice_number ?? '—'}</td><td>${formatDate(p.purchase_date)}</td><td>${formatMoney(p.total_amount)}</td></tr>`).join('')}</tbody></table>
 </div>` : '<div class="text-muted">No purchases found.</div>');
     } catch (e) {
         showSupplierModal('Supplier Purchase History', '<div class="text-danger">Could not load purchase history.</div>');
