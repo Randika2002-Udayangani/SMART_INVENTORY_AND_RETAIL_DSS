@@ -29,7 +29,13 @@
     .order-actions { flex-wrap: wrap; }
     .order-detail-grid { grid-template-columns: 1fr 1fr; }
   }
+
+    .order-table { table-layout: auto !important; }
+    .order-table th, .order-table td { white-space: nowrap; }
+    .order-table td:nth-child(6) { padding-right: 20px; }
+    .order-table td .btn { white-space: nowrap; }
 </style>
+
 {% endblock %}
 
 {% block nav_order_management %}active{% endblock %}
