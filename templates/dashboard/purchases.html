@@ -11,6 +11,7 @@
     .badge-active { background:#F0FDF4; color:#16A34A; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
     .badge-expired { background:#FEF2F2; color:#DC2626; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
     .badge-disposed { background:#F1F5F9; color:#64748B; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-depleted { background:#E2E8F0; color:#475569; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
     .badge-pending { background:#FEFCE8; color:#CA8A04; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
     .table thead.table-light th {
         position: sticky;
@@ -229,6 +230,9 @@ function switchTab(name, btn) {
     document.querySelectorAll('#purTabs .nav-link').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     highlightSidebar(name);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', name);
+    window.history.replaceState({}, '', url);
     if (name === 'batches') loadBatches();
 }
 
@@ -401,7 +405,7 @@ function changePurchasesPage(delta) {
 }
 
 function batchStatusBadge(s) {
-    const map = { 'ACTIVE': 'badge-active', 'EXPIRED': 'badge-expired', 'DISPOSED': 'badge-disposed', 'PENDING_EXPIRY': 'badge-pending' };
+    const map = { 'ACTIVE': 'badge-active', 'DEPLETED': 'badge-depleted', 'EXPIRED': 'badge-expired', 'DISPOSED': 'badge-disposed', 'PENDING_EXPIRY': 'badge-pending' };
     return `<span class="${map[s] || 'badge-active'}">${displayLabel(BATCH_STATUS_LABELS, s)}</span>`;
 }
 
@@ -659,6 +663,7 @@ async function submitPurchase() {
 
     const batches = [];
     let hasUnmatchedProduct = false;
+    let hasIncompleteBatch = false;
     document.querySelectorAll('.batch-item').forEach(row => {
         const product_id = row.querySelector('.bi-product').value;
         const product_search = row.querySelector('.bi-product-search').value;
@@ -666,6 +671,8 @@ async function submitPurchase() {
         const cost_price = row.querySelector('.bi-cost').value;
         const expiry_date = row.querySelector('.bi-expiry').value;
         if (product_search && !product_id) hasUnmatchedProduct = true;
+        const hasAnyValue = product_search || quantity_received || cost_price || expiry_date;
+        if (hasAnyValue && !(product_id && quantity_received && cost_price && expiry_date)) hasIncompleteBatch = true;
         if (product_id && quantity_received && cost_price && expiry_date) {
             batches.push({
                 product: Number(product_id),
@@ -678,6 +685,11 @@ async function submitPurchase() {
 
     if (hasUnmatchedProduct) {
         msgBox.innerHTML = '<div class="alert alert-warning py-2">One or more products don\'t match a product in the list — pick a suggestion from the dropdown as you type.</div>';
+        return;
+    }
+
+    if (hasIncompleteBatch) {
+        msgBox.innerHTML = '<div class="alert alert-warning py-2">One or more purchase rows are incomplete. Complete or remove them before submitting.</div>';
         return;
     }
 
