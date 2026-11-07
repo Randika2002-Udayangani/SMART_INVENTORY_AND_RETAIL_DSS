@@ -395,10 +395,7 @@
     function renderCart() {
         const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
         updateClearCartButton(cart);
-        console.log('Cart data:', cart);          
-        console.log('Cart length:', cart.length); 
         const content = document.getElementById('cartContent');
-        console.log('Content div:', content);   
 
         if (cart.length === 0) {
             content.innerHTML = `
@@ -675,7 +672,6 @@
             quantity: item.qty
         }));
 
-        console.log('Sending items:', items);
 
         const orderData = {
             items:       items,
@@ -684,7 +680,6 @@
             notes:       document.getElementById('notes').value
         };
 
-        console.log('Full order data:', orderData);
 
         let refNum = '';
 
@@ -698,7 +693,6 @@
                 body: JSON.stringify(orderData)
             });
 
-            console.log('Response status:', res.status);
 
             if (res.status === 401) {
                 // Do not let the login page treat an expired token as a valid session.
@@ -709,7 +703,6 @@
             }
 
             const responseText = await res.text();
-            console.log('Raw response:', responseText);
 
             if (res.ok) {
                 const data = JSON.parse(responseText);
