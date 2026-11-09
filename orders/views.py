@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 from django.utils import timezone
-from django.db.models import Avg, Count, OuterRef, Prefetch, Q, Subquery
+from django.db.models import Avg, Count, OuterRef, Prefetch, Q, Subquery, F
 from django.db import IntegrityError, transaction
 from core.authentication import LenientJWTAuthentication
 from .models import ChatbotLog, ProductRating, ProductRatingSummary
@@ -143,105 +143,134 @@ class CustomerLoginView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
 
+    LOCKOUT_MAX_ATTEMPTS = 3
+    LOCKOUT_DURATION_MINUTES = 15
+
+    def _locked_response(self):
+        return Response(
+            {
+                "error": (
+                    "Too many failed login attempts. "
+                    f"Please try again in {self.LOCKOUT_DURATION_MINUTES} minutes."
+                )
+            },
+            status=status.HTTP_429_TOO_MANY_REQUESTS
+        )
 
     def post(self, request):
 
         email = request.data.get("email")
         password = request.data.get("password")
 
-
+        # Preserve the existing missing-fields validation.
         if not all([email, password]):
-
             return Response(
-
                 {
-                    "error":
-                    "email and password required"
+                    "error": "email and password required"
                 },
-
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-
         try:
-
             customer = Customer.objects.get(
-
                 email=email,
-
                 is_active=True
-
             )
-
 
         except Customer.DoesNotExist:
-
+            # Perform a dummy hash to reduce timing differences
+            # between unknown emails and incorrect passwords.
+            make_password(password)
 
             return Response(
-
                 {
-                    "error":
-                    "Invalid credentials"
+                    "error": "Invalid credentials"
                 },
-
                 status=status.HTTP_401_UNAUTHORIZED
-
             )
 
+        now = timezone.now()
 
+        # Check whether the account is currently locked.
+        if customer.locked_until:
 
+            if customer.locked_until > now:
+                return self._locked_response()
+
+            # The previous lock has expired.
+            customer.failed_login_count = 0
+            customer.locked_until = None
+
+            customer.save(
+                update_fields=[
+                    "failed_login_count",
+                    "locked_until"
+                ]
+            )
+
+        # Verify the submitted password.
         if not check_password(
-
             password,
-
             customer.password_hash
-
         ):
 
-
-            return Response(
-
-                {
-                    "error":
-                    "Invalid credentials"
-                },
-
-                status=status.HTTP_401_UNAUTHORIZED
-
+            # Increment atomically to avoid lost updates.
+            Customer.objects.filter(
+                pk=customer.pk
+            ).update(
+                failed_login_count=F("failed_login_count") + 1
             )
 
+            customer.refresh_from_db(
+                fields=["failed_login_count", "locked_until"]
+            )
 
+            if customer.failed_login_count >= self.LOCKOUT_MAX_ATTEMPTS:
 
+                customer.locked_until = (
+                    timezone.now()
+                    + timedelta(minutes=self.LOCKOUT_DURATION_MINUTES)
+                )
+
+                customer.save(
+                    update_fields=["locked_until"]
+                )
+
+                return self._locked_response()
+
+            return Response(
+                {
+                    "error": "Invalid credentials"
+                },
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # Successful login: reset previous failed attempts.
+        if customer.failed_login_count != 0 or customer.locked_until is not None:
+
+            customer.failed_login_count = 0
+            customer.locked_until = None
+
+            customer.save(
+                update_fields=[
+                    "failed_login_count",
+                    "locked_until"
+                ]
+            )
+
+        # Keep the existing token generation and response.
         tokens = get_tokens_for_customer(customer)
 
-
-
         return Response(
-
             {
-                "message":
-                "Login successful",
-
-                "customer_id":
-                customer.id,
-
-                "name":
-                customer.name,
-
-                "email":
-                customer.email,
-
-                "refresh":
-                tokens["refresh"],
-
-                "access":
-                tokens["access"]
-
+                "message": "Login successful",
+                "customer_id": customer.id,
+                "name": customer.name,
+                "email": customer.email,
+                "refresh": tokens["refresh"],
+                "access": tokens["access"]
             }
-
         )
-
-
 class CustomerProfileView(APIView):
 
     """
