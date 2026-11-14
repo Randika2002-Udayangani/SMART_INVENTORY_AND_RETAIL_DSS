@@ -12,4 +12,6 @@ urlpatterns = [
     path('my-orders/', views.my_orders, name='my-orders'),
     path('profile/', views.profile_page, name='customer-profile'),
     path('product/', views.product_detail_page, name='product-detail'),
+    path('forgot-password/', views.forgot_password_page, name='forgot-password-page'),
+    path('reset-password/', views.reset_password_page, name='reset-password-page'),
 ]

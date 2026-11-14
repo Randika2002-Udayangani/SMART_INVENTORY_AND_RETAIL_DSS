@@ -10,6 +10,8 @@ from django.urls import path
 from .views import (
     CustomerRegisterView,
     CustomerLoginView,
+    CustomerForgotPasswordView,
+    CustomerResetPasswordView,
     CustomerLogoutView,
     CustomerProfileView,
     CustomerChangePasswordView,
@@ -37,6 +39,8 @@ urlpatterns = [
     path("customer-auth/logout/", CustomerLogoutView.as_view(), name="customer-logout"),
     path("customer-auth/profile/", CustomerProfileView.as_view(), name="customer-profile"),
     path("customer-auth/change-password/", CustomerChangePasswordView.as_view(), name="customer-change-password"),
+    path("customer-auth/forgot-password/", CustomerForgotPasswordView.as_view(), name="customer-forgot-password"),
+    path("customer-auth/reset-password/", CustomerResetPasswordView.as_view(), name="customer-reset-password"),
 
     # ── Orders (F12) ───────────────────────────────────────
     # Static sub-paths before any <int:pk>/ or <str:ref>/ pattern.
