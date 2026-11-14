@@ -67,7 +67,7 @@
 
         <label>Password</label>
         <input type="password" id="password" placeholder="At least 8 characters" minlength="8">
-        <small class="password-hint">Use a password with at least 8 characters.</small>
+        <small class="password-hint">Use at least 8 characters with a letter and a number.</small>
 
         <label>Confirm Password</label>
         <input type="password" id="confirmPassword" placeholder="Repeat your password">
@@ -96,6 +96,9 @@
         }
         if (password.length < 8) {
             showError('Password must be at least 8 characters.'); return;
+        }
+        if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+            showError('Password must contain at least one letter and one number.'); return;
         }
 
         btn.disabled    = true;
