@@ -37,6 +37,19 @@ class AdminSafeguardTests(TestCase):
         self.admin.refresh_from_db()
         self.assertTrue(self.admin.is_active)
 
+    def test_admin_cannot_deactivate_own_account_with_false_like_value(self):
+        for inactive_value in (0, ''):
+            with self.subTest(inactive_value=inactive_value):
+                response = self.client.patch(
+                    f'/api/users/{self.admin.pk}/',
+                    {'is_active': inactive_value},
+                    format='json',
+                )
+
+                self.assertEqual(response.status_code, 400)
+                self.admin.refresh_from_db()
+                self.assertTrue(self.admin.is_active)
+
     def test_last_active_admin_cannot_be_deactivated(self):
         target = self.create_admin('last-admin-deactivate')
         self.admin.is_active = False
@@ -45,6 +58,21 @@ class AdminSafeguardTests(TestCase):
         response = self.client.patch(
             f'/api/users/{target.pk}/',
             {'is_active': False},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        target.refresh_from_db()
+        self.assertTrue(target.is_active)
+
+    def test_last_active_admin_cannot_be_deactivated_with_false_like_value(self):
+        target = self.create_admin('last-admin-false-like-deactivate')
+        self.admin.is_active = False
+        self.admin.save(update_fields=['is_active'])
+
+        response = self.client.patch(
+            f'/api/users/{target.pk}/',
+            {'is_active': 0},
             format='json',
         )
 

@@ -248,10 +248,11 @@ class UserDetailView(APIView):
 
         new_username = request.data.get('username')
         new_is_active = request.data.get('is_active')
+        requested_is_active = None if new_is_active is None else bool(new_is_active)
         new_role = request.data.get('role')
         new_password = request.data.get('password')
 
-        if request.user.pk == target.pk and new_is_active is False:
+        if request.user.pk == target.pk and requested_is_active is False:
             return Response(
                 {'error': 'You cannot deactivate your own account'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -262,7 +263,7 @@ class UserDetailView(APIView):
         )
         removes_admin_role = bool(new_role) and new_role.upper() in ['MANAGER', 'STAFF']
         if target_is_active_admin and (
-            new_is_active is False or removes_admin_role
+            requested_is_active is False or removes_admin_role
         ):
             active_admin_ids = set(
                 User.objects.filter(is_active=True, is_superuser=True)
@@ -297,8 +298,8 @@ class UserDetailView(APIView):
 
         if new_username:
             target.username = new_username
-        if new_is_active is not None:
-            target.is_active = bool(new_is_active)
+        if requested_is_active is not None:
+            target.is_active = requested_is_active
         if new_role:
             new_role = new_role.upper()
             if new_role not in ['ADMIN', 'MANAGER', 'STAFF']:
