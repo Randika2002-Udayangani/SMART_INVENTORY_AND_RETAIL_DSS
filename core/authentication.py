@@ -1,5 +1,7 @@
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from users.authentication import enforce_required_password_change
+
 
 class LenientJWTAuthentication(JWTAuthentication):
     """
@@ -14,6 +16,8 @@ class LenientJWTAuthentication(JWTAuthentication):
     """
     def authenticate(self, request):
         try:
-            return super().authenticate(request)
+            authentication = super().authenticate(request)
         except Exception:
             return None
+        enforce_required_password_change(request, authentication)
+        return authentication

@@ -144,7 +144,48 @@
   async function showDetails(id) {
     try {
       const log = await apiFetch(`/api/audit-log/${id}/`);
-      document.getElementById('detailBody').innerHTML = `<div class="row g-3"><div class="col-md-6"><strong>User who performed action</strong><div>${escapeHtml(log.actor_label || log.username || 'System')}${log.user_id != null ? ' #' + escapeHtml(log.user_id) : ''}</div></div><div class="col-md-6"><strong>Time</strong><div>${escapeHtml(formatDate(log.timestamp))}</div></div><div class="col-md-6"><strong>Action</strong><div>${escapeHtml(log.action)}</div></div><div class="col-md-6"><strong>Affected table</strong><div><span class="badge text-bg-light">${escapeHtml(log.table_name)}</span></div></div><div class="col-md-6"><strong>Affected record ID</strong><div>${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</div></div><div class="col-md-6"><strong>IP address</strong><div>${escapeHtml(log.ip_address || '-')}</div></div><div class="col-12"><strong>Old value</strong><pre class="audit-detail">${jsonText(log.old_value)}</pre></div><div class="col-12"><strong>New value</strong><pre class="audit-detail">${jsonText(log.new_value)}</pre></div></div>`;
+      const oldValue = log.old_value && typeof log.old_value === 'object' && !Array.isArray(log.old_value) ? log.old_value : {};
+      const newValue = log.new_value && typeof log.new_value === 'object' && !Array.isArray(log.new_value) ? log.new_value : {};
+      const fieldLabels = {
+        role: 'Role',
+        username: 'Username',
+        is_active: 'Active status',
+        password_reset: 'Password reset'
+      };
+      const changedFields = [...new Set([...Object.keys(oldValue), ...Object.keys(newValue)])]
+        .filter(field => JSON.stringify(oldValue[field] ?? null) !== JSON.stringify(newValue[field] ?? null));
+      const displayValue = value => {
+        if (value == null) return '—';
+        if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+        return typeof value === 'object' ? JSON.stringify(value) : String(value);
+      };
+      const changeRows = changedFields.map(field => `
+        <tr>
+          <th scope="row">${escapeHtml(fieldLabels[field] || field.replace(/_/g, ' '))}</th>
+          <td>${escapeHtml(displayValue(oldValue[field]))}</td>
+          <td>${escapeHtml(displayValue(newValue[field]))}</td>
+        </tr>`).join('');
+      const changeHeading = log.action === 'CREATE'
+        ? 'New record created'
+        : log.action === 'DELETE'
+          ? 'Record deleted'
+          : changedFields.length
+            ? ''
+            : 'No field changes recorded';
+      const passwordResetMessage = newValue.password_reset === true
+        ? '<div class="alert alert-info py-2 mb-2">Password was reset (the password is never stored)</div>'
+        : '';
+      const recordUsername = newValue.username || oldValue.username;
+      const affectedRecord = log.record_id != null
+        ? `${recordUsername ? `${escapeHtml(recordUsername)} ` : ''}(ID #${escapeHtml(log.record_id)})`
+        : recordUsername
+          ? escapeHtml(recordUsername)
+          : '<span class="text-muted">Not specified</span>';
+      const changesTable = changeRows
+        ? `<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0"><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>${changeRows}</tbody></table></div>`
+        : '';
+
+      document.getElementById('detailBody').innerHTML = `<div class="row g-3"><div class="col-12"><strong>What changed</strong><div class="mt-1">${changeHeading ? `<p class="mb-2">${escapeHtml(changeHeading)}</p>` : ''}${passwordResetMessage}${changesTable}</div></div><div class="col-md-6"><strong>User who performed action</strong><div>${escapeHtml(log.actor_label || log.username || 'System')}${log.user_id != null ? ' #' + escapeHtml(log.user_id) : ''}</div></div><div class="col-md-6"><strong>Time</strong><div>${escapeHtml(formatDate(log.timestamp))}</div></div><div class="col-md-6"><strong>Action</strong><div>${escapeHtml(log.action)}</div></div><div class="col-md-6"><strong>Affected table</strong><div><span class="badge text-bg-light">${escapeHtml(log.table_name)}</span></div></div><div class="col-md-6"><strong>Affected record</strong><div>${affectedRecord}</div></div><div class="col-md-6"><strong>IP address</strong><div>${escapeHtml(log.ip_address || '-')}</div></div><details class="col-12"><summary><strong>Technical details</strong></summary><div class="row g-3 mt-1"><div class="col-md-6"><strong>Old value</strong><pre class="audit-detail">${jsonText(log.old_value)}</pre></div><div class="col-md-6"><strong>New value</strong><pre class="audit-detail">${jsonText(log.new_value)}</pre></div></div></details></div>`;
       bootstrap.Modal.getOrCreateInstance(document.getElementById('detailModal')).show();
     } catch (error) { showMessage(error.message); }
   }
