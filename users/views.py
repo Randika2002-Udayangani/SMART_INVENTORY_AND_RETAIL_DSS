@@ -17,6 +17,14 @@ from .models import UserLoginSecurity
 from .permissions import IsManagerOrAdmin
 
 
+def validate_staff_password(password, user):
+    if len(password) < 12:
+        raise ValidationError(
+            "This password is too short. It must contain at least 12 characters."
+        )
+    validate_password(password, user)
+
+
 # ============================================================
 # REPLACE your existing `class RegisterView(APIView):` block in
 # users/views.py with this whole class. It now handles both:
@@ -81,7 +89,7 @@ class RegisterView(APIView):
             )
 
         try:
-            validate_password(password, User(username=username))
+            validate_staff_password(password, User(username=username))
         except ValidationError as error:
             return Response(
                 {'error': ' '.join(error.messages)},
@@ -206,7 +214,7 @@ class ChangePasswordView(APIView):
             return Response({'error': 'old_password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            validate_password(new_password, user)
+            validate_staff_password(new_password, user)
         except ValidationError as error:
             return Response(
                 {'error': ' '.join(error.messages)},
@@ -281,7 +289,7 @@ class UserDetailView(APIView):
         if new_password:
             new_password = new_password.strip()
             try:
-                validate_password(new_password, target)
+                validate_staff_password(new_password, target)
             except ValidationError as error:
                 return Response(
                     {'error': ' '.join(error.messages)},
