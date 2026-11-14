@@ -10,8 +10,8 @@ from django.urls import path
 from .views import (
     CustomerRegisterView,
     CustomerLoginView,
-    CustomerForgotPasswordView,  # NEW
-    CustomerResetPasswordView,   # NEW
+    CustomerForgotPasswordView,
+    CustomerResetPasswordView,
     CustomerLogoutView,
     CustomerProfileView,
     CustomerChangePasswordView,

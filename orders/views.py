@@ -1,13 +1,13 @@
 
 import json
-import logging  # NEW
+import logging
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from django.conf import settings  # NEW
-from django.core.mail import send_mail  # NEW
+from django.conf import settings
+from django.core.mail import send_mail
 from django.utils import timezone
 from django.db.models import Avg, Count, OuterRef, Prefetch, Q, Subquery, F
 from django.db import IntegrityError, transaction
@@ -21,7 +21,7 @@ from .models import (
     Customer,
     OnlineOrder,
     OnlineOrderItem,
-    PasswordResetToken,  # NEW
+    PasswordResetToken,
 )
 
 from .serializers import RatingCreateSerializer, ProductRatingPublicSerializer
@@ -50,9 +50,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .services.agent import AgentUnavailable, run_agent
 from .services.rate_limit import consume_chatbot_request, get_client_ip
 from .password_rules import validate_customer_password
-from .password_reset import create_reset_token, find_valid_token  # NEW
+from .password_reset import create_reset_token, find_valid_token
 
-logger = logging.getLogger(__name__)  # NEW
+logger = logging.getLogger(__name__)
 
 
 LOCAL_TZ = ZoneInfo("Asia/Colombo")
@@ -444,8 +444,6 @@ class CustomerChangePasswordView(APIView):
     authentication_classes = [CustomerJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
-
-
     def post(self, request):
         c = request.user
         old_password = request.data.get('old_password', '')
@@ -464,7 +462,6 @@ class CustomerChangePasswordView(APIView):
         c.password_hash = make_password(new_password)
         c.save()
         return Response({'message': 'Password changed successfully'})
-
 
 def get_selling_price(product):
     """

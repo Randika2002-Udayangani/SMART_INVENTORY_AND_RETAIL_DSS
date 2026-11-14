@@ -79,6 +79,40 @@ class CustomerPasswordResetTests(TestCase):
         self.assertIn('If that email is registered', response.data['message'])
         self.assertEqual(len(mail.outbox), 0)
 
+    def test_email_send_failure_returns_generic_response(self):
+        from unittest.mock import patch
+
+        with patch(
+            'orders.views.send_mail',
+            side_effect=RuntimeError('Email service unavailable'),
+        ):
+            response = self.request_reset()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data['message'],
+            'If that email is registered, a password reset link has been sent.',
+        )
+
+    def test_inactive_customer_gets_generic_response_without_email(self):
+        from unittest.mock import patch
+
+        self.customer.is_active = False
+        self.customer.save(update_fields=['is_active'])
+
+        with patch('orders.views.send_mail') as mocked_send_mail:
+            response = self.request_reset()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data['message'],
+            'If that email is registered, a password reset link has been sent.',
+        )
+        mocked_send_mail.assert_not_called()
+        self.assertEqual(
+            PasswordResetToken.objects.filter(customer=self.customer).count(), 0
+        )
+
     def test_forgot_password_normalizes_email(self):
         response = self.request_reset('  RESET-TEST@EXAMPLE.COM  ')
         self.assertEqual(response.status_code, 200)
