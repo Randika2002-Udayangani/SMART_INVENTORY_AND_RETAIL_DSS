@@ -51,6 +51,33 @@
         input:focus { border-color: #2d6a4f; }
         input:disabled { background: #f8f9fa; color: #666; }
 
+        .password-input-wrap {
+            position: relative;
+        }
+        .password-input-wrap input {
+            padding-right: 46px;
+        }
+        .password-toggle {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            border: 0;
+            background: transparent;
+            color: #667085;
+            cursor: pointer;
+            padding: 6px;
+        }
+        .password-toggle svg {
+            width: 20px;
+            height: 20px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
         .btn-row { display: flex; gap: 10px; }
         .edit-btn {
             flex: 1; padding: 12px; background: #2d6a4f; color: white;
@@ -126,16 +153,31 @@
                 <div class="password-message error" id="passwordErrorMsg" role="alert"></div>
                 <div class="form-group">
                     <label for="currentPassword">Current Password</label>
-                    <input type="password" id="currentPassword" autocomplete="current-password">
+                    <div class="password-input-wrap">
+                        <input type="password" id="currentPassword" autocomplete="current-password">
+                        <button type="button" class="password-toggle" aria-label="Show password" title="Show password" onclick="togglePasswordVisibility('currentPassword', this)">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="newPassword">New Password</label>
-                    <input type="password" id="newPassword" minlength="8" autocomplete="new-password">
+                    <div class="password-input-wrap">
+                        <input type="password" id="newPassword" minlength="8" autocomplete="new-password">
+                        <button type="button" class="password-toggle" aria-label="Show password" title="Show password" onclick="togglePasswordVisibility('newPassword', this)">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
                     <small class="password-hint">At least 8 characters, with a letter and a number.</small>
                 </div>
                 <div class="form-group">
                     <label for="confirmNewPassword">Confirm New Password</label>
-                    <input type="password" id="confirmNewPassword" minlength="8" autocomplete="new-password">
+                    <div class="password-input-wrap">
+                        <input type="password" id="confirmNewPassword" minlength="8" autocomplete="new-password">
+                        <button type="button" class="password-toggle" aria-label="Show password" title="Show password" onclick="togglePasswordVisibility('confirmNewPassword', this)">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
                 </div>
                 <button class="edit-btn password-btn" id="changePasswordBtn" type="button" onclick="changePassword()">Update Password</button>
             </section>
@@ -292,6 +334,18 @@
         const target = type === 'success' ? success : error;
         target.textContent = message;
         target.style.display = 'block';
+    }
+
+    function togglePasswordVisibility(inputId, button) {
+        const input = document.getElementById(inputId);
+        const showPassword = input.type === 'password';
+        input.type = showPassword ? 'text' : 'password';
+        const label = showPassword ? 'Hide password' : 'Show password';
+        button.setAttribute('aria-label', label);
+        button.title = label;
+        button.innerHTML = showPassword
+            ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A11 11 0 0 1 12 5c6.4 0 10 7 10 7a15 15 0 0 1-3.1 3.8M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10 10 0 0 0 4.1-.9"/></svg>'
+            : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
     }
 
     async function changePassword() {
