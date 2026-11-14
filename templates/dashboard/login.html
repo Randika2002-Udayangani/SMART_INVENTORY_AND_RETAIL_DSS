@@ -103,7 +103,11 @@
                 if (response.ok) {
                     sessionStorage.setItem('access_token', data.access);
                     sessionStorage.setItem('refresh_token', data.refresh);
-                    window.location.href = '/dashboard/';
+                    sessionStorage.setItem('must_change_password', String(data.must_change_password === true));
+                    sessionStorage.setItem('current_username', data.username);
+                    window.location.href = data.must_change_password
+                        ? '/dashboard/change-password/'
+                        : '/dashboard/';
                     return;
                 }
 

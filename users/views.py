@@ -2,6 +2,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth.models import User, Group
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -78,9 +80,11 @@ class RegisterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if len(password) < 6:
+        try:
+            validate_password(password, User(username=username))
+        except ValidationError as error:
             return Response(
-                {'error': 'Password must be at least 6 characters'},
+                {'error': ' '.join(error.messages)},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -108,6 +112,7 @@ class RegisterView(APIView):
         # Track role via Django Group (ADMIN / MANAGER / STAFF)
         group, _ = Group.objects.get_or_create(name=role_name)
         user.groups.add(group)
+        UserLoginSecurity.objects.create(user=user, must_change_password=True)
 
         # Audit: who created which account with which role (never the password).
         log_action(
@@ -196,15 +201,23 @@ class ChangePasswordView(APIView):
 
         if not old_password or not new_password:
             return Response({'error': 'old_password and new_password are required'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(new_password) < 6:
-            return Response({'error': 'New password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
-
         user = request.user
         if not user.check_password(old_password):
             return Response({'error': 'old_password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
 
+        try:
+            validate_password(new_password, user)
+        except ValidationError as error:
+            return Response(
+                {'error': ' '.join(error.messages)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         user.set_password(new_password)
         user.save()
+        security, _ = UserLoginSecurity.objects.get_or_create(user=user)
+        security.must_change_password = False
+        security.save(update_fields=['must_change_password'])
 
         log_action(
             user=user, action='PASSWORD_CHANGE', table_name='auth_user',
@@ -238,16 +251,48 @@ class UserDetailView(APIView):
         new_role = request.data.get('role')
         new_password = request.data.get('password')
 
+        if request.user.pk == target.pk and new_is_active is False:
+            return Response(
+                {'error': 'You cannot deactivate your own account'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target_is_active_admin = target.is_active and (
+            target.is_superuser or target.groups.filter(name='ADMIN').exists()
+        )
+        removes_admin_role = bool(new_role) and new_role.upper() in ['MANAGER', 'STAFF']
+        if target_is_active_admin and (
+            new_is_active is False or removes_admin_role
+        ):
+            active_admin_ids = set(
+                User.objects.filter(is_active=True, is_superuser=True)
+                .values_list('pk', flat=True)
+            ) | set(
+                User.objects.filter(is_active=True, groups__name='ADMIN')
+                .values_list('pk', flat=True)
+            )
+            if len(active_admin_ids) == 1:
+                return Response(
+                    {'error': 'You cannot deactivate or demote the last active admin'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         if new_password:
             new_password = new_password.strip()
-            if len(new_password) < 6:
-                return Response({'error': 'Password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                validate_password(new_password, target)
+            except ValidationError as error:
+                return Response(
+                    {'error': ' '.join(error.messages)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             target.set_password(new_password)
             # Admin-initiated reset — clear any lockout state so the new
             # password isn't blocked by an old failed-attempt count.
             security, _ = UserLoginSecurity.objects.get_or_create(user=target)
             security.failed_login_count = 0
             security.locked_until = None
+            security.must_change_password = True
             security.save()
 
         if new_username:
@@ -575,6 +620,8 @@ class LockoutTokenObtainPairSerializer(TokenObtainPairSerializer):
             security.failed_login_count = 0
             security.locked_until = None
             security.save()
+            data['must_change_password'] = security.must_change_password
+            data['username'] = user.username
 
             log_action(
                 user=user, action='LOGIN', table_name='auth_user',

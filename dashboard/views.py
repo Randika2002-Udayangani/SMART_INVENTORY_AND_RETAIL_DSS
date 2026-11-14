@@ -60,5 +60,8 @@ def audit_log(request):
 def user_management(request):
     return render(request, 'dashboard/user_management.html')
 
+def change_password(request):
+    return render(request, 'dashboard/change_password.html')
+
 def order_management(request):
     return render(request, 'dashboard/order_management.html')

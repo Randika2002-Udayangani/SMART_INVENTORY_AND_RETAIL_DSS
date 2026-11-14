@@ -90,7 +90,7 @@ class StaffAccountAndLoginAuditTests(TestCase):
         self.client.force_authenticate(self.admin)
         response = self.client.post(
             '/api/users/',
-            {'username': 'new-manager', 'password': 'Secret-123', 'role': 'MANAGER'},
+            {'username': 'new-manager', 'password': 'Secret-123-Long', 'role': 'MANAGER'},
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -101,7 +101,7 @@ class StaffAccountAndLoginAuditTests(TestCase):
         self.assertEqual(row.user, self.admin)
         self.assertEqual(row.new_value['username'], 'new-manager')
         self.assertEqual(row.new_value['role'], 'MANAGER')
-        self.assertNotIn('Secret-123', json.dumps(row.new_value))
+        self.assertNotIn('Secret-123-Long', json.dumps(row.new_value))
 
     def test_wrong_password_for_existing_user_is_logged(self):
         response = self.client.post(

@@ -66,6 +66,7 @@ class UserLoginSecurity(models.Model):
     )
     failed_login_count = models.IntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
+    must_change_password = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'user_login_security'
