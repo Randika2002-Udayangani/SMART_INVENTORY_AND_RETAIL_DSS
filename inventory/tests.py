@@ -92,6 +92,11 @@ class CustomerVisibleDiscountQueryTests(TestCase):
         self.batch.save(update_fields=['expiry_date'])
         self.assertEqual(self._ids(), [])
 
+    def test_batch_expiring_today_is_excluded(self):
+        self.batch.expiry_date = timezone.localdate()
+        self.batch.save(update_fields=['expiry_date'])
+        self.assertEqual(self._ids(), [])
+
     def test_batch_without_expiry_date_is_excluded(self):
         self.batch.expiry_date = None
         self.batch.save(update_fields=['expiry_date'])

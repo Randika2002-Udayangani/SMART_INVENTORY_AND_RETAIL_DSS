@@ -251,6 +251,8 @@ EXEMPT = {
     'orders/views.py:CustomerLogoutView.POST': 'customer logout, not a staff action',
     'orders/views.py:CustomerProfileView.PATCH': 'customer edits own profile',
     'orders/views.py:CustomerChangePasswordView.POST': 'customer changes own password',
+    'orders/views.py:CustomerForgotPasswordView.POST': 'customer asks for a reset link, not a staff action',
+    'orders/views.py:CustomerResetPasswordView.POST': 'customer resets own password with a one-time token',
     'orders/views.py:ChatbotQueryView.POST': 'chat messages are stored in ChatbotLog',
     'orders/views.py:RatingCreateView.POST': 'customer rating is stored with the customer',
     'inventory/views.py:NotificationDetailView.DELETE': 'notification housekeeping (noise)',

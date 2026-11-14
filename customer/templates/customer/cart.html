@@ -45,6 +45,8 @@
         }
         .item-info .item-name { font-weight: 700; color: #222; margin-bottom: 4px; }
         .item-info .item-price { font-size: 0.88rem; color: #666; }
+        .item-info .original-price { margin-right: 6px; text-decoration: line-through; color: #888; }
+        .item-info .discounted-price { color: #c5221f; font-weight: 700; }
 
         .item-controls { display: flex; align-items: center; gap: 10px; }
         .qty-btn {
@@ -237,6 +239,7 @@
     const token = sessionStorage.getItem('jwt');
     let selectedSlot = '';
     let clearCartReturnFocus = null;
+    let cartPricesVerified = false;
 
     function updateCartBadge() {
         const cart  = JSON.parse(sessionStorage.getItem('cart') || '[]');
@@ -255,36 +258,60 @@
 
     async function refreshCartDiscountPrices() {
         const cart = JSON.parse(sessionStorage.getItem('cart') || '[]');
-        if (!cart.length) return;
+        if (!cart.length) {
+            cartPricesVerified = true;
+            return;
+        }
 
         try {
-            const response = await fetch('/api/discounts/public/', {
-                headers: token ? { Authorization: 'Bearer ' + token } : {}
-            });
-            if (!response.ok) throw new Error('Discount prices could not be loaded');
+            const productIds = cart.map((item) => Number(item.product_id ?? item.id));
+            const [discountResponse, ...productResponses] = await Promise.all([
+                fetch('/api/discounts/active/', {
+                    headers: token ? { Authorization: 'Bearer ' + token } : {}
+                }),
+                ...productIds.map((productId) => fetch(`/api/products/${productId}/`))
+            ]);
+            if (!discountResponse.ok) throw new Error('Active discount prices could not be loaded');
+            if (productResponses.some((response) => !response.ok)) {
+                throw new Error('Current product prices could not be loaded');
+            }
 
-            const data = await response.json();
-            const discounts = Array.isArray(data) ? data : (data.results || []);
-            const priceByProduct = new Map();
+            const discountData = await discountResponse.json();
+            const discounts = Array.isArray(discountData) ? discountData : (discountData.results || []);
+            const discountByProduct = new Map();
             discounts.forEach((discount) => {
                 const productId = Number(discount.product_id ?? discount.product);
-                const recommendedPrice = Number(discount.recommended_price);
-                if (Number.isFinite(productId) && Number.isFinite(recommendedPrice)) {
-                    priceByProduct.set(productId, recommendedPrice);
-                }
+                const originalPrice = Number(discount.original_price);
+                const discountedPrice = Number(discount.discounted_price);
+                if (
+                    Number.isFinite(productId)
+                    && Number.isFinite(originalPrice)
+                    && Number.isFinite(discountedPrice)
+                    && originalPrice > 0
+                    && discountedPrice > 0
+                    && discountedPrice < originalPrice
+                    && discount.is_available !== false
+                    && !discountByProduct.has(productId)
+                ) discountByProduct.set(productId, discountedPrice);
             });
 
-            let changed = false;
-            cart.forEach((item) => {
+            const products = await Promise.all(productResponses.map((response) => response.json()));
+            cart.forEach((item, index) => {
                 const productId = Number(item.product_id ?? item.id);
-                const recommendedPrice = priceByProduct.get(productId);
-                if (recommendedPrice !== undefined && Number(item.price) !== recommendedPrice) {
-                    item.price = recommendedPrice;
-                    changed = true;
+                const originalPrice = Number(products[index].unit_price);
+                if (!Number.isFinite(originalPrice) || originalPrice <= 0) {
+                    throw new Error(`Invalid current price for product ${productId}`);
                 }
+                const discountedPrice = discountByProduct.get(productId);
+                item.original_price = originalPrice;
+                item.price = discountedPrice !== undefined && discountedPrice < originalPrice
+                    ? discountedPrice
+                    : originalPrice;
             });
-            if (changed) sessionStorage.setItem('cart', JSON.stringify(cart));
+            sessionStorage.setItem('cart', JSON.stringify(cart));
+            cartPricesVerified = true;
         } catch (error) {
+            cartPricesVerified = false;
             console.error('Unable to refresh cart discount prices:', error);
         }
     }
@@ -384,13 +411,27 @@
             return;
         }
 
+        if (!cartPricesVerified) {
+            content.innerHTML = `
+                <div class="empty-cart" role="alert">
+                    <div class="icon">⚠️</div>
+                    <h3>Unable to verify current prices</h3>
+                    <p>Refresh prices before placing your order.</p>
+                    <button type="button" class="checkout-btn" onclick="refreshCartDiscountPrices().finally(renderCart)">Refresh Prices</button>
+                </div>`;
+            return;
+        }
+
         const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.qty), 0);
         content.innerHTML = `
             ${cart.map((item, index) => `
                 <div class="cart-item">
                     <div class="item-info">
                         <div class="item-name">${item.product_name}</div>
-                        <div class="item-price">Rs ${parseFloat(item.price).toFixed(2)} each</div>
+                        <div class="item-price">
+                            ${Number(item.price) < Number(item.original_price) ? `<span class="original-price">Rs ${Number(item.original_price).toFixed(2)}</span>` : ''}
+                            <span class="${Number(item.price) < Number(item.original_price) ? 'discounted-price' : ''}">Rs ${parseFloat(item.price).toFixed(2)} each</span>
+                        </div>
                     </div>
                     <div class="item-controls">
                         <button class="qty-btn" onclick="changeQty(${index}, -1)">−</button>
