@@ -605,6 +605,7 @@
     <a href="/dashboard/system-config/" class="{% block nav_config %}{% endblock %}"><i class="bi bi-sliders"></i> System Config</a>
     <a href="/dashboard/audit-log/" class="{% block nav_audit %}{% endblock %}"><i class="bi bi-journal-text"></i> Audit Log</a>
     <a href="/dashboard/users/" class="{% block nav_users %}{% endblock %}"><i class="bi bi-people"></i> User Management</a>
+    <a href="/dashboard/change-password/"><i class="bi bi-key"></i> Change Password</a>
   </nav>
   <div class="sb-footer">
     <div class="name" id="sbUserName">Loading...</div>
@@ -901,6 +902,13 @@
   function checkAuth() {
     const token = sessionStorage.getItem('access_token');
     if (!token) { window.location.href = (sessionStorage.getItem('staff_login_url') || '/'); }
+    if (
+      token &&
+      sessionStorage.getItem('must_change_password') === 'true' &&
+      window.location.pathname !== '/dashboard/change-password/'
+    ) {
+      window.location.replace('/dashboard/change-password/');
+    }
   }
   checkAuth();
 
@@ -908,6 +916,8 @@
   function doLogout() {
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('must_change_password');
+    sessionStorage.removeItem('current_username');
     window.location.href = (sessionStorage.getItem('staff_login_url') || '/');
   }
 
@@ -935,6 +945,11 @@
         data = { non_field_errors: [`Server returned ${response.status} ${response.statusText} (non-JSON response — check the Django console for the traceback).`] };
       }
       const detail = data.error || data.message || (Array.isArray(data.errors) ? data.errors.join('; ') : '');
+      if (response.status === 403 && data.code === 'password_change_required') {
+        sessionStorage.setItem('must_change_password', 'true');
+        window.location.href = '/dashboard/change-password/';
+        throw new Error(detail || 'Password change required');
+      }
       const error = new Error(detail || `${response.status} ${response.statusText}`);
       error.status = response.status;
       error.data = data;
