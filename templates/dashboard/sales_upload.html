@@ -75,21 +75,31 @@
   <div class="row g-4 mb-4">
     <div class="col-lg-6">
       <div class="card p-4 upload-card h-100">
-        <h5 class="mb-1">Upload Daily Bills</h5>
-        <p class="muted mb-3">Upload a PDF daily sales report.</p>
-        <input id="dailyBillsFile" type="file" class="form-control mb-3" accept=".pdf">
-        <button id="dailyBillsButton" class="btn btn-primary" onclick="uploadDailyBills()">Upload Daily Bills</button>
-        <div id="dailyBillsMessage" class="message mt-3" aria-live="polite"></div>
+        <h5 class="mb-1">Upload Daily Cash Flow <span class="tooltip-icon" title="The client's Daily Cash Flow report lists every bill with its items. One upload adds any new products, records the bills and item-wise sales, and deducts stock. Dates already loaded are skipped, so re-uploading is safe.">ⓘ</span></h5>
+        <p class="muted mb-3">Upload the Daily Cash Flow PDF (any date range).</p>
+        <input id="cashFlowFile" type="file" class="form-control mb-3" accept=".pdf">
+        <button id="cashFlowButton" class="btn btn-primary" onclick="uploadCashFlow()">Upload Cash Flow</button>
+        <div id="cashFlowMessage" class="message mt-3" aria-live="polite"></div>
       </div>
     </div>
-    <div class="col-lg-6">
-      <div class="card p-4 upload-card h-100">
-        <h5 class="mb-1">Upload item-wise sales <span class="tooltip-icon" title="Two files are needed because the billing system cannot link a bill to its items: daily bills give store totals; item-wise sales give units per product.">ⓘ</span></h5>
-        <p class="muted mb-3">Upload a PDF item sales ledger.</p>
-        <input id="itemLedgerFile" type="file" class="form-control mb-3" accept=".pdf">
-        <button id="itemLedgerButton" class="btn btn-primary" onclick="uploadItemLedger()">Upload item-wise sales</button>
-        <div id="itemLedgerMessage" class="message mt-3" aria-live="polite"></div>
-      </div>
+  </div>
+
+  <div id="cashFlowReviewCard" class="card p-4 mb-4" hidden>
+    <h5 class="mb-1">Review product names from the cash flow upload</h5>
+    <p id="cashFlowReviewBanner" class="small text-warning mb-2"></p>
+    <p class="muted mb-3">These names could not be matched or safely added automatically (often because the name wraps over two lines in the PDF). For each one you want to keep: correct the name, tick <b>Approve</b>, then press <b>Apply approved</b>. Unticked rows are left out. Typing the exact name of an existing product links the sales to that product.</p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Approve</th><th>Name as printed</th><th style="min-width:260px">Name to use</th><th>Unit price</th><th>Units</th><th>Revenue (Rs.)</th></tr></thead>
+        <tbody id="cashFlowReviewBody"></tbody>
+      </table>
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <button id="cashFlowApplyButton" class="btn btn-primary" onclick="applyCashFlowReview()">Apply approved</button>
+      <button class="btn btn-outline-secondary" onclick="toggleAllCashFlowReview(true)">Tick all</button>
+      <button class="btn btn-outline-secondary" onclick="toggleAllCashFlowReview(false)">Untick all</button>
+      <button id="cashFlowDismissButton" class="btn btn-outline-danger" onclick="dismissCashFlowReview()">Skip remaining</button>
+      <span id="cashFlowReviewMessage" class="message" aria-live="polite"></span>
     </div>
   </div>
 
@@ -160,6 +170,14 @@
     if (data.skipped !== undefined) details.push(`Skipped: ${data.skipped}`);
     if (data.dates_inserted !== undefined) details.push(`Dates inserted: ${data.dates_inserted}`);
     if (data.dates_skipped !== undefined) details.push(`Dates skipped: ${data.dates_skipped}`);
+    if (data.bills_parsed !== undefined) details.push(`Bills read: ${data.bills_parsed} (Rs. ${data.bills_total_cash_in})`);
+    if (data.bills_inserted !== undefined) details.push(`New bills: ${data.bills_inserted}`);
+    if (data.sales_records_inserted !== undefined) details.push(`Item sales added: ${data.sales_records_inserted}`);
+    if (data.sales_records_skipped_existing) details.push(`Already loaded: ${data.sales_records_skipped_existing}`);
+    if (data.new_products_created) details.push(`New products added: ${data.new_products_created}`);
+    if (data.review_count) details.push(`Needs review: ${data.review_count} (see the table below)`);
+    if (data.products_unmatched) details.push(`Unmatched products: ${data.products_unmatched}`);
+    if (data.stock_shortfalls) details.push(`Stock shortfalls: ${data.stock_shortfalls}`);
     if (Array.isArray(data.errors) && data.errors.length) details.push(`Errors: ${data.errors.join('; ')}`);
     return `${label}: ${details.join(' | ') || 'Upload complete.'}`;
   }
@@ -204,6 +222,128 @@
 
   function uploadItemLedger() {
     return uploadFile('itemLedgerFile', 'itemLedgerButton', 'itemLedgerMessage', '/api/sales/upload/item-ledger/', 'Item ledger upload');
+  }
+
+  // ── Daily Cash Flow: upload + manual review of names that could not be matched ──
+  // The server keeps the PDF and the review list, so you can leave this page
+  // while an upload runs (a notification appears when it finishes) and approve
+  // the names later - nothing has to be re-uploaded.
+  let cashFlowReviewId = null;
+  let cashFlowReviewFile = '';
+
+  function renderCashFlowReview(items, reviewId, fileName) {
+    const card = document.getElementById('cashFlowReviewCard');
+    const body = document.getElementById('cashFlowReviewBody');
+    document.getElementById('cashFlowReviewMessage').innerHTML = '';
+    cashFlowReviewId = reviewId || null;
+    cashFlowReviewFile = fileName || cashFlowReviewFile;
+    if (!items || !items.length || !reviewId) { card.hidden = true; body.innerHTML = ''; return; }
+    document.getElementById('cashFlowReviewBanner').textContent =
+      fileName ? `From upload: ${fileName} - ${items.length} name(s) waiting for your decision.` : '';
+    body.innerHTML = items.map((it, i) => {
+      const prefill = it.suggestion && it.suggestion_score >= 85 ? it.suggestion : it.raw_name;
+      const hint = it.suggestion
+        ? `<div class="muted small">Closest existing: ${escapeHtml(it.suggestion)} (${it.suggestion_score}%) <a href="#" onclick="useCashFlowSuggestion(${i}); return false;">use</a></div>` : '';
+      return `<tr data-raw="${escapeHtml(it.raw_name)}" data-suggestion="${escapeHtml(it.suggestion || '')}">
+        <td><input type="checkbox" class="form-check-input cf-approve"></td>
+        <td>${escapeHtml(it.raw_name)}</td>
+        <td><input type="text" class="form-control form-control-sm cf-name" maxlength="150" value="${escapeHtml(prefill)}">${hint}</td>
+        <td>${escapeHtml(it.unit_price)}</td><td>${escapeHtml(it.units)}</td><td>${escapeHtml(it.revenue)}</td></tr>`;
+    }).join('');
+    card.hidden = false;
+  }
+
+  function useCashFlowSuggestion(index) {
+    const row = document.querySelectorAll('#cashFlowReviewBody tr')[index];
+    if (!row) return;
+    row.querySelector('.cf-name').value = row.dataset.suggestion;
+    row.querySelector('.cf-approve').checked = true;
+  }
+
+  function toggleAllCashFlowReview(checked) {
+    document.querySelectorAll('#cashFlowReviewBody .cf-approve').forEach(c => { c.checked = checked; });
+  }
+
+  // Shows the oldest-first pending review (if any) - runs on page load, so a review
+  // started earlier (or on another page) is still waiting here.
+  async function loadPendingCashFlowReview() {
+    try {
+      const data = await apiFetch('/api/sales/upload/cash-flow/review/');
+      const pending = (data.reviews || [])[0];
+      if (pending) renderCashFlowReview(pending.review_items, pending.upload_id, pending.file_name);
+    } catch (error) { /* the review card simply stays hidden */ }
+  }
+
+  function uploadCashFlow() {
+    const input = document.getElementById('cashFlowFile');
+    const button = document.getElementById('cashFlowButton');
+    const file = input.files[0];
+    if (!file) { showMessage('cashFlowMessage', 'Please select a file first.', 'warning'); return; }
+    if (!file.name.toLowerCase().endsWith('.pdf')) { showMessage('cashFlowMessage', 'Please select a PDF file.', 'warning'); return; }
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Uploading...';
+    showMessage('cashFlowMessage', 'Uploading and processing... you can open another page - a notification will appear when it finishes.', 'info');
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiFetch('/api/sales/upload/cash-flow/', { method: 'POST', body: formData })
+      .then(async data => {
+        showMessage('cashFlowMessage', uploadMessage(data, 'Cash flow upload'), data.review_count ? 'warning' : 'success');
+        renderCashFlowReview(data.review_items, data.review_upload_id, file.name);
+        input.value = '';
+        uploadPage = 1;
+        await loadLogs();
+      })
+      .catch(error => {
+        const responseError = error.data?.error || error.data?.errors?.join('; ');
+        showMessage('cashFlowMessage', responseError || error.message, 'danger');
+      })
+      .finally(() => { button.disabled = false; button.textContent = original; });
+  }
+
+  async function applyCashFlowReview() {
+    if (!cashFlowReviewId) { showMessage('cashFlowReviewMessage', 'Nothing to apply.', 'warning'); return; }
+    const overrides = {};
+    document.querySelectorAll('#cashFlowReviewBody tr').forEach(row => {
+      if (!row.querySelector('.cf-approve').checked) return;
+      const name = row.querySelector('.cf-name').value.trim();
+      if (name) overrides[row.dataset.raw] = name;
+    });
+    if (!Object.keys(overrides).length) { showMessage('cashFlowReviewMessage', 'Tick at least one row to approve.', 'warning'); return; }
+    if (!confirm(`Add/link ${Object.keys(overrides).length} approved name(s) and record their sales?`)) return;
+    const button = document.getElementById('cashFlowApplyButton');
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Applying...';
+    try {
+      const data = await apiFetch(`/api/sales/upload/cash-flow/review/${cashFlowReviewId}/apply/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name_overrides: overrides }),
+      });
+      showMessage('cashFlowMessage', uploadMessage(data, 'Approved names applied'), data.review_count ? 'warning' : 'success');
+      renderCashFlowReview(data.review_items, data.review_upload_id, cashFlowReviewFile);
+      uploadPage = 1;
+      await loadLogs();
+    } catch (error) {
+      const responseError = error.data?.error || error.data?.errors?.join('; ');
+      showMessage('cashFlowReviewMessage', responseError || error.message, 'danger');
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+
+  async function dismissCashFlowReview() {
+    if (!cashFlowReviewId) return;
+    if (!confirm('Skip the remaining names? Their sales will stay out of the system.')) return;
+    try {
+      await apiFetch(`/api/sales/upload/cash-flow/review/${cashFlowReviewId}/dismiss/`, { method: 'POST' });
+      renderCashFlowReview([], null);
+      showMessage('cashFlowMessage', 'Remaining names skipped.', 'success');
+    } catch (error) {
+      showMessage('cashFlowReviewMessage', error.message, 'danger');
+    }
   }
 
   function statusBadge(status) {
@@ -311,5 +451,6 @@
 
   fetchCurrentUser();
   loadLogs();
+  loadPendingCashFlowReview();
 </script>
 {% endblock %}
