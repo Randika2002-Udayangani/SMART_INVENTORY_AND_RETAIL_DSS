@@ -4,6 +4,7 @@ from rest_framework import status
 from django.contrib.auth.models import User, Group
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -421,8 +422,8 @@ class SystemConfigDetailView(APIView):
 class AuditLogListView(APIView):
     """
     GET /api/audit-log/
-    Manager/Admin only. Filter by ?user=<id>, ?table_name=, ?action=,
-    ?record_id=<id>, ?date_from=YYYY-MM-DD, ?date_to=YYYY-MM-DD
+    Manager/Admin only. Filter by ?username=, ?action=,
+    ?date_from=YYYY-MM-DD, ?date_to=YYYY-MM-DD
     Paginate by ?page=<n> (default 1), ?page_size=<n> (default 25, max 100).
 
     Response shape (changed from a bare list to support pagination):
@@ -442,27 +443,18 @@ class AuditLogListView(APIView):
     def get(self, request):
         logs = AuditLog.objects.select_related('user').order_by('-timestamp')
 
-        user_id = request.query_params.get('user')
-        table_name = request.query_params.get('table_name')
+        username = request.query_params.get('username', '').strip()
         action = request.query_params.get('action')
-        record_id = request.query_params.get('record_id')
         date_from = request.query_params.get('date_from')
         date_to = request.query_params.get('date_to')
 
-        if user_id:
-            logs = logs.filter(user_id=user_id)
-        if table_name:
-            logs = logs.filter(table_name=table_name)
+        if username:
+            logs = logs.filter(
+                Q(user__username__icontains=username)
+                | Q(new_value__username__icontains=username)
+            )
         if action:
             logs = logs.filter(action=action)
-        if record_id:
-            try:
-                logs = logs.filter(record_id=int(record_id))
-            except ValueError:
-                return Response(
-                    {'error': 'record_id must be a whole number'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
         if date_from:
             logs = logs.filter(timestamp__date__gte=date_from)
         if date_to:
