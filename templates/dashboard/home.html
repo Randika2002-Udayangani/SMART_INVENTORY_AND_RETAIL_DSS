@@ -6,6 +6,9 @@
 {% block extra_css %}
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
     <style>
+    /* Keep the dashboard sync status in the page flow instead of pinning it during scroll. */
+    .topbar { position: static; z-index: auto; }
+
     .sync-badge {
       background: var(--card); border: 1px solid var(--border); border-radius: 8px;
       padding: 7px 14px; font-size: 11.5px; color: var(--muted); font-family: 'Inter', monospace;
@@ -170,6 +173,7 @@
       .health-bands { grid-template-columns: repeat(2,1fr); }
     }
     @media (max-width: 560px) { .kpi-grid { grid-template-columns: 1fr; } }
+        table.hs-tbl thead th { position: static !important; top: auto !important; }
     </style>
 {% endblock %}
 
