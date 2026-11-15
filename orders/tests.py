@@ -106,7 +106,7 @@ class CustomerPasswordMinimumTests(TestCase):
 
         valid_request = factory.post(
             '/api/customer-auth/register/',
-            {'name': 'Test Customer', 'email': 'valid@example.com', 'password': '12345678'},
+            {'name': 'Test Customer', 'email': 'valid@example.com', 'password': 'GoodPass123'},
             format='json',
         )
         valid_response = register(valid_request)

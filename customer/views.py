@@ -37,3 +37,11 @@ def profile_page(request):
 def product_detail_page(request):
     return render(request, 'customer/product_detail.html')
 
+
+
+def forgot_password_page(request):
+    return render(request, "customer/forgot_password.html")
+
+
+def reset_password_page(request):
+    return render(request, "customer/reset_password.html")
