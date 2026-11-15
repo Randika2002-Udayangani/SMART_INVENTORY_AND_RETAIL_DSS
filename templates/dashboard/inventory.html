@@ -63,11 +63,12 @@
         padding: 1.25rem;
         background: var(--card, #fff);
 }
-        .upload-summary { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; }
+        .upload-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
         .upload-item { display:flex; align-items:center; gap:10px; min-width:0; padding:12px 14px; border:1px solid var(--border); border-radius:10px; background:var(--card2); }
         .upload-icon { display:grid; place-items:center; width:32px; height:32px; flex:0 0 32px; border-radius:8px; background:var(--card); color:var(--sidebar); }
         .upload-info { min-width:0; }
         .upload-type { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:700; color:var(--txt); }
+        .upload-file-name { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:var(--txt); }
         .upload-date { margin-top:3px; font-size:10.5px; color:var(--muted); }
         .upload-status { margin-left:auto; flex:0 0 auto; padding:4px 8px; border-radius:999px; font-size:10px; font-weight:700; letter-spacing:.03em; }
         .upload-success { background:#F0FDF4; color:#16A34A; }
@@ -386,13 +387,18 @@ function updateAdjustmentProductOptions() {
         products.map(p => `<option value="${p.product_name ?? ''}"></option>`).join('');
 }
 
+const uploadSummaryLabels = {
+    ITEM_SALES: 'Sales (Daily Cash Flow PDF)',
+    SUPPLIER_INVOICE: 'Supplier Invoice PDF'
+};
+
 async function loadUploadSummary() {
     const target = document.getElementById('uploadSummary');
     try {
         const res = await fetch('/api/inventory/last-uploads-by-type/', { headers: { 'Authorization': 'Bearer ' + token } });
         if (!res.ok) throw new Error('Request failed');
         const data = await res.json();
-        const uploads = data.uploads ?? [];
+        const uploads = (data.uploads ?? []).filter(u => u.upload_type !== 'DAILY_BILLS');
         if (!uploads.length) {
             target.innerHTML = '<div class="upload-empty">No upload history found.</div>';
             return;
@@ -402,19 +408,27 @@ async function loadUploadSummary() {
             const status = (u.status || 'PENDING').toUpperCase();
             const statusClass = status === 'SUCCESS' ? 'upload-success' : 'upload-partial';
             const date = u.upload_date ? formatDate(u.upload_date) : 'No upload yet';
-            const label = (u.upload_type || 'Unknown source').replaceAll('_', ' ');
+            const label = uploadSummaryLabels[u.upload_type] || (u.upload_type || 'Unknown source').replaceAll('_', ' ');
+            const fileName = u.file_name || 'No upload yet';
             return `<div class="upload-item">
                 <div class="upload-icon"><i class="bi bi-cloud-arrow-up"></i></div>
                 <div class="upload-info">
-                    <div class="upload-type">${label}</div>
-                    <div class="upload-date">${date}</div>
+                    <div class="upload-type">${escapeUploadHtml(label)}</div>
+                    <div class="upload-file-name" title="${escapeUploadHtml(fileName)}">${escapeUploadHtml(fileName)}</div>
+                    <div class="upload-date">${escapeUploadHtml(date)}</div>
                 </div>
-                <span class="upload-status ${statusClass}">${status}</span>
+                <span class="upload-status ${statusClass}">${escapeUploadHtml(status)}</span>
             </div>`;
         }).join('');
     } catch (e) {
         target.innerHTML = '<div class="upload-empty">Could not load upload status.</div>';
     }
+}
+
+function escapeUploadHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[character]));
 }
 
 function renderStock() {
