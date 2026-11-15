@@ -55,7 +55,7 @@
     max_order_advance_days: { label: 'Latest pickup (days from now)', unit: '', group: 'Online Orders', section: 'settings', help: 'How many days ahead a customer can choose a pickup date.', min: 1, max: 60 },
     last_sync_date: { label: 'Data last updated', unit: '', group: 'Other', section: 'status' }
   };
-  const UPLOAD_LABELS = { DAILY_BILLS: 'Daily Bills PDF', SUPPLIER_INVOICE: 'Supplier Invoice PDF', ITEM_SALES: 'Item Ledger PDF' };
+  const UPLOAD_LABELS = { DAILY_BILLS: 'Daily Bills PDF', SUPPLIER_INVOICE: 'Supplier Invoice PDF', ITEM_SALES: 'Sales (Daily Cash Flow PDF)' };
 
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[character])); }
   function encodeKey(key) { return encodeURIComponent(String(key)).replace(/'/g, '%27'); }
@@ -100,8 +100,10 @@
       const settings = groupedRows(rows, 'settings');
       const status = groupedRows(rows, 'status');
       document.getElementById('settingsSection').innerHTML = Object.keys(settings).length ? Object.entries(settings).map(([group, entries]) => `<section class="card p-4 mb-3"><h6 class="mb-1">${escapeHtml(group)}</h6>${entries.map(({row, meta}) => settingRow(row, meta)).join('')}</section>`).join('') : '<div class="card p-4 text-muted">No decision-support settings.</div>';
-      const uploadRows = Array.isArray(uploadData.uploads) ? uploadData.uploads : [];
-      const uploadSection = `<section><h6 class="mb-1">Uploads</h6><p class="text-muted small mb-2">These upload types together determine the Dashboard Last Sync value. The highlighted upload is the current one.</p>${uploadRows.map(upload => uploadRow(upload, uploadData.current_sync_type)).join('')}</section>`;
+      const uploadRows = Array.isArray(uploadData.uploads)
+        ? uploadData.uploads.filter(upload => upload.upload_type !== 'DAILY_BILLS')
+        : [];
+      const uploadSection = `<section><h6 class="mb-1">Uploads</h6><p class="text-muted small mb-2">Recent visible upload sources. The highlighted row is the current Dashboard Last Sync source when it is shown.</p>${uploadRows.map(upload => uploadRow(upload, uploadData.current_sync_type)).join('')}</section>`;
       const otherStatus = Object.keys(status).length ? Object.entries(status).map(([group, entries]) => `<section><h6 class="mb-1">${escapeHtml(group)}</h6>${entries.map(({row, meta}) => statusRow(row, meta)).join('')}</section>`).join('') : '';
       document.getElementById('statusSection').innerHTML = uploadSection + otherStatus;
     } catch (error) { showMessage(error.message, 'danger'); }

@@ -2,6 +2,7 @@ from rest_framework import generics, permissions, status
 from decimal import Decimal
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import render
 from django.utils import timezone
@@ -253,9 +254,9 @@ class ProductAvailabilityView(APIView):
 
 
 class ProductReorderThresholdView(APIView):
-    """Admin-only update for a product's manual reorder point."""
+    """Manager/Admin update for a product's manual reorder point."""
 
-    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+    permission_classes = [permissions.IsAuthenticated, IsManagerOrAdmin]
 
     def patch(self, request, pk):
         value = request.data.get('reorder_threshold')
@@ -313,6 +314,14 @@ class ProductDetailView(generics.RetrieveUpdateDestroyAPIView):
         return [permissions.AllowAny()]
 
     def perform_update(self, serializer):
+        if (
+            'reorder_threshold' in serializer.validated_data and
+            not IsManagerOrAdmin().has_permission(self.request, self)
+        ):
+            raise PermissionDenied(
+                'Manager or Admin access required to change the reorder threshold.'
+            )
+
         old_data = ProductSerializer(self.get_object()).data
         product = serializer.save()
         new_data = ProductSerializer(product).data
