@@ -186,9 +186,9 @@
 {% block page_scripts %}
 <script>
 // Role gating — set once fetchCurrentUser() (shared, in base.html) resolves.
-// Money fields (Total Amount, Cost Price) are blanked for non-ADMIN/MANAGER
-// roles; everything else on this page (batch tracking, expiry, new-purchase
-// data entry) stays fully usable for STAFF.
+// Cost Price remains restricted to ADMIN/MANAGER; Total Amount is visible to
+// all roles. Batch tracking, expiry, and new-purchase data entry are available
+// to STAFF as well.
 let canSeeFinancials = false;
 
 // Highlights exactly one sidebar link, matching whichever tab is currently
@@ -384,7 +384,7 @@ function renderPurchasesTable() {
             <td><a href="/dashboard/purchases/detail/${p.id}/">${p.invoice_number ?? '—'}</a></td>
             <td>${p.supplier_name ?? (typeof p.supplier === 'object' ? p.supplier?.name : p.supplier) ?? '—'}</td>
             <td>${formatDate(p.purchase_date)}</td>
-            <td>${canSeeFinancials ? formatMoney(p.total_amount) : '<span class="restricted-cell">Restricted</span>'}</td>
+            <td>${formatMoney(p.total_amount)}</td>
             <td>${(p.batches ?? []).length || p.batch_count || '—'}</td>
         </tr>
     `).join('');

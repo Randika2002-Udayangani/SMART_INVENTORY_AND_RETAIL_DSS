@@ -34,7 +34,33 @@ class ProductReorderThresholdViewTests(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.reorder_threshold, 24)
 
-    def test_non_admin_cannot_set_a_manual_reorder_threshold(self):
+    def test_manager_can_set_a_manual_reorder_threshold(self):
+        user = get_user_model().objects.create_user('threshold-manager', password=TEST_PASSWORD)
+        manager_group, _ = Group.objects.get_or_create(name='MANAGER')
+        user.groups.add(manager_group)
+        self.client.force_authenticate(user=user)
+
+        response = self.client.patch(
+            f'/api/products/{self.product.id}/reorder-threshold/',
+            data={'reorder_threshold': 24},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.reorder_threshold, 24)
+
+        response = self.client.patch(
+            f'/api/products/{self.product.id}/',
+            data={'reorder_threshold': 36},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.reorder_threshold, 36)
+
+    def test_staff_cannot_set_a_manual_reorder_threshold(self):
         user = get_user_model().objects.create_user('threshold-staff', password=TEST_PASSWORD)
         self.client.force_authenticate(user=user)
 
@@ -45,3 +71,29 @@ class ProductReorderThresholdViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.reorder_threshold, 0)
+
+    def test_staff_cannot_change_reorder_threshold_through_product_update(self):
+        user = get_user_model().objects.create_user('threshold-staff-update', password=TEST_PASSWORD)
+        self.client.force_authenticate(user=user)
+
+        response = self.client.patch(
+            f'/api/products/{self.product.id}/',
+            data={'reorder_threshold': 24},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.reorder_threshold, 0)
+
+        response = self.client.patch(
+            f'/api/products/{self.product.id}/',
+            data={'product_name': 'Updated threshold product'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.product_name, 'Updated threshold product')

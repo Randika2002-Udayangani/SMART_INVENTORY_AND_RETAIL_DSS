@@ -122,6 +122,27 @@ class AuditLogApiActorTests(TestCase):
         self.assertEqual(row['user_id'], self.admin.id)
         self.assertEqual(row['actor_label'], 'actor-admin')
 
+    def test_list_filters_by_partial_case_insensitive_username(self):
+        matching_log = AuditLog.objects.create(
+            user=self.admin, action='UPDATE', table_name='product', record_id=1
+        )
+        other_user = User.objects.create_user(username='another-user', password='Passw0rd-123')
+        AuditLog.objects.create(
+            user=other_user, action='UPDATE', table_name='product', record_id=2
+        )
+        failed_login_log = AuditLog.objects.create(
+            user=None, action='LOGIN_FAILED', table_name='auth_user',
+            new_value={'username': 'actor-unknown'},
+        )
+
+        response = self.client.get('/api/audit-log/?username=CTOR-ADM')
+        matching_ids = {row['id'] for row in response.data['results']}
+        self.assertEqual(matching_ids, {matching_log.id})
+
+        response = self.client.get('/api/audit-log/?username=actor-unknown')
+        matching_ids = {row['id'] for row in response.data['results']}
+        self.assertEqual(matching_ids, {failed_login_log.id})
+
     def test_number_of_queries_does_not_grow_with_the_number_of_rows(self):
         order = _order(self.customer)
 
