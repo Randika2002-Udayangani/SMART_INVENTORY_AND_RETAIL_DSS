@@ -1,15 +1,31 @@
+
 import json
+import logging
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
+
+from django.conf import settings
+from django.core.mail import send_mail
 from django.utils import timezone
 from django.db.models import Avg, Count, OuterRef, Prefetch, Q, Subquery, F
 from django.db import IntegrityError, transaction
+
 from core.authentication import LenientJWTAuthentication
-from .models import ChatbotLog, ProductRating, ProductRatingSummary
+
+from .models import (
+    ChatbotLog,
+    ProductRating,
+    ProductRatingSummary,
+    Customer,
+    OnlineOrder,
+    OnlineOrderItem,
+    PasswordResetToken,
+)
+
 from .serializers import RatingCreateSerializer, ProductRatingPublicSerializer
-from products.serializers import ProductSerializer 
+from products.serializers import ProductSerializer
 from django.contrib.auth.hashers import make_password, check_password
 
 from rest_framework.views import APIView
@@ -26,7 +42,6 @@ from inventory.models import StockLedger
 from inventory.services.discount_engine import get_customer_visible_discounts
 from purchases.models import PurchaseBatch
 
-from .models import Customer, OnlineOrder, OnlineOrderItem
 from .tokens import get_tokens_for_customer
 from .authentication import CustomerJWTAuthentication, LenientCustomerJWTAuthentication
 from rest_framework.permissions import IsAuthenticated
@@ -34,6 +49,11 @@ from users.permissions import IsManagerOrAdmin
 from rest_framework_simplejwt.tokens import RefreshToken
 from .services.agent import AgentUnavailable, run_agent
 from .services.rate_limit import consume_chatbot_request, get_client_ip
+from .password_rules import validate_customer_password
+from .password_reset import create_reset_token, find_valid_token
+
+logger = logging.getLogger(__name__)
+
 
 LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
@@ -76,11 +96,9 @@ class CustomerRegisterView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if len(password) < 8:
-            return Response(
-                {"error": "Password must be at least 8 characters"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        error = validate_customer_password(password)
+        if error:
+            return Response({"error": error}, status=400)
 
         if Customer.objects.filter(email=email).exists():
 
@@ -271,6 +289,92 @@ class CustomerLoginView(APIView):
                 "access": tokens["access"]
             }
         )
+
+GENERIC_FORGOT_REPLY = 'If that email is registered, a password reset link has been sent.'
+INVALID_RESET_REPLY = 'This reset link is invalid or has expired. Please request a new one.'
+
+
+class CustomerForgotPasswordView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = (request.data.get('email') or '').strip().lower()
+
+        if not email:
+            return Response({'error': 'Email is required.'}, status=400)
+
+        customer = Customer.objects.filter(
+            email__iexact=email,
+            is_active=True
+        ).first()
+
+        if customer:
+            raw = create_reset_token(customer)
+
+            if raw:
+                link = f"{settings.SITE_URL}/customer/reset-password/?token={raw}"
+
+                try:
+                    send_mail(
+                        'Reset your Samanala Super Mart password',
+                        f"Hello {customer.name},\n\n"
+                        f"Use this link to set a new password "
+                        f"(valid for 30 minutes, one use only):\n{link}\n\n"
+                        f"If you did not ask for this, ignore this email.",
+                        settings.DEFAULT_FROM_EMAIL,
+                        [customer.email],
+                        fail_silently=False,
+                    )
+                except Exception:
+                    logger.error('Password reset email failed')
+
+        return Response({'message': GENERIC_FORGOT_REPLY})
+
+
+class CustomerResetPasswordView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        raw = request.data.get('token') or ''
+        new_password = request.data.get('new_password') or ''
+
+        record = find_valid_token(raw)
+
+        if record is None:
+            return Response({'error': INVALID_RESET_REPLY}, status=400)
+
+        error = validate_customer_password(new_password)
+
+        if error:
+            return Response({'error': error}, status=400)
+
+        with transaction.atomic():
+            used = PasswordResetToken.objects.filter(
+                pk=record.pk,
+                used_at__isnull=True
+            ).update(used_at=timezone.now())
+
+            if used != 1:
+                return Response({'error': INVALID_RESET_REPLY}, status=400)
+
+            customer = record.customer
+            customer.password_hash = make_password(new_password)
+            customer.failed_login_count = 0
+            customer.locked_until = None
+
+            customer.save(update_fields=[
+                'password_hash',
+                'failed_login_count',
+                'locked_until',
+            ])
+
+        return Response({
+            'message': 'Password has been reset. You can now log in.'
+        })
+
+
 class CustomerProfileView(APIView):
 
     """
@@ -347,8 +451,11 @@ class CustomerChangePasswordView(APIView):
 
         if not old_password or not new_password:
             return Response({'error': 'old_password and new_password are required'}, status=status.HTTP_400_BAD_REQUEST)
-        if len(new_password) < 8:
-            return Response({'error': 'New password must be at least 8 characters'}, status=status.HTTP_400_BAD_REQUEST)
+
+        error = validate_customer_password(new_password)
+        if error:
+            return Response({"error": error}, status=400)
+
         if not check_password(old_password, c.password_hash):
             return Response({'error': 'old_password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
 

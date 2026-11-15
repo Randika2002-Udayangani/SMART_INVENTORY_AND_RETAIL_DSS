@@ -90,7 +90,7 @@ class StaffAccountAndLoginAuditTests(TestCase):
         self.client.force_authenticate(self.admin)
         response = self.client.post(
             '/api/users/',
-            {'username': 'new-manager', 'password': 'Secret-123', 'role': 'MANAGER'},
+            {'username': 'new-manager', 'password': 'Secret-123-Long', 'role': 'MANAGER'},
             format='json',
         )
         self.assertEqual(response.status_code, 201)
@@ -101,7 +101,7 @@ class StaffAccountAndLoginAuditTests(TestCase):
         self.assertEqual(row.user, self.admin)
         self.assertEqual(row.new_value['username'], 'new-manager')
         self.assertEqual(row.new_value['role'], 'MANAGER')
-        self.assertNotIn('Secret-123', json.dumps(row.new_value))
+        self.assertNotIn('Secret-123-Long', json.dumps(row.new_value))
 
     def test_wrong_password_for_existing_user_is_logged(self):
         response = self.client.post(
@@ -251,6 +251,8 @@ EXEMPT = {
     'orders/views.py:CustomerLogoutView.POST': 'customer logout, not a staff action',
     'orders/views.py:CustomerProfileView.PATCH': 'customer edits own profile',
     'orders/views.py:CustomerChangePasswordView.POST': 'customer changes own password',
+    'orders/views.py:CustomerForgotPasswordView.POST': 'customer asks for a reset link, not a staff action',
+    'orders/views.py:CustomerResetPasswordView.POST': 'customer resets own password with a one-time token',
     'orders/views.py:ChatbotQueryView.POST': 'chat messages are stored in ChatbotLog',
     'orders/views.py:RatingCreateView.POST': 'customer rating is stored with the customer',
     'inventory/views.py:NotificationDetailView.DELETE': 'notification housekeeping (noise)',

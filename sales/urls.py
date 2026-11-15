@@ -1,5 +1,9 @@
 from django.urls import path
 from . import views
+from .cash_flow_views import (
+    CashFlowUploadView, CashFlowReviewListView,
+    CashFlowReviewApplyView, CashFlowReviewDismissView,
+)
 
 urlpatterns = [
 
@@ -15,6 +19,16 @@ urlpatterns = [
         views.DailyBillsUploadView.as_view(),
         name='upload-daily-bills'
     ),
+
+    path(
+        'sales/upload/cash-flow/',
+        CashFlowUploadView.as_view(),
+        name='upload-cash-flow'
+    ),
+
+    path('sales/upload/cash-flow/review/', CashFlowReviewListView.as_view(), name='cash-flow-review-list'),
+    path('sales/upload/cash-flow/review/<int:upload_id>/apply/', CashFlowReviewApplyView.as_view(), name='cash-flow-review-apply'),
+    path('sales/upload/cash-flow/review/<int:upload_id>/dismiss/', CashFlowReviewDismissView.as_view(), name='cash-flow-review-dismiss'),
 
     path(
         'sales/upload-log/',
