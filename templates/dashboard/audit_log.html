@@ -8,7 +8,6 @@
   .audit-table-wrap { overflow: visible; }
   .audit-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
   .audit-table thead th { position: sticky; top: 0; z-index: 10; background: var(--card2) !important; box-shadow: 0 1px 0 var(--border); }
-  .audit-detail { white-space: pre-wrap; word-break: break-word; font-family: 'Inter', monospace; font-size: 12px; background: var(--card2); border-radius: 6px; padding: 10px; max-height: 220px; overflow: auto; }
   .access-denied { max-width: 620px; margin: 36px auto; text-align: center; }
   @media (max-width: 960px) { .audit-table-wrap { overflow-x: auto; } .audit-table { min-width: 900px; } }
 </style>
@@ -37,18 +36,16 @@
     <div id="message" class="alert" hidden></div>
     <div class="card p-4">
       <div class="row g-2 mb-3">
-        <div class="col-md-2"><input id="userFilter" class="form-control" placeholder="User ID"></div>
-        <div class="col-md-2"><input id="tableFilter" class="form-control" placeholder="Table name"></div>
+        <div class="col-md-3"><input id="usernameFilter" class="form-control" placeholder="Username"></div>
         <div class="col-md-2"><input id="actionFilter" class="form-control" placeholder="Action"></div>
-        <div class="col-md-2"><input id="recordFilter" class="form-control" placeholder="Record ID" inputmode="numeric"></div>
         <div class="col-md-2"><input id="dateFrom" type="date" class="form-control" aria-label="From date"></div>
         <div class="col-md-2"><input id="dateTo" type="date" class="form-control" aria-label="To date"></div>
-        <div class="col-md-2 d-flex gap-2"><button class="btn btn-primary flex-fill" onclick="loadLogs()">Apply</button><button class="btn btn-outline-secondary" onclick="clearFilters()">Clear</button></div>
+        <div class="col-md-3 d-flex gap-2"><button class="btn btn-primary flex-fill" onclick="loadLogs()">Apply</button><button class="btn btn-outline-secondary" onclick="clearFilters()">Clear</button></div>
       </div>
       <div class="d-flex justify-content-between align-items-center mb-2"><small class="text-muted" id="lastUpdated"></small><button class="btn btn-outline-secondary btn-sm" onclick="refreshLogs(this)">Refresh</button></div>
       <div class="audit-table-wrap">
         <div class="table-scroll-wrap">
-<table class="table table-hover align-middle audit-table table-sticky-header"><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Area changed</th><th title="Database row affected by this action">Item changed</th><th>Device address (IP)</th><th></th></tr></thead><tbody id="logBody"><tr><td colspan="7" class="text-center text-muted">Loading...</td></tr></tbody></table>
+<table class="table table-hover align-middle audit-table table-sticky-header"><thead><tr><th>Time</th><th>User</th><th>Action</th><th></th></tr></thead><tbody id="logBody"><tr><td colspan="4" class="text-center text-muted">Loading...</td></tr></tbody></table>
 </div>
       </div>
       <div id="auditPagination" class="d-flex justify-content-between align-items-center mt-3"></div>
@@ -67,7 +64,7 @@
 <script>
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])); }
   function showMessage(text, type = 'danger') { const element = document.getElementById('message'); element.className = `alert alert-${type}`; element.innerText = text; element.hidden = false; }
-  function clearFilters() { ['userFilter','tableFilter','actionFilter','recordFilter','dateFrom','dateTo'].forEach(id => { document.getElementById(id).value = ''; }); loadLogs(); }
+  function clearFilters() { ['usernameFilter','actionFilter','dateFrom','dateTo'].forEach(id => { document.getElementById(id).value = ''; }); loadLogs(); }
   function jsonText(value) { return escapeHtml(JSON.stringify(value ?? {}, null, 2)); }
 
   // ── Pagination is now server-side (see AuditLogListView in users/views.py) ──
@@ -90,7 +87,7 @@
 
   async function loadLogs() {
     const params = new URLSearchParams();
-    const filters = { user: 'userFilter', table_name: 'tableFilter', action: 'actionFilter', record_id: 'recordFilter', date_from: 'dateFrom', date_to: 'dateTo' };
+    const filters = { username: 'usernameFilter', action: 'actionFilter', date_from: 'dateFrom', date_to: 'dateTo' };
     Object.entries(filters).forEach(([name, id]) => { const value = document.getElementById(id).value.trim(); if (value) params.set(name, value); });
 
     const filterQuery = params.toString();
@@ -111,7 +108,7 @@
       renderAuditLogs();
       document.getElementById('lastUpdated').innerText = `Last updated ${formatDate(new Date().toISOString())}`;
     } catch (error) {
-      document.getElementById('logBody').innerHTML = `<tr><td colspan="7" class="text-center text-danger">${escapeHtml(error.message)}</td></tr>`;
+      document.getElementById('logBody').innerHTML = `<tr><td colspan="4" class="text-center text-danger">${escapeHtml(error.message)}</td></tr>`;
       document.getElementById('auditPagination').innerHTML = '';
       showMessage(error.message);
     }
@@ -121,12 +118,12 @@
     const body = document.getElementById('logBody');
     const rows = allAuditLogs;
     if (rows.length === 0) {
-      body.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No audit records found.</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No audit records found.</td></tr>';
       document.getElementById('auditPagination').innerHTML = '';
       return;
     }
 
-    body.innerHTML = rows.map(log => `<tr><td>${escapeHtml(formatDate(log.timestamp))}</td><td>${escapeHtml(log.actor_label || log.username || 'System')}${log.user_id != null ? ` <span class="text-muted">#${escapeHtml(log.user_id)}</span>` : ''}</td><td><span class="badge text-bg-secondary">${escapeHtml(log.action)}</span></td><td>${escapeHtml(log.table_name)}</td><td title="Database row ID in ${escapeHtml(log.table_name || 'the affected table')}">${log.record_id != null ? `<span class="badge text-bg-light">ID #${escapeHtml(log.record_id)}</span>` : '<span class="text-muted">Not specified</span>'}</td><td>${escapeHtml(log.ip_address || '-')}</td><td><button class="btn btn-outline-secondary btn-sm" onclick="showDetails(${log.id})">Details</button></td></tr>`).join('');
+    body.innerHTML = rows.map(log => `<tr><td>${escapeHtml(formatDate(log.timestamp))}</td><td>${escapeHtml(log.actor_label || log.username || 'System')}${log.user_id != null ? ` <span class="text-muted">#${escapeHtml(log.user_id)}</span>` : ''}</td><td><span class="badge text-bg-secondary">${escapeHtml(log.action)}</span></td><td><button class="btn btn-outline-secondary btn-sm" onclick="showDetails(${log.id})">Details</button></td></tr>`).join('');
 
     document.getElementById('auditPagination').innerHTML = auditTotalPages > 1 ? `
       <button class="btn btn-sm btn-outline-secondary" onclick="changeAuditPage(-1)" ${auditPage === 1 ? 'disabled' : ''}>Previous</button>
@@ -175,17 +172,11 @@
       const passwordResetMessage = newValue.password_reset === true
         ? '<div class="alert alert-info py-2 mb-2">Password was reset (the password is never stored)</div>'
         : '';
-      const recordUsername = newValue.username || oldValue.username;
-      const affectedRecord = log.record_id != null
-        ? `${recordUsername ? `${escapeHtml(recordUsername)} ` : ''}(ID #${escapeHtml(log.record_id)})`
-        : recordUsername
-          ? escapeHtml(recordUsername)
-          : '<span class="text-muted">Not specified</span>';
       const changesTable = changeRows
         ? `<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0"><thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead><tbody>${changeRows}</tbody></table></div>`
         : '';
 
-      document.getElementById('detailBody').innerHTML = `<div class="row g-3"><div class="col-12"><strong>What changed</strong><div class="mt-1">${changeHeading ? `<p class="mb-2">${escapeHtml(changeHeading)}</p>` : ''}${passwordResetMessage}${changesTable}</div></div><div class="col-md-6"><strong>User who performed action</strong><div>${escapeHtml(log.actor_label || log.username || 'System')}${log.user_id != null ? ' #' + escapeHtml(log.user_id) : ''}</div></div><div class="col-md-6"><strong>Time</strong><div>${escapeHtml(formatDate(log.timestamp))}</div></div><div class="col-md-6"><strong>Action</strong><div>${escapeHtml(log.action)}</div></div><div class="col-md-6"><strong>Affected table</strong><div><span class="badge text-bg-light">${escapeHtml(log.table_name)}</span></div></div><div class="col-md-6"><strong>Affected record</strong><div>${affectedRecord}</div></div><div class="col-md-6"><strong>IP address</strong><div>${escapeHtml(log.ip_address || '-')}</div></div><details class="col-12"><summary><strong>Technical details</strong></summary><div class="row g-3 mt-1"><div class="col-md-6"><strong>Old value</strong><pre class="audit-detail">${jsonText(log.old_value)}</pre></div><div class="col-md-6"><strong>New value</strong><pre class="audit-detail">${jsonText(log.new_value)}</pre></div></div></details></div>`;
+      document.getElementById('detailBody').innerHTML = `<div class="row g-3"><div class="col-12"><strong>What changed</strong><div class="mt-1">${changeHeading ? `<p class="mb-2">${escapeHtml(changeHeading)}</p>` : ''}${passwordResetMessage}${changesTable}</div></div><div class="col-md-6"><strong>User who performed action</strong><div>${escapeHtml(log.actor_label || log.username || 'System')}${log.user_id != null ? ' #' + escapeHtml(log.user_id) : ''}</div></div><div class="col-md-6"><strong>Time</strong><div>${escapeHtml(formatDate(log.timestamp))}</div></div><div class="col-md-6"><strong>Action</strong><div>${escapeHtml(log.action)}</div></div></div>`;
       bootstrap.Modal.getOrCreateInstance(document.getElementById('detailModal')).show();
     } catch (error) { showMessage(error.message); }
   }

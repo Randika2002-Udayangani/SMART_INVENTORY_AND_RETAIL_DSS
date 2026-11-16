@@ -1,228 +1,198 @@
-# Smart Inventory and Retail DSS
+Smart Inventory and Retail DSS
 
-A comprehensive Django-based inventory management and decision support system for retail operations.
+A Django web application for retail inventory operations and decision support. It combines a customer storefront with a staff dashboard for products, stock, purchasing, sales uploads, reporting, and operational alerts.
 
-## 📋 Project Overview
+Live system: https://smart-inventory-dss.onrender.com
 
-Smart Inventory and Retail DSS is a powerful web application designed to streamline inventory management, track purchases and sales, manage suppliers, and provide data-driven insights for retail operations. Built with Django framework and modern data analysis tools.
+Features
+Staff dashboard
+Product and supplier management — maintain the product catalogue, suppliers, and store zones.
+Purchases and batches — record supplier deliveries, invoice details, received quantities, costs, and expiry dates.
+Inventory — review stock levels, low/out-of-stock items, stock history, and manual adjustments.
+Sales uploads — upload daily bill PDFs and item ledger PDFs, and review any records that need attention. Upload status and source filenames appear in the upload summaries.
+Decision support — view reorder recommendations, product lifecycle stages, inventory health scores, discounts, losses, and zone recommendations.
+Reports and analytics — review operational and sales data and export supported reports.
+User and access management — manage staff accounts and roles, including Admin, Manager, and Staff access.
+Audit log and system configuration — review recorded account and data changes and configure supported application settings.
+Notifications — view operational alerts in the dashboard.
+Customer storefront
+Browse products and discounts, use the shopping cart, and place pickup orders.
+Register, sign in, manage a profile and orders, and use customer password-recovery pages.
+Ask the in-app assistant questions about supported store information.
 
-## ✨ Features
+Staff and customer authentication are separate. Staff use the private dashboard login route; customers use the storefront login.
 
-- **Product Management** - Track and manage product inventory
-- **Supplier Management** - Manage supplier information and relationships
-- **Purchase Tracking** - Record and monitor purchase orders
-- **Sales Management** - Track sales transactions and revenue
-- **Inventory Control** - Real-time inventory monitoring and alerts
-- **User Management** - Role-based access control for different users
-- **Data Analytics** - Generate reports and insights using pandas and numpy
-- **Excel Export** - Export data to Excel format using openpyxl
+Technology
+Python 3.11 and Django 4.2
+Django REST Framework and Simple JWT
+PostgreSQL
+HTML, CSS, JavaScript (Bootstrap, Chart.js), and Django templates
+Pandas, OpenPyXL, PDFMiner/pdfplumber, and ReportLab for data processing and document workflows
+Optional Google Gemini integration for the customer assistant
+Gunicorn and WhiteNoise for production serving
 
-## 🛠 Tech Stack
+Pinned Python dependencies are listed in requirements.txt.
 
-- **Backend**: Django 4.2.11
-- **API Framework**: Django REST Framework 3.14.0
-- **Database**: PostgreSQL 15
-- **Data Analysis**: Pandas 2.0.3, NumPy 1.26.4
-- **Excel Processing**: openpyxl 3.1.2
+Project layout
+text
+.
+├── analytics/       # Analytics and decision-support endpoints
+├── core/            # Shared API endpoints and utilities
+├── customer/        # Customer storefront and customer pages
+├── dashboard/       # Staff dashboard pages
+├── inventory/       # Stock, lifecycle, health, reorder, and notifications
+├── orders/          # Customer authentication, orders, ratings, and assistant APIs
+├── products/        # Products, categories, brands, and zones
+├── purchases/       # Purchases, batches, and supplier deliveries
+├── sales/           # Sales records, PDF uploads, and report exports
+├── suppliers/       # Supplier management
+├── users/           # Staff authentication, roles, audit log, and configuration
+├── smart_inventory/ # Django settings and URL configuration
+├── templates/       # Staff dashboard templates
+├── manage.py
+└── requirements.txt
+Local setup
+Requirements
+Python 3.11 (the pinned pandas 2.0.3 does not support Python 3.12 or later)
+PostgreSQL 15
+Git
+1. Get the code and create a virtual environment
+powershell
+git clone https://github.com/Randika2002-Udayangani/SMART_INVENTORY_AND_RETAIL_DSS.git
+cd SMART_INVENTORY_AND_RETAIL_DSS
+git checkout main
+py -3.11 -m venv venv
+.\venv\Scripts\Activate.ps1
 
-## 📁 Project Structure
+On macOS or Linux, activate the environment with:
 
-```
-SMART_INVENTORY_AND_RETAIL_DSS/
-├── manage.py                 # Django management script
-├── requirements.txt          # Python dependencies
-├├── .gitignore              # Git ignore file
-├── Project Proposal-final.pdf  # Project proposal document
-├── smart_inventory/        # Main Django project
-│   ├── __init__.py
-│   ├── settings.py         # Django settings
-│   ├── urls.py             # URL routing
-│   ├── wsgi.py             # WSGI configuration
-│   └── asgi.py             # ASGI configuration
-├── inventory/              # Inventory management app
-├── products/               # Product management app
-├── purchases/              # Purchase tracking app
-├── sales/                  # Sales management app
-├── suppliers/              # Supplier management app
-└── users/                  # User management app
-```
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Python 3.8 or higher
-- PostgreSQL 15
-- pip or pipenv
-- Git
-
-### Installation
-
-1. **Clone the repository**
-   
-```
 bash
-   git clone <https://github.com/Randika2002-Udayangani/SMART_INVENTORY_AND_RETAIL_DSS.git>
-   cd SMART_INVENTORY_AND_RETAIL_DSS
-   
-```
-
-2. **Create a virtual environment** (optional but recommended)
-   
-```
+source venv/bin/activate
+2. Install dependencies
 bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   
-```
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+3. Configure environment variables
 
-3. **Install dependencies**
-   
-```
-bash
-   pip install -r requirements.txt
-   
-```
+Create the PostgreSQL database and user first, for example in psql:
 
-4. **Configure database**
+sql
+CREATE DATABASE smart_inventory;
+CREATE USER smart_user WITH PASSWORD 'choose-a-password';
+GRANT ALL PRIVILEGES ON DATABASE smart_inventory TO smart_user;
+ALTER USER smart_user CREATEDB;
 
-   For production with PostgreSQL:
-   - Update `smart_inventory/settings.py` with your PostgreSQL credentials:
-   
-```
-python
-   DATABASES = {
-       'default': {
-           'ENGINE': 'django.db.backends.postgresql',
-           'NAME': 'smart_inventory_db',
-           'USER': 'postgres',
-           'PASSWORD': 'your_password',# your_actual_password
-           'HOST': 'localhost',
-           'PORT': '5432',
-       }
-   }
-   
-```
+Copy the safe example file to a local .env file:
 
-5. **Run migrations**
-   
-```
-bash
-   python manage.py migrate
-   
-```
+powershell
+Copy-Item .env.example .env
 
-6. **Create a superuser**
-   
-```
-bash
-   python manage.py createsuperuser
-   
-```
+The Django settings read environment variables from the repository-root .env and from smart_inventory/.env. Variables already set on the machine take priority over both files. Add the database and Django settings below to the local .env. Do not commit .env files or real credentials.
 
-7. **Run the development server**
-   
-```
-bash
-   python manage.py runserver
-   
-```
+dotenv
+SECRET_KEY=replace-with-a-long-random-secret
+DEBUG=True
+STAFF_LOGIN_PATH=choose-a-private-path-segment
+DATABASE_NAME=smart_inventory
+DATABASE_USER=smart_user
+DATABASE_PASSWORD=your_postgresql_password
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
 
-8. **Access the application**
-   - Open your browser and navigate to: `http://127.0.0.1:8000/`
-   
-   - Admin panel: `http://127.0.0.1:8000/admin/`
+With DEBUG=True and no STAFF_LOGIN_PATH, the staff login falls back to dev-staff-entry. When DEBUG is off, STAFF_LOGIN_PATH is required and the app will not start without it.
 
-## 📖 Usage
+Optional settings:
 
-### Django Admin Panel
-Access the admin panel at `/admin/` to manage:
-- Users and permissions
-- Products
-- Suppliers
-- Inventory
-- Purchases
-- Sales
+GEMINI_API_KEY — enables the assistant's Gemini integration. Keep the key server-side.
+GEMINI_MODEL — model override; the application has a default.
+CHATBOT_RATE_LIMIT and CHATBOT_RATE_WINDOW_SECONDS — per-user assistant request limits (default 20 requests per 300 seconds).
+ALLOWED_HOSTS — comma-separated hostnames for non-local environments.
+CORS_ALLOWED_ORIGINS — comma-separated browser origins allowed to call the API.
+SITE_URL — public base URL used when constructing customer-facing links.
+AUDIT_PROXY_COUNT — number of trusted proxies in front of Django, so the audit log records the real client address.
+EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, and DEFAULT_FROM_EMAIL — configure SMTP email (Gmail, with an app password). In development, Django uses the console email backend by default.
 
-### API Endpoints
-If REST API is enabled, access endpoints at:
-- `/api/` - API root
-- `/api/products/` - Products API
-- `/api/suppliers/` - Suppliers API
-- `/api/purchases/` - Purchases API
-- `/api/sales/` - Sales API
+For deployment, set DEBUG=False, use a strong private SECRET_KEY, set STAFF_LOGIN_PATH, configure ALLOWED_HOSTS, and supply production database and email settings through the hosting platform's secret/environment configuration.
 
-### Data Export
-The application supports exporting data to Excel format using openpyxl.
-
-## 🔧 Development Commands
-
-```
-bash
-# Create migrations
-python manage.py makemigrations
-
-# Apply migrations
+4. Apply migrations, create an initial admin, and load default data
+powershell
 python manage.py migrate
+python manage.py createsuperuser
+python manage.py seed_discount_rules
+python manage.py seed_store_zones
 
-# Create a new app
-python manage.py startapp appname
+The initial superuser has full Admin rights in the staff dashboard. Use the application's User Management page to create and assign staff roles. The two seed_ commands load the default discount tiers and special store zones; without the discount tiers the Discount Engine page stays empty.
 
-# Collect static files
-python manage.py collectstatic
+5. Start the development server
+powershell
+python manage.py runserver
+Customer storefront: http://127.0.0.1:8000/
+Staff login: http://127.0.0.1:8000/<STAFF_LOGIN_PATH>/
+Staff dashboard (after login): http://127.0.0.1:8000/dashboard/
 
-# Check for issues
+Replace <STAFF_LOGIN_PATH> with the value configured in the local environment.
+
+6. Load business data
+
+Through the staff dashboard, load data in this order: the item master Excel file, then purchases, then the item ledger and daily bill PDFs. Sales rows are matched to products by SKU code, so the products must exist first.
+
+API overview
+
+Application APIs are mounted under /api/. Main endpoint groups include:
+
+/api/auth/ and /api/users/ — staff login-related actions, profile, password changes, user management, and audit log.
+/api/products/, /api/suppliers/, and /api/purchases/ — catalogue and purchasing operations.
+/api/inventory/, /api/lifecycle/, /api/health-scores/, /api/reorder/, and /api/discounts/ — stock and decision-support operations.
+/api/sales/ and /api/reports/ — sales uploads, upload logs, and report exports.
+/api/customer-auth/, /api/orders/, /api/ratings/, and /api/chatbot/ — customer account, order, feedback, and assistant APIs.
+/api/status/ — health check used by the hosting platform.
+
+Most staff APIs require a JWT access token. Customer endpoints use the customer authentication flow. Consult each app's urls.py, views, and serializers for endpoint-specific request formats and permissions.
+
+Roles
+Admin — staff account administration, configuration, and Admin-authorized operations.
+Manager — operational management and decision-support actions granted to Managers and Admins.
+Staff — day-to-day inventory, purchase, sales upload, and other permitted operations.
+
+Exact permissions are enforced by the API as well as by dashboard controls; hiding a control in the browser is not the security boundary.
+
+Tests and maintenance
+
+Run the full Django test suite (the database user needs the CREATEDB permission, because Django creates a temporary test database):
+
+powershell
+python manage.py test
+
+Run tests for a specific app or module:
+
+powershell
+python manage.py test users
+python manage.py test products.test_reorder_threshold
+
+Useful Django commands:
+
+powershell
 python manage.py check
+python manage.py makemigrations
+python manage.py migrate
+python manage.py collectstatic
+Deployment
 
-# Shell access
-python manage.py shell
-```
+The live system runs on Render (web service) with a Neon PostgreSQL database, both in the Singapore region. Render builds and deploys the main branch.
 
-## 📝 Project Apps
+Build command: pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate --noinput
+Start command: gunicorn smart_inventory.wsgi
+Health check path: /api/status/
+Python version: 3.11
+Settings and secrets are Render environment variables, not code.
 
-### 1. Products App (`products/`)
-Manages product catalog and details.
+Updates follow one path: feature branch, pull request into dev1, tests, then a pull request into main. Render redeploys automatically.
 
-### 2. Suppliers App (`suppliers/`)
-Handles supplier information and relationships.
+Security
+Never commit .env, database credentials, email passwords, API keys, or production secrets.
+Do not use development settings or example credentials in production.
+Keep DEBUG=False in production and configure ALLOWED_HOSTS, HTTPS, database, and email settings for the deployment.
+Use a unique, private STAFF_LOGIN_PATH; it supplements authentication and does not replace it.
+Team
 
-### 3. Inventory App (`inventory/`)
-Tracks inventory levels and stock movements.
-
-### 4. Purchases App (`purchases/`)
-Records purchase orders and supplier transactions.
-
-### 5. Sales App (`sales/`)
-Manages sales transactions and revenue tracking.
-
-### 6. Users App (`users/`)
-Handles user authentication and authorization.
-
-## 🔐 Security Notes
-
-- Keep the `SECRET_KEY` in `settings.py` confidential
-- Update `ALLOWED_HOSTS` for production deployments
-- Use environment variables for sensitive configuration
-- Enable HTTPS in production
-
-## 📄 License
-
-This project is part of Team Software Project course.
-
-## 👥 Team
-
-- STACK5
-- [Team Members]
-- W.R.U.Premarathna - 2022/CSC/077
-- L.D Wanigasekara -2022/CSC/040
-- W.M.N.B. Wijesooriya -2022/CSC/079
-- S.A.C.T.S Subasinghe -2022/CSC/073
-- Premkumar Kiritharan -2022/CSC/058
-
-## 📞 Support
-
-For issues or questions, please contact the development team.
-
----
-
-*Last updated: 2026/02/16*
+This repository is the Team Software Project for STACK5. Project contributors are listed in the project submission materials.
